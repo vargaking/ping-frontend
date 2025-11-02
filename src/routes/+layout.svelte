@@ -1,0 +1,51 @@
+<script lang="ts">
+	import '../app.css';
+	import favicon from '$lib/assets/favicon.svg';
+	import { ModeWatcher } from 'mode-watcher';
+	import { onMount } from 'svelte';
+	import { getMe } from '$lib/requests/auth/me';
+	import { UserServersStore, UserStore } from '$lib/stores/userStore';
+	import { base } from '$app/paths';
+	import { page } from '$app/stores';
+	import { getUserServers } from '$lib/requests/servers/getUserServers';
+
+	let { children } = $props();
+
+	onMount(() => {
+		getMe()
+			.then((user) => {
+				console.log('Fetched user:', user);
+				if (user) {
+					UserStore.set(user);
+
+					// If on login page, redirect to home
+					if ($page.url.pathname === '/login') {
+						window.location.href = '/';
+					}
+				}
+			})
+			.catch((error) => {
+				console.error('Error fetching user:', error);
+				UserStore.set(null);
+
+				// If not on login page, redirect to login
+				if ($page.url.pathname !== '/login') {
+					console.log('Redirecting to login page', $page.url.pathname);
+					window.location.href = '/login';
+				}
+			});
+
+		// Fetch user servers
+		getUserServers().then((servers) => {
+			console.log('Fetched user servers:', servers);
+			UserServersStore.set(servers);
+		});
+	});
+</script>
+
+<svelte:head>
+	<link rel="icon" href={favicon} />
+</svelte:head>
+
+<ModeWatcher defaultMode="dark" />
+{@render children()}
