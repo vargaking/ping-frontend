@@ -4,7 +4,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "vite dev --host",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -17,7 +17,7 @@
 		"@eslint/compat": "^1.4.0",
 		"@eslint/js": "^9.38.0",
 		"@internationalized/date": "^3.10.0",
-		"@lucide/svelte": "^0.552.0",
+		"@lucide/svelte": "^0.544.0",
 		"@sveltejs/adapter-auto": "^7.0.0",
 		"@sveltejs/kit": "^2.47.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
@@ -46,6 +46,8 @@
 	},
 	"dependencies": {
 		"axios": "^1.13.1",
-		"mode-watcher": "^1.1.0"
+		"dexie": "^4.2.1",
+		"mode-watcher": "^1.1.0",
+		"uuid": "^13.0.0"
 	}
 }
