@@ -11,32 +11,15 @@
 	import { onMount } from 'svelte';
 
 	onMount(() => {
-		if (!$page.params.slug) return;
+		const serverId = parseInt($page.url.pathname.split('/')[2]);
 
-		const serverId = parseInt($page.params.slug);
+		if (!serverId) return;
 
 		CurrentServerIdStore.set(serverId);
 
 		getUserChannels(serverId).then((channels) => {
 			UserChannelsStore.set(channels);
 		});
-
-		const unsubscribe = UserServersStore.subscribe((servers) => {
-			if (servers.length === 0) return;
-
-			const currentServer = servers.find((server) => server.id === serverId);
-
-			if (!currentServer) {
-				console.error('Current server not found');
-				return;
-			}
-
-			CurrentServerStore.set(currentServer);
-		});
-
-		return () => {
-			unsubscribe();
-		};
 	});
 </script>
 

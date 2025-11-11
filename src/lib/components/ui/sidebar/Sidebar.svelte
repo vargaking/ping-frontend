@@ -65,8 +65,8 @@
 					<Dialog.Footer>
 						<Button
 							onclick={() => {
-								if (!$CurrentServerStore) return;
-								createChannel($CurrentServerStore.id, channelName);
+								if (!$CurrentServerIdStore) return;
+								createChannel($CurrentServerIdStore, channelName);
 							}}>Create</Button
 						>
 					</Dialog.Footer>
@@ -78,12 +78,12 @@
 
 			{#each $UserChannelsStore as channel}
 				{@const active =
-					$page.url.pathname === `/server/${$CurrentServerStore?.id}/channel/${channel.id}/`}
+					$page.url.pathname === `/server/${$CurrentServerIdStore}/channel/${channel.id}/`}
 				<a
 					class="mx-2 block cursor-pointer rounded px-2 py-1 text-left hover:bg-sidebar-accent {active
 						? 'bg-sidebar-accent'
 						: ''}"
-					href="/server/{$CurrentServerStore?.id}/channel/{channel.id}/"
+					href="/server/{$CurrentServerIdStore}/channel/{channel.id}/"
 					on:click={() => {
 						CurrentChannelIdStore.set(channel.id);
 					}}

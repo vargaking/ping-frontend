@@ -14,7 +14,7 @@ const db = new Dexie('PingDatabase') as Dexie & {
 db.version(1).stores({
 	servers: '++id, name, server_profile, server_settings',
 	channels: '++id, server_id, name, channel_settings',
-	messages: '++id, server_id, channel_id, user_id, content, timestamp',
+	messages: 'id, server_id, channel_id, user_id, content, timestamp',
 	users: '++id, username, public_key, profile'
 });
 

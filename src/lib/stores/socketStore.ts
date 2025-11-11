@@ -151,6 +151,9 @@ class SocketManager {
 		}
 
 		await db.messages.add(message);
+
+		// Save timestamp to localstorage for message sync
+		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
 	commSwitch(message: any) {

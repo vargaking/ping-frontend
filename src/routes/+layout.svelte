@@ -4,12 +4,7 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
 	import { getMe } from '$lib/requests/auth/me';
-	import {
-		CurrentServerStore,
-		UserInitedStore,
-		UserServersStore,
-		UserStore
-	} from '$lib/stores/userStore';
+	import { UserInitedStore, UserStore } from '$lib/stores/userStore';
 	import { base } from '$app/paths';
 	import { page } from '$app/stores';
 	import { getUserServers } from '$lib/requests/servers/getUserServers';

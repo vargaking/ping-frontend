@@ -10,6 +10,7 @@
 	import {
 		CurrentChannelIdStore,
 		CurrentChannelStore,
+		CurrentServerIdStore,
 		CurrentServerStore,
 		UserInitedStore,
 		UserServersStore,
@@ -17,60 +18,74 @@
 	} from '$lib/stores/userStore';
 	import type { MessageType } from '$lib/types/messages.types';
 	import { db } from '$lib/utils/db';
-	import { onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 
 	let messageText: string = '';
 
-	onMount(() => {
-		const unsubscribers = [];
-		console.log('Mounting channel page');
+	$: slug = $page.params.slug;
 
-		const { slug } = $page.params;
+	const loadMessages = async (channelId: number, serverId: number) => {
+		if (!$page.params.slug) return;
 
-		if (!slug) return;
+		MessageStore.set([]);
 
+		await db.messages
+			.where({
+				server_id: serverId,
+				channel_id: channelId
+			})
+			.sortBy('timestamp')
+
+			.then((messages: MessageType[]) => {
+				MessageStore.set(messages);
+				// Scroll after messages are loaded
+				tick().then(() => {
+					setTimeout(scrollToBottom, 100);
+				});
+			});
+	};
+
+	const unsubscribers = [
+		CurrentServerIdStore.subscribe((serverId) => {
+			if (!serverId) return;
+
+			getUserChannels(serverId).then((channels) => {
+				UserChannelsStore.set(channels);
+
+				console.log('Fetched user channels:', channels, $CurrentChannelIdStore);
+
+				const currentChannel = channels.find((channel) => channel.id === parseInt(slug));
+
+				if (!currentChannel) {
+					console.error('Current channel not found');
+					return;
+				}
+
+				CurrentChannelStore.set(currentChannel);
+
+				loadMessages(currentChannel.id, serverId);
+			});
+		}),
+
+		CurrentChannelIdStore.subscribe((channelId) => {
+			const server = $CurrentServerStore;
+
+			if (server && channelId) {
+				loadMessages(channelId, server.id);
+			}
+		})
+	];
+
+	$: if (slug) {
 		CurrentChannelIdStore.set(parseInt(slug));
 
-		unsubscribers.push(
-			UserInitedStore.subscribe((inited) => {
-				if (inited) {
-					// preload user data
-					// Fetch user servers
-					unsubscribers.push(
-						CurrentServerStore.subscribe((server) => {
-							if (!server) return;
+		if ($CurrentServerIdStore) {
+			loadMessages(parseInt(slug), $CurrentServerIdStore);
+		}
+	}
 
-							getUserChannels(server.id).then((channels) => {
-								UserChannelsStore.set(channels);
-
-								console.log('Fetched user channels:', channels, $CurrentChannelIdStore);
-
-								const currentChannel = channels.find((channel) => channel.id === parseInt(slug));
-
-								if (!currentChannel) {
-									console.error('Current channel not found');
-									return;
-								}
-
-								CurrentChannelStore.set(currentChannel);
-
-								loadMessages(currentChannel.id, server.id);
-							});
-						})
-					);
-				}
-			}),
-			CurrentChannelIdStore.subscribe((channelId) => {
-				const server = $CurrentServerStore;
-
-				if (server && channelId) {
-					loadMessages(channelId, server.id);
-				}
-			})
-		);
-		return () => {
-			unsubscribers.forEach((unsub) => unsub());
-		};
+	onDestroy(() => {
+		unsubscribers.forEach((unsub) => unsub());
 	});
 
 	let messageWrapper: HTMLDivElement;
@@ -81,24 +96,6 @@
 				top: messageWrapper.scrollHeight
 			});
 		}
-	};
-
-	const loadMessages = async (channelId: number, serverId: number) => {
-		if (!$page.params.slug) return;
-
-		await db.messages
-			.where({
-				server_id: serverId,
-				channel_id: channelId
-			})
-			.toArray()
-			.then((messages: MessageType[]) => {
-				MessageStore.set(messages);
-				// Scroll after messages are loaded
-				tick().then(() => {
-					setTimeout(scrollToBottom, 100);
-				});
-			});
 	};
 
 	// Watch for new messages and scroll to bottom
