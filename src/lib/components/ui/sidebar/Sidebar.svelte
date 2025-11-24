@@ -16,21 +16,26 @@
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import { page } from '$app/stores';
 	import UserSVG from '$lib/components/icons/UserSVG.svelte';
+    import { voiceStore } from '$lib/stores/voiceStore';
+    import VoiceControls from '$lib/components/voice/VoiceControls.svelte';
+    import { Hash, Volume2 } from 'lucide-svelte';
 
 	let channelName: string = '';
+    let channelType: 'text' | 'voice' = 'text';
+
 </script>
 
 <div class="flex flex-col">
 	<div class="flex h-full flex-row">
 		<div class="flex h-full w-16 flex-col items-center gap-4 border-r border-border py-4">
-			<SidebarItem href="/direct" label="Direct Messages">
+			<SidebarItem href="/app/direct" label="Direct Messages">
 				<ChatSVG />
 			</SidebarItem>
 
 			<hr class="mx-2 w-2/3 rounded border border-border" />
 
 			{#each $UserServersStore as server}
-				<SidebarItem href={`/server/${server.id}/`} label={server.name}>
+				<SidebarItem href={`/app/server/${server.id}/`} label={server.name}>
 					{#if server.server_profile.iconUrl}
 						<img
 							src={server.server_profile.iconUrl}
@@ -45,7 +50,7 @@
 				</SidebarItem>
 			{/each}
 
-			<SidebarItem href="/add-server" label="Add Server">
+			<SidebarItem href="/app/add-server" label="Add Server">
 				<PlusSVG />
 			</SidebarItem>
 		</div>
@@ -62,11 +67,24 @@
 				<Dialog.Content>
 					<Dialog.Header><Dialog.Title>Create a New Channel</Dialog.Title></Dialog.Header>
 					<Input placeholder="Channel Name" class="my-4 w-full" bind:value={channelName} />
+                    
+                    <div class="flex gap-4 mb-4">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="channelType" value="text" bind:group={channelType} class="accent-primary" />
+                            <span>Text</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="channelType" value="voice" bind:group={channelType} class="accent-primary" />
+                            <span>Voice</span>
+                        </label>
+                    </div>
+
 					<Dialog.Footer>
 						<Button
 							onclick={() => {
 								if (!$CurrentServerIdStore) return;
-								createChannel($CurrentServerIdStore, channelName);
+								createChannel($CurrentServerIdStore, channelName, channelType);
+                                channelName = ''; // Reset
 							}}>Create</Button
 						>
 					</Dialog.Footer>
@@ -78,22 +96,36 @@
 
 			{#each $UserChannelsStore as channel}
 				{@const active =
-					$page.url.pathname === `/server/${$CurrentServerIdStore}/channel/${channel.id}/`}
-				<a
-					class="mx-2 block cursor-pointer rounded px-2 py-1 text-left hover:bg-sidebar-accent {active
-						? 'bg-sidebar-accent'
-						: ''}"
-					href="/server/{$CurrentServerIdStore}/channel/{channel.id}/"
-					on:click={() => {
-						CurrentChannelIdStore.set(channel.id);
-					}}
-				>
-					{channel.name}
-				</a>
+					$page.url.pathname === `/app/server/${$CurrentServerIdStore}/channel/${channel.id}/`}
+				<div class="flex items-center justify-between hover:bg-sidebar-accent rounded mx-2 px-2 py-1 group">
+                    {#if channel.type === 'voice'}
+                        <button
+                            class="flex-grow cursor-pointer text-left flex items-center gap-2 {active ? 'font-bold' : ''}"
+                            onclick={() => voiceStore.joinVoice(channel.id)}
+                        >
+                            <Volume2 size={16} class="text-muted-foreground" />
+                            {channel.name}
+                        </button>
+                    {:else}
+                        <a
+                            class="flex-grow cursor-pointer text-left flex items-center gap-2 {active ? 'font-bold' : ''}"
+                            href="/app/server/{$CurrentServerIdStore}/channel/{channel.id}/"
+                            onclick={() => {
+                                CurrentChannelIdStore.set(channel.id);
+                            }}
+                        >
+                            <Hash size={16} class="text-muted-foreground" />
+                            {channel.name}
+                        </a>
+                    {/if}
+                </div>
 			{/each}
 		</div>
 	</div>
-	<div class="flex h-fit items-center justify-start gap-2 p-2">
+    
+    <VoiceControls />
+
+	<div class="flex h-fit items-center justify-start gap-2 p-2 border-t border-border">
 		<div class="rounded-xl bg-accent p-2">
 			<UserSVG color="white" />
 		</div>

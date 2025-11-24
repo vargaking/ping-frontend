@@ -14,16 +14,25 @@ import { v4 as uuidv4 } from 'uuid';
 class SocketManager {
 	private socket: WebSocket | null = null;
 	private isConnecting: boolean = false;
+	public connected: boolean = false; // Added connected state
 
 	connect() {
-		if (this.socket) {
+		if (this.connected) { // Use the new connected state
 			return;
 		}
 
-		this.socket = new WebSocket(PUBLIC_WS_URL);
+		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const wsUrl = PUBLIC_WS_URL.startsWith('/') 
+            ? `${protocol}//${host}${PUBLIC_WS_URL}`
+            : PUBLIC_WS_URL;
+
+        const socket = new WebSocket(wsUrl);
+		this.socket = socket; // Assign the newly created socket
 
 		this.socket.onopen = () => {
 			console.log('WebSocket connection established');
+			this.connected = true; // Set connected to true
 			this.sendInit();
 
 			UserStore.subscribe(() => {
@@ -156,18 +165,39 @@ class SocketManager {
 		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
+	sendSignal(signal: any) {
+		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+		this.socket.send(JSON.stringify(signal));
+	}
+
 	commSwitch(message: any) {
 		if (!message || !message.type) {
 			console.warn('Invalid message format:', message);
 			return;
 		}
 
+		// Import dynamically to avoid circular dependency if possible, or assume it's fine.
+		// Actually circular dependency might be an issue if VoiceStore imports SocketStore.
+		// Let's use a loose coupling or just handle it here.
+		
 		switch (message.type) {
 			case 'message':
-				// Handle incoming message
 				this.handleIncomingMessage(message);
 				break;
-			// Add more cases as needed
+			case 'user_joined_voice':
+			case 'user_left_voice':
+			case 'voice_signal':
+			case 'voice_participants':
+			case 'producer_created':
+            case 'new_producer':
+				// We need to pass this to VoiceStore.
+				// Since we can't easily import VoiceStore here (circular), 
+				// we can dispatch a custom event or use a global handler.
+				// Or better, just import it. Circular deps in Svelte stores are sometimes tricky but often work if careful.
+				import('./voiceStore').then(({ voiceStore }) => {
+					voiceStore.handleSignal(message);
+				});
+				break;
 			default:
 				console.warn('Unknown message type:', message.type);
 		}

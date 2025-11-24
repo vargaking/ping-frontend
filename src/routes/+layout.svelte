@@ -24,7 +24,7 @@
 
 					// If on login page, redirect to home
 					if ($page.url.pathname === '/login') {
-						window.location.href = '/';
+						window.location.href = '/app';
 					}
 				}
 			})
@@ -33,7 +33,7 @@
 				UserStore.set(null);
 
 				// If not on login page, redirect to login
-				if ($page.url.pathname !== '/login/') {
+				if ($page.url.pathname !== '/login/' && $page.url.pathname !== '/') {
 					console.log('Redirecting to login page', $page.url.pathname);
 					window.location.href = '/login/';
 				}

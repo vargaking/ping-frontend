@@ -11,7 +11,7 @@
 	import { onMount } from 'svelte';
 
 	onMount(() => {
-		const serverId = parseInt($page.url.pathname.split('/')[2]);
+		const serverId = parseInt($page.url.pathname.split('/')[3]);
 
 		if (!serverId) return;
 

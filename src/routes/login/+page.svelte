@@ -14,7 +14,7 @@
 			.then((data) => {
 				console.log('Login successful:', data);
 				// Redirect to home page or perform other actions
-				window.location.href = '/';
+				window.location.href = '/app';
 			})
 			.catch((error) => {
 				console.error('Login failed:', error);
