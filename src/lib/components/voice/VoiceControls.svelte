@@ -2,6 +2,7 @@
     import { voiceStore } from '$lib/stores/voiceStore';
     import Button from '$lib/components/ui/button/button.svelte';
     import { PhoneOff } from 'lucide-svelte';
+    import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 
     const disconnect = () => {
         voiceStore.leaveVoice();
@@ -24,13 +25,13 @@
         <div class="flex flex-col gap-1 max-h-40 overflow-y-auto">
             {#each Array.from($voiceStore.peers.values()) as peer}
                 <div class="flex items-center gap-2 p-1 rounded hover:bg-sidebar-accent/50 {peer.isSpeaking ? 'border-l-2 border-green-500 bg-green-500/10' : ''}">
-                    {#if peer.profile?.avatarUrl}
-                        <img src={peer.profile.avatarUrl} alt={peer.username} class="h-6 w-6 rounded-full" />
-                    {:else}
-                        <div class="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold">
-                            {peer.username[0].toUpperCase()}
-                        </div>
-                    {/if}
+                <div class="h-6 w-6">
+                    <Avatar 
+                        src={peer.profile?.avatar} 
+                        size="sm" 
+                        className="w-6 h-6" 
+                    />
+                </div>
                     <span class="text-xs truncate {peer.isSpeaking ? 'font-bold text-green-500' : ''}">{peer.username}</span>
                 </div>
             {/each}

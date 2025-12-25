@@ -1,10 +1,10 @@
-import { get, writable } from 'svelte/store';
+import { get, writable, derived } from 'svelte/store';
 import type { User } from '$lib/types/auth.types';
 import type { Server } from '$lib/types/server.types';
 import type { Channel } from '$lib/types/channel.types';
 import { getUser } from '$lib/requests/users/getUser';
 import { db } from '$lib/utils/db';
-import { getUserChannels } from '$lib/requests/channels/getUserChannels';
+import { UserChannelsStore } from '$lib/stores/channelsStore';
 
 export const UserStore = writable<User | null>(null);
 
@@ -13,7 +13,9 @@ export const PeopleStore = writable<Record<number, User>>({});
 export const getOrFetchUser = async (user_id: number): Promise<User | null> => {
 	const user = await db.users.where('id').equals(user_id).first();
 
-	if (!user) {
+	// If user exists but has no avatar in profile, we might have stale data.
+    // Force a re-fetch in that case.
+	if (!user || !user.profile?.avatar) {
 		const fetchedUser = await getUser(user_id);
 
 		if (fetchedUser) {
@@ -22,7 +24,7 @@ export const getOrFetchUser = async (user_id: number): Promise<User | null> => {
 				return people;
 			});
 
-			await db.users.add(fetchedUser);
+			await db.users.put(fetchedUser);
 		}
 
 		return fetchedUser;
@@ -39,30 +41,22 @@ export const CurrentServerIdStore = writable<number | null>(null);
 
 export const CurrentChannelIdStore = writable<number | null>(null);
 
-export const CurrentServerStore = writable<Server | null>(null);
-
-export const CurrentChannelStore = writable<Channel | null>(null);
-
-CurrentServerIdStore.subscribe(async (serverId) => {
-	const user = get(UserStore);
-
-	if (user && serverId !== null) {
-		const servers = get(UserServersStore);
-		const server = servers.find((s) => s.id === serverId) || null;
-		CurrentServerStore.set(server);
-	} else {
-		CurrentServerStore.set(null);
+export const CurrentServerStore = derived(
+	[UserServersStore, CurrentServerIdStore],
+	([$UserServersStore, $CurrentServerIdStore]: [Server[], number | null]) => {
+		if ($CurrentServerIdStore && $UserServersStore) {
+			return $UserServersStore.find((s) => s.id === $CurrentServerIdStore) || null;
+		}
+		return null;
 	}
-});
+);
 
-CurrentChannelIdStore.subscribe(async (channelId) => {
-	const server = get(CurrentServerStore);
-
-	if (server && channelId !== null) {
-		const channels = await getUserChannels(server.id);
-		const channel = channels.find((c) => c.id === channelId) || null;
-		CurrentChannelStore.set(channel);
-	} else {
-		CurrentChannelStore.set(null);
+export const CurrentChannelStore = derived(
+	[UserChannelsStore, CurrentChannelIdStore],
+	([$UserChannelsStore, $CurrentChannelIdStore]: [Channel[], number | null]) => {
+		if ($CurrentChannelIdStore && $UserChannelsStore) {
+			return $UserChannelsStore.find((c) => c.id === $CurrentChannelIdStore) || null;
+		}
+		return null;
 	}
-});
+);

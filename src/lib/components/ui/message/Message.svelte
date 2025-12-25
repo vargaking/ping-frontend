@@ -1,5 +1,5 @@
 <script lang="ts">
-	import UserSVG from '$lib/components/icons/UserSVG.svelte';
+	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { getOrFetchUser } from '$lib/stores/userStore';
 	import type { MessageType } from '$lib/types/messages.types';
 	import { onMount } from 'svelte';
@@ -17,10 +17,10 @@
 
 <div class="w-full p-2">
 	<span class="mb-2 flex items-center gap-2">
-		<div class="h-fit w-fit rounded-xl bg-accent p-2">
-			<UserSVG color="white" />
-		</div>
-		{#await userData then user}
+		{#await userData}
+			<Avatar size="md" />
+		{:then user}
+			<Avatar {user} size="md" />
 			{#if user}
 				<span class="text-base font-bold">{user.username}</span>
 			{/if}

@@ -15,13 +15,17 @@
 	import Button from '../button/button.svelte';
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import { page } from '$app/stores';
-	import UserSVG from '$lib/components/icons/UserSVG.svelte';
+	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
     import { voiceStore } from '$lib/stores/voiceStore';
     import VoiceControls from '$lib/components/voice/VoiceControls.svelte';
     import { Hash, Volume2 } from 'lucide-svelte';
 
 	let channelName: string = '';
     let channelType: 'text' | 'voice' = 'text';
+
+    import { openOverlay } from '$lib/stores/overlayStore';
+    import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
+    import { Settings } from 'lucide-svelte';
 
 </script>
 
@@ -126,9 +130,17 @@
     <VoiceControls />
 
 	<div class="flex h-fit items-center justify-start gap-2 p-2 border-t border-border">
-		<div class="rounded-xl bg-accent p-2">
-			<UserSVG color="white" />
+		<div class="rounded-xl">
+            <!-- {console.log('Sidebar UserStore:', $UserStore)} -->
+			<Avatar user={$UserStore} size="md" />
 		</div>
 		<span>{$UserStore?.username}</span>
+        <button 
+            class="ml-auto p-2 hover:bg-sidebar-accent rounded-full transition-colors"
+            onclick={() => openOverlay(SettingsModal as any)}
+            title="User Settings"
+        >
+            <Settings size={18} />
+        </button>
 	</div>
 </div>

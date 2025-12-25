@@ -2,30 +2,22 @@
 	import { page } from '$app/stores';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Message from '$lib/components/ui/message/Message.svelte';
-	import { getUserChannels } from '$lib/requests/channels/getUserChannels';
-	import { getUserServers } from '$lib/requests/servers/getUserServers';
-	import { UserChannelsStore } from '$lib/stores/channelsStore';
 	import { MessageStore } from '$lib/stores/messageStore';
 	import { SocketStore } from '$lib/stores/socketStore';
 	import {
 		CurrentChannelIdStore,
-		CurrentChannelStore,
-		CurrentServerIdStore,
-		CurrentServerStore,
-		UserInitedStore,
-		UserServersStore,
-		UserStore
+		CurrentServerIdStore
 	} from '$lib/stores/userStore';
 	import type { MessageType } from '$lib/types/messages.types';
 	import { db } from '$lib/utils/db';
-	import { onDestroy, onMount, tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	let messageText: string = '';
 
-	$: slug = $page.params.slug;
+	$: channelId = $page.params.channelId;
 
 	const loadMessages = async (channelId: number, serverId: number) => {
-		if (!$page.params.slug) return;
+		if (!channelId) return;
 
 		MessageStore.set([]);
 
@@ -45,48 +37,13 @@
 			});
 	};
 
-	const unsubscribers = [
-		CurrentServerIdStore.subscribe((serverId) => {
-			if (!serverId) return;
-
-			getUserChannels(serverId).then((channels) => {
-				UserChannelsStore.set(channels);
-
-				console.log('Fetched user channels:', channels, $CurrentChannelIdStore);
-
-				const currentChannel = channels.find((channel) => channel.id === parseInt(slug));
-
-				if (!currentChannel) {
-					console.error('Current channel not found');
-					return;
-				}
-
-				CurrentChannelStore.set(currentChannel);
-
-				loadMessages(currentChannel.id, serverId);
-			});
-		}),
-
-		CurrentChannelIdStore.subscribe((channelId) => {
-			const server = $CurrentServerStore;
-
-			if (server && channelId) {
-				loadMessages(channelId, server.id);
-			}
-		})
-	];
-
-	$: if (slug) {
-		CurrentChannelIdStore.set(parseInt(slug));
+	$: if (channelId) {
+		CurrentChannelIdStore.set(parseInt(channelId));
 
 		if ($CurrentServerIdStore) {
-			loadMessages(parseInt(slug), $CurrentServerIdStore);
+			loadMessages(parseInt(channelId), $CurrentServerIdStore);
 		}
 	}
-
-	onDestroy(() => {
-		unsubscribers.forEach((unsub) => unsub());
-	});
 
 	let messageWrapper: HTMLDivElement;
 

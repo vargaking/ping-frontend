@@ -6,7 +6,8 @@ import {
 	CurrentChannelStore,
 	CurrentServerIdStore,
 	CurrentServerStore,
-	UserStore
+	UserStore,
+    PeopleStore
 } from './userStore';
 import { db } from '$lib/utils/db';
 import { v4 as uuidv4 } from 'uuid';
@@ -165,6 +166,25 @@ class SocketManager {
 		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
+    async handleUserUpdate(user: any) {
+		console.log('Received user update:', user);
+        
+        // Update PeopleStore
+        PeopleStore.update(people => {
+            people[user.id] = user;
+            return people;
+        });
+
+        // Update UserStore if it's me
+        const currentUser = get(UserStore);
+        if (currentUser && currentUser.id === user.id) {
+            UserStore.set(user);
+        }
+
+        // Update IndexedDB
+        await db.users.put(user);
+	}
+
 	sendSignal(signal: any) {
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
 		this.socket.send(JSON.stringify(signal));
@@ -184,6 +204,9 @@ class SocketManager {
 			case 'message':
 				this.handleIncomingMessage(message);
 				break;
+            case 'user_updated':
+                this.handleUserUpdate(message.user);
+                break;
 			case 'user_joined_voice':
 			case 'user_left_voice':
 			case 'voice_signal':
