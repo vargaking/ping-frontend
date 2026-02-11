@@ -2,16 +2,24 @@ import { getUser } from '$lib/requests/users/getUser';
 import type { User } from '$lib/types/auth.types';
 import { db } from '$lib/utils/db';
 
-export class UsersState {
+class UsersState {
 	users: Record<number, User> = $state({});
 	loggedInUser: User | null = $state(null);
 
-	async fetchAndStoreUser(userId: number): Promise<User | null> {
+	setLoggedInUser(user: User | null) {
+		this.loggedInUser = user;
+		if (user) {
+			this.users[user.id] = user;
+			//db.users.put(user);
+		}
+	}
+
+	async fetchUser(userId: number): Promise<User | null> {
 		const fetchedUser = await getUser(userId);
 
 		if (fetchedUser) {
 			this.users[userId] = fetchedUser;
-			await db.users.put(fetchedUser);
+			//await db.users.put(fetchedUser);
 		}
 
 		return fetchedUser;
@@ -32,7 +40,9 @@ export class UsersState {
 		}
 
 		// Otherwise, fetch from API
-		const fetchedUser = await this.fetchAndStoreUser(userId);
+		const fetchedUser = await this.fetchUser(userId);
 		return fetchedUser;
 	}
 }
+
+export const usersState = new UsersState();

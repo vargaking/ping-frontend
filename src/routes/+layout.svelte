@@ -3,35 +3,32 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
-	import { base } from '$app/paths';
-	import { page } from '$app/stores';
-	import deepCopy from '$lib/utils/deepCopy';
-	import { PUBLIC_WS_URL } from '$env/static/public';
+	import { page } from '$app/state';
 	import { initializeAppData } from '$lib/utils/initializeAppData';
+	import { usersState } from '$lib/states/usersState.svelte';
 
 	let { children } = $props();
 
 	onMount(() => {
 		initializeAppData()
-			.then((user) => {
-				if (user) {
-					// If on login page, redirect to home
-					if ($page.url.pathname === '/login') {
+			.then(() => {
+				// If on login page, redirect to home
+				if (usersState.loggedInUser) {
+					if (page.url.pathname === '/login/' || page.url.pathname === '/') {
+						console.log('Redirecting to home page', page.url.pathname);
 						window.location.href = '/app';
 					}
 				} else {
-					// If not on login page, redirect to login
-					if ($page.url.pathname !== '/login/' && $page.url.pathname !== '/') {
-						console.log('Redirecting to login page', $page.url.pathname);
+					if (page.url.pathname !== '/login/' && page.url.pathname !== '/') {
+						console.log('Redirecting to login page', page.url.pathname);
 						window.location.href = '/login/';
 					}
 				}
 			})
-			.catch((error) => {
-				console.error('Error initializing app:', error);
+			.catch(() => {
 				// If not on login page, redirect to login
-				if ($page.url.pathname !== '/login/' && $page.url.pathname !== '/') {
-					console.log('Redirecting to login page', $page.url.pathname);
+				if (page.url.pathname !== '/login/' && page.url.pathname !== '/') {
+					console.log('Redirecting to login page', page.url.pathname);
 					window.location.href = '/login/';
 				}
 			});

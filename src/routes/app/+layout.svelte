@@ -1,14 +1,6 @@
 <script lang="ts">
-	import { PUBLIC_WS_URL } from '$env/static/public';
 	import Sidebar from '$lib/components/ui/sidebar/Sidebar.svelte';
-	import { SocketStore } from '$lib/stores/socketStore';
-	import {
-		CurrentChannelStore,
-		CurrentServerStore,
-		UserServersStore,
-		UserStore
-	} from '$lib/stores/userStore';
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount } from 'svelte';
 
 	import Overlay from '$lib/components/ui/Overlay.svelte';
 
@@ -17,15 +9,15 @@
 	onMount(() => {
 		return () => {
 			// cleanup on destroy
-			//$SocketStore.disconnect();
+			//socketState.disconnect();
 		};
 	});
 </script>
 
-<div class="flex">
+<div class="flex h-screen w-screen">
 	<Sidebar />
 
-	<div class="h-screen w-full">
+	<div class="h-full w-full">
 		{@render children()}
 	</div>
 </div>

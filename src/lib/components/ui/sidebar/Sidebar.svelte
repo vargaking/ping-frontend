@@ -16,17 +16,18 @@
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import { page } from '$app/stores';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
-    import { voiceStore } from '$lib/stores/voiceStore';
-    import VoiceControls from '$lib/components/voice/VoiceControls.svelte';
-    import { Hash, Volume2 } from 'lucide-svelte';
+	import { voiceStore } from '$lib/stores/voiceStore';
+	import VoiceControls from '$lib/components/voice/VoiceControls.svelte';
+	import { Hash, Volume2 } from 'lucide-svelte';
 
 	let channelName: string = '';
-    let channelType: 'text' | 'voice' = 'text';
+	let channelType: 'text' | 'voice' = 'text';
 
-    import { openOverlay } from '$lib/stores/overlayStore';
-    import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-    import { Settings } from 'lucide-svelte';
-
+	import { openOverlay } from '$lib/stores/overlayStore';
+	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
+	import { Settings } from 'lucide-svelte';
+	import { serversState } from '$lib/states/serversState.svelte';
+	import { onMount } from 'svelte';
 </script>
 
 <div class="flex flex-col">
@@ -38,7 +39,7 @@
 
 			<hr class="mx-2 w-2/3 rounded border border-border" />
 
-			{#each $UserServersStore as server}
+			{#each serversState.serversList as server}
 				<SidebarItem href={`/app/server/${server.id}/`} label={server.name}>
 					{#if server.server_profile.iconUrl}
 						<img
@@ -58,89 +59,113 @@
 				<PlusSVG />
 			</SidebarItem>
 		</div>
-		<div class="flex h-full w-64 flex-col gap-0.5 border-r border-border bg-sidebar">
-			<span class="block p-4 font-bold">{$CurrentServerStore?.name}</span>
-			<Dialog.Root>
-				<Dialog.Trigger class="w-full">
-					<span
-						class="mx-2 block cursor-pointer rounded px-2 py-1 text-left hover:bg-sidebar-accent"
-					>
-						Create Channel
-					</span>
-				</Dialog.Trigger>
-				<Dialog.Content>
-					<Dialog.Header><Dialog.Title>Create a New Channel</Dialog.Title></Dialog.Header>
-					<Input placeholder="Channel Name" class="my-4 w-full" bind:value={channelName} />
-                    
-                    <div class="flex gap-4 mb-4">
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="channelType" value="text" bind:group={channelType} class="accent-primary" />
-                            <span>Text</span>
-                        </label>
-                        <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="channelType" value="voice" bind:group={channelType} class="accent-primary" />
-                            <span>Voice</span>
-                        </label>
-                    </div>
-
-					<Dialog.Footer>
-						<Button
-							onclick={() => {
-								if (!$CurrentServerIdStore) return;
-								createChannel($CurrentServerIdStore, channelName, channelType);
-                                channelName = ''; // Reset
-							}}>Create</Button
+		{#if serversState.selectedServer}
+			<div class="flex h-full w-64 flex-col gap-0.5 border-r border-border bg-sidebar">
+				<span class="block p-4 font-bold">{serversState.selectedServer?.name}</span>
+				<Dialog.Root>
+					<Dialog.Trigger class="w-full">
+						<span
+							class="mx-2 block cursor-pointer rounded px-2 py-1 text-left hover:bg-sidebar-accent"
 						>
-					</Dialog.Footer>
-					<Dialog.Footer />
-				</Dialog.Content>
-			</Dialog.Root>
+							Create Channel
+						</span>
+					</Dialog.Trigger>
+					<Dialog.Content>
+						<Dialog.Header><Dialog.Title>Create a New Channel</Dialog.Title></Dialog.Header>
+						<Input placeholder="Channel Name" class="my-4 w-full" bind:value={channelName} />
 
-			<span class="block p-2 font-bold">Channels</span>
+						<div class="mb-4 flex gap-4">
+							<label class="flex cursor-pointer items-center gap-2">
+								<input
+									type="radio"
+									name="channelType"
+									value="text"
+									bind:group={channelType}
+									class="accent-primary"
+								/>
+								<span>Text</span>
+							</label>
+							<label class="flex cursor-pointer items-center gap-2">
+								<input
+									type="radio"
+									name="channelType"
+									value="voice"
+									bind:group={channelType}
+									class="accent-primary"
+								/>
+								<span>Voice</span>
+							</label>
+						</div>
 
-			{#each $UserChannelsStore as channel}
-				{@const active =
-					$page.url.pathname === `/app/server/${$CurrentServerIdStore}/channel/${channel.id}/`}
-				<div class="flex items-center justify-between hover:bg-sidebar-accent rounded mx-2 px-2 py-1 group">
-                    {#if channel.type === 'voice'}
-                        <button
-                            class="flex-grow cursor-pointer text-left flex items-center gap-2 {active ? 'font-bold' : ''}"
-                            onclick={() => voiceStore.joinVoice(channel.id)}
-                        >
-                            <Volume2 size={16} class="text-muted-foreground" />
-                            {channel.name}
-                        </button>
-                    {:else}
-                        <a
-                            class="flex-grow cursor-pointer text-left flex items-center gap-2 {active ? 'font-bold' : ''}"
-                            href="/app/server/{$CurrentServerIdStore}/channel/{channel.id}/"
-                            onclick={() => {
-                                CurrentChannelIdStore.set(channel.id);
-                            }}
-                        >
-                            <Hash size={16} class="text-muted-foreground" />
-                            {channel.name}
-                        </a>
-                    {/if}
-                </div>
-			{/each}
-		</div>
+						<!-- TODO: rework this shit -->
+						<Dialog.Footer>
+							<Dialog.Close>
+								<Button
+									onclick={async () => {
+										if (!serversState.selectedServer) return;
+										await createChannel(serversState.selectedServer.id, channelName, channelType);
+										await serversState.fetchServerChannels(serversState.selectedServer.id);
+										channelName = ''; // Reset
+									}}>Create</Button
+								></Dialog.Close
+							>
+						</Dialog.Footer>
+						<Dialog.Footer />
+					</Dialog.Content>
+				</Dialog.Root>
+
+				<span class="block p-2 font-bold">Channels</span>
+
+				{#each serversState.selectedServerChannelsList as channel}
+					{@const url = `/app/server/${serversState.selectedServer?.id}/channel/${channel.id}/`}
+					{@const active = $page.url.pathname === url}
+					<div
+						class="group mx-2 flex items-center justify-between rounded px-2 py-1 hover:bg-sidebar-accent"
+					>
+						{#if channel.type === 'voice'}
+							<button
+								class="flex grow cursor-pointer items-center gap-2 text-left {active
+									? 'font-bold'
+									: ''}"
+								onclick={() => voiceStore.joinVoice(channel.id)}
+							>
+								<Volume2 size={16} class="text-muted-foreground" />
+								{channel.name}
+							</button>
+						{:else}
+							<a
+								class="flex grow cursor-pointer items-center gap-2 text-left {active
+									? 'font-bold'
+									: ''}"
+								href={url}
+								onclick={() => {
+									serversState.setSelectedChannel(channel);
+								}}
+							>
+								<Hash size={16} class="text-muted-foreground" />
+								{channel.name}
+							</a>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
 	</div>
-    
-    <VoiceControls />
 
-	<div class="flex h-fit items-center justify-start gap-2 p-2 border-t border-border">
+	<VoiceControls />
+
+	<div class="flex h-fit items-center justify-start gap-2 border-t border-border p-2">
 		<div class="rounded-xl">
-            <!-- {console.log('Sidebar UserStore:', $UserStore)} -->
+			<!-- {console.log('Sidebar UserStore:', $UserStore)} -->
 			<Avatar user={$UserStore} size="md" />
 		</div>
 		<span>{$UserStore?.username}</span>
-        <button 
-            class="ml-auto p-2 hover:bg-sidebar-accent rounded-full transition-colors"
-            onclick={() => openOverlay(SettingsModal as any)}
-            title="User Settings"
-        >
-            <Settings size={18} />
-        </button>
+		<button
+			class="ml-auto rounded-full p-2 transition-colors hover:bg-sidebar-accent"
+			onclick={() => openOverlay(SettingsModal as any)}
+			title="User Settings"
+		>
+			<Settings size={18} />
+		</button>
 	</div>
 </div>

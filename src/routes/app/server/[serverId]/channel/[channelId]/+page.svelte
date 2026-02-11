@@ -1,49 +1,14 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Message from '$lib/components/ui/message/Message.svelte';
-	import { MessageStore } from '$lib/stores/messageStore';
-	import { SocketStore } from '$lib/stores/socketStore';
-	import {
-		CurrentChannelIdStore,
-		CurrentServerIdStore
-	} from '$lib/stores/userStore';
-	import type { MessageType } from '$lib/types/messages.types';
+	import { messagesState } from '$lib/states/messagesState.svelte';
+	import { serversState } from '$lib/states/serversState.svelte';
+	import { socketState } from '$lib/states/socketState.svelte';
 	import { db } from '$lib/utils/db';
-	import { onMount, tick } from 'svelte';
+	import { tick } from 'svelte';
 
-	let messageText: string = '';
-
-	$: channelId = $page.params.channelId;
-
-	const loadMessages = async (channelId: number, serverId: number) => {
-		if (!channelId) return;
-
-		MessageStore.set([]);
-
-		await db.messages
-			.where({
-				server_id: serverId,
-				channel_id: channelId
-			})
-			.sortBy('timestamp')
-
-			.then((messages: MessageType[]) => {
-				MessageStore.set(messages);
-				// Scroll after messages are loaded
-				tick().then(() => {
-					setTimeout(scrollToBottom, 100);
-				});
-			});
-	};
-
-	$: if (channelId) {
-		CurrentChannelIdStore.set(parseInt(channelId));
-
-		if ($CurrentServerIdStore) {
-			loadMessages(parseInt(channelId), $CurrentServerIdStore);
-		}
-	}
+	let messageText: string = $state('');
 
 	let messageWrapper: HTMLDivElement;
 
@@ -55,18 +20,43 @@
 		}
 	};
 
+	$effect(() => {
+		if (!page.params.channelId) return;
+		const channelId = parseInt(page.params.channelId);
+		serversState.setSelectedChannelById(channelId);
+
+		messagesState.clear();
+
+		db.messages
+			.where({
+				server_id: serversState.selectedServer?.id,
+				channel_id: channelId
+			})
+			.sortBy('timestamp')
+			.then((messages) => {
+				messagesState.set(messages);
+
+				// Scroll after messages are loaded
+				tick().then(() => {
+					setTimeout(scrollToBottom, 100);
+				});
+			});
+	});
+
 	// Watch for new messages and scroll to bottom
-	$: if ($MessageStore.length > 0) {
-		tick().then(() => {
-			// Add a small delay to ensure DOM and async content is rendered
-			scrollToBottom();
-		});
-	}
+	$effect(() => {
+		if (messagesState.messages.length > 0) {
+			tick().then(() => {
+				// Add a small delay to ensure DOM and async content is rendered
+				scrollToBottom();
+			});
+		}
+	});
 </script>
 
 <div class="flex h-screen w-full flex-col justify-end p-2">
 	<div bind:this={messageWrapper} class="w-full flex-1 overflow-auto">
-		{#each $MessageStore as message}
+		{#each messagesState.messages as message}
 			<Message {...message} />
 		{/each}
 	</div>
@@ -74,7 +64,7 @@
 		onkeydown={(e) => {
 			if (e.key === 'Enter') {
 				// Handle sending message
-				$SocketStore.sendMessage(messageText);
+				socketState.sendMessage(messageText);
 				messageText = '';
 			}
 		}}

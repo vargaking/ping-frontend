@@ -1,26 +1,18 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { getUserChannels } from '$lib/requests/channels/getUserChannels';
-	import { UserChannelsStore } from '$lib/stores/channelsStore';
-	import {
-		CurrentChannelStore,
-		CurrentServerIdStore,
-		CurrentServerStore,
-		UserServersStore
-	} from '$lib/stores/userStore';
-	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { serversState } from '$lib/states/serversState.svelte';
 
-	onMount(() => {
-		const serverId = parseInt($page.url.pathname.split('/')[3]);
+	$effect(() => {
+		if (page.params.serverId) {
+			const serverId = parseInt(page.params.serverId);
 
-		if (!serverId) return;
-
-		CurrentServerIdStore.set(serverId);
-
-		getUserChannels(serverId).then((channels) => {
-			UserChannelsStore.set(channels);
-		});
+			// This re-runs when serversState.servers changes (e.g. after fetchUserServers resolves)
+			serversState.setSelectedServerById(serverId);
+			serversState.fetchServerChannels(serverId);
+		}
 	});
+
+	let { children } = $props();
 </script>
 
-<slot />
+{@render children()}

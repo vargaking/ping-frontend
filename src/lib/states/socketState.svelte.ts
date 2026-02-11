@@ -1,20 +1,18 @@
 import { PUBLIC_WS_URL } from '$env/static/public';
-import { get, writable } from 'svelte/store';
-import { MessageStore } from './messageStore';
-import { CurrentChannelIdStore, CurrentServerIdStore, UserStore, PeopleStore } from './userStore';
+import { usersState } from './usersState.svelte';
+import { serversState } from './serversState.svelte';
+import { messagesState } from './messagesState.svelte';
 import { db } from '$lib/utils/db';
 import { v4 as uuidv4 } from 'uuid';
+import type { MessageType } from '$lib/types/messages.types';
+import type { User } from '$lib/types/auth.types';
 
-class SocketManager {
+class SocketState {
 	private socket: WebSocket | null = null;
-	private isConnecting: boolean = false;
-	public connected: boolean = false; // Added connected state
+	connected: boolean = $state(false);
 
 	connect() {
-		if (this.connected) {
-			// Use the new connected state
-			return;
-		}
+		if (this.connected) return;
 
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const host = window.location.host;
@@ -23,20 +21,17 @@ class SocketManager {
 			: PUBLIC_WS_URL;
 
 		const socket = new WebSocket(wsUrl);
-		this.socket = socket; // Assign the newly created socket
+		this.socket = socket;
 
 		this.socket.onopen = () => {
 			console.log('WebSocket connection established');
-			this.connected = true; // Set connected to true
+			this.connected = true;
 			this.sendInit();
-
-			UserStore.subscribe(() => {
-				this.sendInit();
-			});
 		};
 
 		this.socket.onclose = () => {
 			console.log('WebSocket connection closed');
+			this.connected = false;
 
 			setTimeout(() => {
 				this.socket = null;
@@ -46,7 +41,6 @@ class SocketManager {
 
 		this.socket.onmessage = (event) => {
 			const data = JSON.parse(event.data);
-
 			this.commSwitch(data);
 		};
 
@@ -59,6 +53,7 @@ class SocketManager {
 		if (this.socket) {
 			this.socket.close();
 			this.socket = null;
+			this.connected = false;
 
 			setTimeout(() => {
 				this.connect();
@@ -67,9 +62,9 @@ class SocketManager {
 	}
 
 	sendInit() {
-		const user = get(UserStore);
+		const user = usersState.loggedInUser;
 
-		console.debug('SocketManager sendInit called with user:', user);
+		console.debug('SocketState sendInit called with user:', user);
 
 		if (!user || !user.id) return;
 
@@ -85,9 +80,9 @@ class SocketManager {
 			return;
 		}
 
-		const user = get(UserStore);
-		const server = get(CurrentServerIdStore);
-		const channel = get(CurrentChannelIdStore);
+		const user = usersState.loggedInUser;
+		const server = serversState.selectedServer;
+		const channel = serversState.selectedChannel;
 
 		if (!user || !server || !channel) {
 			console.warn('Cannot send message. Missing user, server, or channel information.');
@@ -113,45 +108,39 @@ class SocketManager {
 			JSON.stringify({
 				type: 'message',
 				id: uuid,
-				server_id: server,
-				channel_id: channel,
+				server_id: server.id,
+				channel_id: channel.id,
 				user_id: user.id,
 				content: message,
 				timestamp: timestamp
 			})
 		);
 
-		MessageStore.update((messages) => {
-			messages.push({
-				id: uuid,
-				server_id: server,
-				channel_id: channel,
-				user_id: user.id,
-				content: message,
-				timestamp: timestamp
-			});
-			return messages;
+		messagesState.addMessage({
+			id: uuid,
+			server_id: server.id,
+			channel_id: channel.id,
+			user_id: user.id,
+			content: message,
+			timestamp: timestamp
 		});
 
 		await db.messages.add({
 			id: uuid,
-			server_id: server,
-			channel_id: channel,
+			server_id: server.id,
+			channel_id: channel.id,
 			user_id: user.id,
 			content: message,
 			timestamp: timestamp
 		});
 	}
 
-	async handleIncomingMessage(message: any) {
-		if (
-			message.server_id == get(CurrentServerIdStore) &&
-			message.channel_id == get(CurrentChannelIdStore)
-		) {
-			MessageStore.update((messages) => {
-				messages.push(message);
-				return messages;
-			});
+	async handleIncomingMessage(message: MessageType) {
+		const selectedServer = serversState.selectedServer;
+		const selectedChannel = serversState.selectedChannel;
+
+		if (message.server_id == selectedServer?.id && message.channel_id == selectedChannel?.id) {
+			messagesState.addMessage(message);
 		}
 
 		await db.messages.add(message);
@@ -160,23 +149,20 @@ class SocketManager {
 		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
-	async handleUserUpdate(user: any) {
+	async handleUserUpdate(user: User) {
 		console.log('Received user update:', user);
 
-		// Update PeopleStore
-		PeopleStore.update((people) => {
-			people[user.id] = user;
-			return people;
-		});
+		// Update users state
+		usersState.users[user.id] = user;
 
-		// Update UserStore if it's me
-		const currentUser = get(UserStore);
+		// Update loggedInUser if it's me
+		const currentUser = usersState.loggedInUser;
 		if (currentUser && currentUser.id === user.id) {
-			UserStore.set(user);
+			usersState.setLoggedInUser(user);
 		}
 
 		// Update IndexedDB
-		await db.users.put(user);
+		//await db.users.put(user);
 	}
 
 	sendSignal(signal: any) {
@@ -189,10 +175,6 @@ class SocketManager {
 			console.warn('Invalid message format:', message);
 			return;
 		}
-
-		// Import dynamically to avoid circular dependency if possible, or assume it's fine.
-		// Actually circular dependency might be an issue if VoiceStore imports SocketStore.
-		// Let's use a loose coupling or just handle it here.
 
 		switch (message.type) {
 			case 'message':
@@ -207,11 +189,7 @@ class SocketManager {
 			case 'voice_participants':
 			case 'producer_created':
 			case 'new_producer':
-				// We need to pass this to VoiceStore.
-				// Since we can't easily import VoiceStore here (circular),
-				// we can dispatch a custom event or use a global handler.
-				// Or better, just import it. Circular deps in Svelte stores are sometimes tricky but often work if careful.
-				import('./voiceStore').then(({ voiceStore }) => {
+				import('$lib/stores/voiceStore').then(({ voiceStore }) => {
 					voiceStore.handleSignal(message);
 				});
 				break;
@@ -220,4 +198,5 @@ class SocketManager {
 		}
 	}
 }
-export const SocketStore = writable<SocketManager>(new SocketManager());
+
+export const socketState = new SocketState();

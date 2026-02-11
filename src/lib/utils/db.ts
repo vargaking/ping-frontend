@@ -4,6 +4,8 @@ import type { MessageType } from '$lib/types/messages.types';
 import type { Server } from '$lib/types/server.types';
 import Dexie, { type EntityTable } from 'dexie';
 
+// using only messages for now, syncing everything is
+// kinda hard and useless until we have more users
 const db = new Dexie('PingDatabase') as Dexie & {
 	servers: EntityTable<Server>;
 	channels: EntityTable<Channel>;
