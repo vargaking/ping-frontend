@@ -4,6 +4,7 @@ import { MessageStore } from './messageStore';
 import { CurrentChannelIdStore, CurrentServerIdStore, UserStore, PeopleStore } from './userStore';
 import { db } from '$lib/utils/db';
 import { v4 as uuidv4 } from 'uuid';
+import { usersState } from '$lib/states/usersState.svelte';
 
 class SocketManager {
 	private socket: WebSocket | null = null;
@@ -160,23 +161,11 @@ class SocketManager {
 		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
-	async handleUserUpdate(user: any) {
-		console.log('Received user update:', user);
+	async handleUserInvalidated(userId: number) {
+		console.log('Received user update:', userId);
 
-		// Update PeopleStore
-		PeopleStore.update((people) => {
-			people[user.id] = user;
-			return people;
-		});
-
-		// Update UserStore if it's me
-		const currentUser = get(UserStore);
-		if (currentUser && currentUser.id === user.id) {
-			UserStore.set(user);
-		}
-
-		// Update IndexedDB
-		await db.users.put(user);
+		// fetch updated user data from the server
+		usersState.fetchUser(userId);
 	}
 
 	sendSignal(signal: any) {
@@ -198,8 +187,8 @@ class SocketManager {
 			case 'message':
 				this.handleIncomingMessage(message);
 				break;
-			case 'user_updated':
-				this.handleUserUpdate(message.user);
+			case 'user_invalidated':
+				this.handleUserInvalidated(message.user_id);
 				break;
 			case 'user_joined_voice':
 			case 'user_left_voice':

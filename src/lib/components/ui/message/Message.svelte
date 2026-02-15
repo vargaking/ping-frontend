@@ -1,12 +1,15 @@
 <script lang="ts">
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
 	import { getOrFetchUser } from '$lib/stores/userStore';
 	import type { MessageType } from '$lib/types/messages.types';
 	import { onMount } from 'svelte';
 
 	let message: MessageType = $props();
 
-	let userData = $derived(getOrFetchUser(message.user_id));
+	// check if user data is already in the usersState,
+	// if not, run fetchUser
+	let userData = $derived(usersState.getOrFetchUser(message.user_id));
 
 	let localTime = $derived(new Date(message.timestamp).toLocaleString());
 

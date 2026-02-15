@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { OverlayStore } from '$lib/stores/overlayStore';
     import AccountSettings from './AccountSettings.svelte';
     import ServerSettings from './ServerSettings.svelte';
     import ChannelSettings from './ChannelSettings.svelte';

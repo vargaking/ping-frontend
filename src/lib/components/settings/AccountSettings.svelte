@@ -1,100 +1,135 @@
 <script lang="ts">
-    import { UserStore } from '$lib/stores/userStore';
-    import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
-    import { PUBLIC_BASE_URL } from '$env/static/public';
-    
-    let username = $UserStore?.username || '';
-    let avatarFile: File | null = null;
-    let avatarPreview: string | null = $UserStore?.profile?.avatar || null;
-    let isUploading = false;
+	import { usersState } from '$lib/states/usersState.svelte';
+	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
+	import { updateUser } from '$lib/requests/users/updateUser';
+	import { uploadAvatar } from '$lib/requests/users/uploadAvatar';
+	import { deleteUser } from '$lib/requests/users/deleteUser';
+	import { toast } from 'svelte-sonner';
 
-    async function handleSave() {
-        // TODO: Implement username update
-        if (avatarFile && $UserStore) {
-            isUploading = true;
-            const formData = new FormData();
-            formData.append('file', avatarFile);
+	let username = $state(usersState.loggedInUser?.username ?? '');
+	let avatarFile: File | null = $state(null);
+	let avatarPreview: string | null = $state(null);
+	let isSaving = $state(false);
+	let fileInput: HTMLInputElement;
 
-            try {
-                const res = await fetch(`${PUBLIC_BASE_URL}/users/${$UserStore.id}/avatar`, {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (res.ok) {
-                    const updatedUser = await res.json();
-                    UserStore.set(updatedUser);
-                    alert('Avatar updated!');
-                } else {
-                    alert('Failed to update avatar');
-                }
-            } catch (e) {
-                console.error(e);
-                alert('Error uploading avatar');
-            } finally {
-                isUploading = false;
-            }
-        }
-    }
+	const hasUsernameChanged = $derived(username !== (usersState.loggedInUser?.username ?? ''));
+	const hasChanges = $derived(hasUsernameChanged || avatarFile !== null);
 
-    function handleFileSelect(e: Event) {
-        const input = e.target as HTMLInputElement;
-        if (input.files && input.files[0]) {
-            avatarFile = input.files[0];
-            avatarPreview = URL.createObjectURL(avatarFile);
-        }
-    }
+	async function handleSave() {
+		const user = usersState.loggedInUser;
+		if (!user || !hasChanges) return;
+
+		isSaving = true;
+
+		try {
+			if (hasUsernameChanged) {
+				const updated = await updateUser({ ...user, username });
+				usersState.setLoggedInUser(updated);
+			}
+
+			if (avatarFile) {
+				const updated = await uploadAvatar(user.id, avatarFile);
+				usersState.setLoggedInUser(updated);
+				avatarFile = null;
+				avatarPreview = null;
+			}
+
+			toast.success('Profile updated successfully');
+		} catch (e: any) {
+			const message = e?.response?.data?.detail ?? 'Failed to save changes';
+			console.error('Save failed:', e);
+			toast.error(message);
+		} finally {
+			isSaving = false;
+		}
+	}
+
+	async function handleDeleteAccount() {
+		const user = usersState.loggedInUser;
+		if (!user) return;
+
+		if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
+
+		try {
+			await deleteUser(user.id);
+			usersState.setLoggedInUser(null);
+			window.location.href = '/login';
+		} catch (e: any) {
+			const message = e?.response?.data?.detail ?? 'Failed to delete account';
+			console.error('Delete failed:', e);
+			toast.error(message);
+		}
+	}
+
+	function handleFileSelect() {
+		const file = fileInput?.files?.[0];
+		if (file) {
+			avatarFile = file;
+			avatarPreview = URL.createObjectURL(file);
+		}
+	}
 </script>
 
 <div class="flex flex-col gap-6">
-    <h2 class="text-xl font-bold">My Account</h2>
+	<h2 class="text-xl font-bold">My Account</h2>
 
-    <!-- Avatar Section -->
-    <div class="flex items-center gap-4">
-        <div class="relative group">
-            <div class="rounded-full overflow-hidden">
-                <Avatar src={avatarPreview} user={$UserStore} size="xl" />
-            </div>
-            <label class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity rounded-full">
-                <span class="text-xs font-bold">CHANGE</span>
-                <input type="file" accept="image/*" class="hidden" on:change={handleFileSelect} />
-            </label>
-        </div>
-        <div>
-            <div class="font-medium text-lg">{username}</div>
-            <div class="text-sm text-gray-400">Click image to change avatar</div>
-        </div>
-    </div>
+	<!-- Avatar -->
+	<div class="flex items-center gap-4">
+		<div class="group relative">
+			<div class="overflow-hidden rounded-full">
+				<Avatar src={avatarPreview} user={usersState.loggedInUser} size="xl" />
+			</div>
+			<label
+				class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+			>
+				<span class="text-xs font-bold">CHANGE</span>
+				<input
+					type="file"
+					accept="image/*"
+					class="hidden"
+					bind:this={fileInput}
+					onchange={handleFileSelect}
+				/>
+			</label>
+		</div>
+		<div>
+			<div class="text-lg font-medium">{usersState.loggedInUser?.username ?? ''}</div>
+			<div class="text-sm text-gray-400">Click image to change avatar</div>
+		</div>
+	</div>
 
-    <!-- Form -->
-    <div class="flex flex-col gap-4 max-w-md">
-        <div class="flex flex-col gap-1">
-            <label class="text-xs font-bold text-gray-400 uppercase">
-                Username
-                <input 
-                    type="text" 
-                    bind:value={username}
-                    class="bg-[#1e1e1e] p-2 rounded border border-transparent focus:border-blue-500 outline-none text-white w-full mt-1"
-                />
-            </label>
-        </div>
+	<!-- Form -->
+	<div class="flex max-w-md flex-col gap-4">
+		<div class="flex flex-col gap-1">
+			<label class="text-xs font-bold text-gray-400 uppercase">
+				Username
+				<input
+					type="text"
+					bind:value={username}
+					class="mt-1 w-full rounded border border-transparent bg-[#1e1e1e] p-2 text-white outline-none focus:border-blue-500"
+				/>
+			</label>
+		</div>
 
-        <button 
-            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium transition-colors disabled:opacity-50"
-            on:click={handleSave}
-            disabled={isUploading}
-        >
-            {isUploading ? 'Saving...' : 'Save Changes'}
-        </button>
-    </div>
+		<button
+			class="rounded bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+			onclick={handleSave}
+			disabled={isSaving || !hasChanges}
+		>
+			{isSaving ? 'Saving...' : 'Save Changes'}
+		</button>
+	</div>
 
-    <hr class="border-gray-600 my-2" />
+	<hr class="my-2 border-gray-600" />
 
-    <!-- Danger Zone -->
-    <div>
-        <h3 class="text-red-400 font-bold mb-2">Danger Zone</h3>
-        <button class="border border-red-500 text-red-500 hover:bg-red-500/10 px-4 py-2 rounded text-sm font-medium transition-colors">
-            Delete Account
-        </button>
-    </div>
+	<!-- Danger Zone -->
+	<div>
+		<h3 class="mb-2 font-bold text-red-400">Danger Zone</h3>
+		<button
+			class="rounded border border-red-500 px-4 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
+			onclick={handleDeleteAccount}
+		>
+			Delete Account
+		</button>
+	</div>
 </div>

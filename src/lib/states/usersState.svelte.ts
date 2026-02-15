@@ -31,13 +31,13 @@ class UsersState {
 			return this.users[userId];
 		}
 
-		const user = await db.users.where('id').equals(userId).first();
+		/*const user = await db.users.where('id').equals(userId).first();
 
 		// If user exists in DB, return it
 		if (user) {
 			this.users[userId] = user;
 			return user;
-		}
+		}*/
 
 		// Otherwise, fetch from API
 		const fetchedUser = await this.fetchUser(userId);

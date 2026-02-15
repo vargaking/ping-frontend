@@ -17,8 +17,9 @@
 
 <div class={`relative rounded-full overflow-hidden bg-accent flex items-center justify-center ${sizeClasses[size]} ${className}`}>
 	{#if src || user?.profile?.avatar}
+		{@const imgSrc = src || user?.profile?.avatar}
 		<img
-			src={`${src || user?.profile?.avatar}?v=${new Date().getTime()}`}
+			src={imgSrc?.startsWith('blob:') ? imgSrc : `${imgSrc}?v=${new Date().getTime()}`}
 			alt={user?.username || 'User Avatar'}
 			class="w-full h-full object-cover"
 		/>

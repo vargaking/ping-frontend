@@ -23,11 +23,12 @@
 	let channelName: string = '';
 	let channelType: 'text' | 'voice' = 'text';
 
-	import { openOverlay } from '$lib/stores/overlayStore';
+	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import { Settings } from 'lucide-svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { onMount } from 'svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
 </script>
 
 <div class="flex flex-col">
@@ -157,12 +158,12 @@
 	<div class="flex h-fit items-center justify-start gap-2 border-t border-border p-2">
 		<div class="rounded-xl">
 			<!-- {console.log('Sidebar UserStore:', $UserStore)} -->
-			<Avatar user={$UserStore} size="md" />
+			<Avatar user={usersState.loggedInUser?.profile.avatar} size="md" />
 		</div>
-		<span>{$UserStore?.username}</span>
+		<span>{usersState.loggedInUser?.username}</span>
 		<button
 			class="ml-auto rounded-full p-2 transition-colors hover:bg-sidebar-accent"
-			onclick={() => openOverlay(SettingsModal as any)}
+			onclick={() => overlayState.open(SettingsModal)}
 			title="User Settings"
 		>
 			<Settings size={18} />
