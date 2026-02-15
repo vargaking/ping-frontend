@@ -18,20 +18,20 @@
 	});
 </script>
 
-<div class="w-full p-2">
-	<span class="mb-2 flex items-center gap-2">
-		{#await userData}
-			<Avatar size="md" />
-		{:then user}
-			<Avatar {user} size="md" />
-			{#if user}
-				<span class="text-base font-bold">{user.username}</span>
-			{/if}
-		{/await}
-		<span class="text-sm text-muted">{localTime}</span>
-	</span>
+{#await userData then user}
+	<div class="flex w-full items-start gap-4 p-2">
+		<Avatar {user} size="md" />
+		<span class="flex flex-col gap-1">
+			<span class="flex items-center gap-2">
+				{#if user}
+					<span class="text-base font-bold">{user.username}</span>
+				{/if}
+				<span class="text-sm text-muted">{localTime}</span>
+			</span>
 
-	<div class=" ml-14 max-w-full break-all">
-		{message.content}
+			<div class="max-w-full break-all">
+				{message.content}
+			</div>
+		</span>
 	</div>
-</div>
+{/await}
