@@ -158,7 +158,7 @@
 	<div class="flex h-fit items-center justify-start gap-2 border-t border-border p-2">
 		<div class="rounded-xl">
 			<!-- {console.log('Sidebar UserStore:', $UserStore)} -->
-			<Avatar user={usersState.loggedInUser?.profile.avatar} size="md" />
+			<Avatar user={usersState.loggedInUser} size="md" />
 		</div>
 		<span>{usersState.loggedInUser?.username}</span>
 		<button
