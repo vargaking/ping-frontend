@@ -19,7 +19,7 @@
 	{#if src || user?.profile?.avatar}
 		{@const imgSrc = src || user?.profile?.avatar}
 		<img
-			src={imgSrc?.startsWith('blob:') ? imgSrc : `${imgSrc}?v=${new Date().getTime()}`}
+			src={imgSrc}
 			alt={user?.username || 'User Avatar'}
 			class="w-full h-full object-cover"
 		/>
