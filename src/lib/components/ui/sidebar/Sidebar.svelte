@@ -29,6 +29,43 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { onMount } from 'svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+
+	let dragIndex: number | null = $state(null);
+	let hoverIndex: number | null = $state(null);
+
+	function handleDragStart(index: number) {
+		dragIndex = index;
+	}
+
+	function handleDragOver(e: DragEvent, index: number) {
+		e.preventDefault();
+		hoverIndex = index;
+	}
+
+	function handleDrop(e: DragEvent) {
+		e.preventDefault();
+		if (dragIndex == null || hoverIndex == null || dragIndex === hoverIndex) {
+			dragIndex = null;
+			hoverIndex = null;
+			return;
+		}
+
+		if (!serversState.selectedServer) return;
+
+		const channelIds = serversState.selectedServerChannelsList.map((c) => c.id);
+		const [moved] = channelIds.splice(dragIndex, 1);
+		channelIds.splice(hoverIndex, 0, moved);
+
+		serversState.reorderChannels(serversState.selectedServer.id, channelIds);
+
+		dragIndex = null;
+		hoverIndex = null;
+	}
+
+	function handleDragEnd() {
+		dragIndex = null;
+		hoverIndex = null;
+	}
 </script>
 
 <div class="flex flex-col">
@@ -117,38 +154,49 @@
 
 				<span class="block p-2 font-bold">Channels</span>
 
-				{#each serversState.selectedServerChannelsList as channel}
-					{@const url = `/app/server/${serversState.selectedServer?.id}/channel/${channel.id}/`}
-					{@const active = $page.url.pathname === url}
-					<div
-						class="group mx-2 flex items-center justify-between rounded px-2 py-1 hover:bg-sidebar-accent"
-					>
-						{#if channel.type === 'voice'}
-							<button
-								class="flex grow cursor-pointer items-center gap-2 text-left {active
-									? 'font-bold'
-									: ''}"
-								onclick={() => voiceStore.joinVoice(channel.id)}
-							>
-								<Volume2 size={16} class="text-muted-foreground" />
-								{channel.name}
-							</button>
-						{:else}
-							<a
-								class="flex grow cursor-pointer items-center gap-2 text-left {active
-									? 'font-bold'
-									: ''}"
-								href={url}
-								onclick={() => {
-									serversState.setSelectedChannel(channel);
-								}}
-							>
-								<Hash size={16} class="text-muted-foreground" />
-								{channel.name}
-							</a>
-						{/if}
-					</div>
-				{/each}
+				<!-- Channels -->
+				<section>
+					{#each serversState.selectedServerChannelsList as channel, i}
+						{@const url = `/app/server/${serversState.selectedServer?.id}/channel/${channel.id}/`}
+						{@const active = $page.url.pathname === url}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							draggable="true"
+							ondragstart={() => handleDragStart(i)}
+							ondragover={(e) => handleDragOver(e, i)}
+							ondrop={handleDrop}
+							ondragend={handleDragEnd}
+							class="group mx-2 flex items-center justify-between rounded px-2 py-1 hover:bg-sidebar-accent
+								{dragIndex === i ? 'opacity-50' : ''}
+								{hoverIndex === i && dragIndex !== i ? 'border-t-2 border-accent' : ''}"
+						>
+							{#if channel.type === 'voice'}
+								<button
+									class="flex grow cursor-pointer items-center gap-2 text-left {active
+										? 'font-bold'
+										: ''}"
+									onclick={() => voiceStore.joinVoice(channel.id)}
+								>
+									<Volume2 size={16} class="text-muted-foreground" />
+									{channel.name}
+								</button>
+							{:else}
+								<a
+									class="flex grow cursor-pointer items-center gap-2 text-left {active
+										? 'font-bold'
+										: ''}"
+									href={url}
+									onclick={() => {
+										serversState.setSelectedChannel(channel);
+									}}
+								>
+									<Hash size={16} class="text-muted-foreground" />
+									{channel.name}
+								</a>
+							{/if}
+						</div>
+					{/each}
+				</section>
 			</div>
 		{/if}
 	</div>
