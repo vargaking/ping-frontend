@@ -193,6 +193,18 @@ class SocketState {
 					voiceStore.handleSignal(message);
 				});
 				break;
+			case 'presence_update':
+				if (message.online && message.user_id) {
+					usersState.setUserOnline(message.user_id);
+				} else if (message.user_id) {
+					usersState.setUserOffline(message.user_id);
+				}
+
+				console.log('Presence update:', message.user_id, message.online ? 'online' : 'offline');
+				break;
+			case 'presence_init':
+				usersState.setOnlineUsers(message.user_ids);
+				break;
 			default:
 				console.warn('Unknown message type:', message.type);
 		}

@@ -166,9 +166,10 @@
 							ondragover={(e) => handleDragOver(e, i)}
 							ondrop={handleDrop}
 							ondragend={handleDragEnd}
-							class="group mx-2 flex items-center justify-between rounded px-2 py-1 hover:bg-sidebar-accent
+							class="group mx-2 my-1 flex items-center justify-between rounded px-2 py-1 hover:bg-sidebar-accent
 								{dragIndex === i ? 'opacity-50' : ''}
-								{hoverIndex === i && dragIndex !== i ? 'border-t-2 border-accent' : ''}"
+								{hoverIndex === i && dragIndex !== i ? 'border-t-2 border-accent' : ''}
+								{active ? 'bg-sidebar-accent font-bold' : ''}"
 						>
 							{#if channel.type === 'voice'}
 								<button

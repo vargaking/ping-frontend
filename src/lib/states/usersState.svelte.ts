@@ -1,15 +1,23 @@
 import { getUser } from '$lib/requests/users/getUser';
 import type { User } from '$lib/types/auth.types';
 import { db } from '$lib/utils/db';
+import { SvelteSet } from 'svelte/reactivity';
 
 class UsersState {
 	users: Record<number, User> = $state({});
+	onlineUsers: SvelteSet<number> = $state(new SvelteSet());
 	loggedInUser: User | null = $state(null);
+
+	isOnline(userId: number): boolean {
+		if (this.loggedInUser && userId === this.loggedInUser.id) return true;
+		return this.onlineUsers.has(userId);
+	}
 
 	setLoggedInUser(user: User | null) {
 		this.loggedInUser = user;
 		if (user) {
 			this.users[user.id] = user;
+			this.onlineUsers = new SvelteSet([...this.onlineUsers, user.id]);
 			//db.users.put(user);
 		}
 	}
@@ -42,6 +50,32 @@ class UsersState {
 		// Otherwise, fetch from API
 		const fetchedUser = await this.fetchUser(userId);
 		return fetchedUser;
+	}
+
+	setUserOnline(userId: number) {
+		this.onlineUsers = new SvelteSet([...this.onlineUsers, userId]);
+		if (!this.users[userId]) {
+			this.fetchUser(userId);
+		}
+	}
+
+	setUserOffline(userId: number) {
+		const next = new SvelteSet(this.onlineUsers);
+		next.delete(userId);
+		this.onlineUsers = next;
+	}
+
+	setOnlineUsers(userIds: number[]) {
+		const loggedInId = this.loggedInUser?.id;
+		const ids = loggedInId ? [...new Set([...userIds, loggedInId])] : userIds;
+		this.onlineUsers = new SvelteSet(ids);
+
+		// Fetch any users we don't have yet
+		for (const id of ids) {
+			if (!this.users[id]) {
+				this.fetchUser(id);
+			}
+		}
 	}
 }
 
