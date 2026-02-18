@@ -16,8 +16,9 @@ export class ServersState {
 		const order = this.selectedServer?.server_settings?.channel_order;
 		if (!order || order.length === 0) return Object.values(channels);
 
-		// Map over the order array to get channels in the correct order
-		return order.map((id) => channels[id]);
+		// Map over the order array to get channels in the correct order,
+		// filtering out any IDs that don't have a corresponding channel
+		return order.map((id) => channels[id]).filter((ch): ch is Channel => ch != null);
 	});
 
 	setSelectedServer(server: Server | null) {
