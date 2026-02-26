@@ -18,14 +18,14 @@
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { voiceStore } from '$lib/stores/voiceStore';
 	import VoiceControls from '$lib/components/voice/VoiceControls.svelte';
-	import { Hash, Volume2 } from 'lucide-svelte';
+	import { Hash, Volume2, Menu, LogOut, UserPlus, Settings } from 'lucide-svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 
 	let channelName: string = '';
 	let channelType: 'text' | 'voice' = 'text';
 
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-	import { Settings } from 'lucide-svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { onMount } from 'svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
@@ -99,7 +99,32 @@
 		</div>
 		{#if serversState.selectedServer}
 			<div class="flex h-full w-64 flex-col gap-0.5 border-r border-border bg-sidebar">
-				<span class="block p-4 font-bold">{serversState.selectedServer?.name}</span>
+				<div class="flex items-center justify-between border-b border-border p-4">
+					<span class="font-bold">{serversState.selectedServer?.name}</span>
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger class="rounded p-1 transition-colors hover:bg-sidebar-accent">
+							<Menu size={18} />
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="start" class="w-48">
+							<DropdownMenu.Item
+								class="cursor-pointer"
+								onclick={() => overlayState.open(SettingsModal, { category: 'server' })}
+							>
+								<Settings size={16} />
+								Server Settings
+							</DropdownMenu.Item>
+							<DropdownMenu.Item class="cursor-pointer">
+								<UserPlus size={16} />
+								Invite to Server
+							</DropdownMenu.Item>
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item class="cursor-pointer" variant="destructive">
+								<LogOut size={16} />
+								Leave Server
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				</div>
 				<Dialog.Root>
 					<Dialog.Trigger class="w-full">
 						<span
@@ -212,7 +237,7 @@
 		<span>{usersState.loggedInUser?.username}</span>
 		<button
 			class="ml-auto rounded-full p-2 transition-colors hover:bg-sidebar-accent"
-			onclick={() => overlayState.open(SettingsModal)}
+			onclick={() => overlayState.open(SettingsModal, { category: 'account' })}
 			title="User Settings"
 		>
 			<Settings size={18} />
