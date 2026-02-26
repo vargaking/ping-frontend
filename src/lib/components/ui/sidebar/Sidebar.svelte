@@ -102,7 +102,9 @@
 				<div class="flex items-center justify-between border-b border-border p-4">
 					<span class="font-bold">{serversState.selectedServer?.name}</span>
 					<DropdownMenu.Root>
-						<DropdownMenu.Trigger class="rounded p-1 transition-colors hover:bg-sidebar-accent">
+						<DropdownMenu.Trigger
+							class="cursor-pointer rounded p-1 transition-colors hover:bg-sidebar-accent"
+						>
 							<Menu size={18} />
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content align="start" class="w-48">
@@ -112,10 +114,6 @@
 							>
 								<Settings size={16} />
 								Server Settings
-							</DropdownMenu.Item>
-							<DropdownMenu.Item class="cursor-pointer">
-								<UserPlus size={16} />
-								Invite to Server
 							</DropdownMenu.Item>
 							<DropdownMenu.Separator />
 							<DropdownMenu.Item class="cursor-pointer" variant="destructive">
