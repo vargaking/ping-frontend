@@ -49,6 +49,11 @@
 					/>
 				</Field.Field>
 				<Button type="submit" class="w-full" onclick={loginUser}>Login</Button>
+				<div class="mt-4 text-center text-sm text-gray-400">
+					Don't have an account? <a href="/register" class="text-blue-500 hover:underline"
+						>Register</a
+					>
+				</div>
 			</form>
 		</Card.Content>
 	</Card.Root>
