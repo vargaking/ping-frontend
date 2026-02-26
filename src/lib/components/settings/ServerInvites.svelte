@@ -92,7 +92,7 @@
 	<!-- Create Invite Section -->
 	<div class="flex flex-col gap-4 rounded-md bg-[#2b2d31] p-4">
 		<h3 class="text-sm font-bold text-gray-300 uppercase">Create New Invite</h3>
-		<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+		<div class="flex flex-col gap-4">
 			<label class="flex flex-col gap-1 text-xs font-bold text-gray-400 uppercase">
 				Max Uses (0 for unlimited)
 				<input
