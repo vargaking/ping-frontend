@@ -143,10 +143,18 @@
 		{:else}
 			<div class="flex flex-col gap-2">
 				{#each invites as invite (invite.id)}
-					<div class="flex items-center justify-between rounded bg-[#2b2d31] p-3">
-						<div class="flex flex-col gap-1">
-							<span class="text-sm font-medium">{invite.id}</span>
-							<div class="flex gap-3 text-xs text-gray-400">
+					<div class="flex items-center justify-between gap-4 rounded bg-[#2b2d31] p-3">
+						<div class="flex flex-col gap-1 overflow-hidden">
+							<div class="flex items-center gap-2 text-sm font-medium">
+								<button
+									class="cursor-pointer truncate border-none bg-transparent p-0 text-left text-blue-400 hover:underline"
+									onclick={() => copyToClipboard(invite.id)}
+									title="Click to copy"
+								>
+									{window.location.origin}/invite/{invite.id}
+								</button>
+							</div>
+							<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
 								<span
 									>Uses: {invite.use_count}
 									{invite.max_uses ? `/ ${invite.max_uses}` : '(Unlimited)'}</span
@@ -161,7 +169,7 @@
 								{/if}
 							</div>
 						</div>
-						<div class="flex gap-2">
+						<div class="flex shrink-0 gap-2">
 							<button
 								class="flex h-8 w-8 items-center justify-center rounded bg-gray-600 transition-colors hover:bg-gray-500"
 								onclick={() => copyToClipboard(invite.id)}
