@@ -2,24 +2,31 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import type { User } from '$lib/types/auth.types';
+	import { serversState } from '$lib/states/serversState.svelte';
+
+	const serverMembers = $derived(serversState.selectedServer?.members ?? []);
 
 	const onlineUsers: User[] = $derived(
-		Object.values(usersState.users).filter((u) => usersState.onlineUsers.has(u.id))
+		serverMembers.filter((u) => usersState.onlineUsers.has(u.id))
 	);
 
 	const offlineUsers: User[] = $derived(
-		Object.values(usersState.users).filter((u) => !usersState.onlineUsers.has(u.id))
+		serverMembers.filter((u) => !usersState.onlineUsers.has(u.id))
 	);
 </script>
 
 {#snippet userItem(user: User, online: boolean)}
 	<div
-		class="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-sidebar-accent {online ? '' : 'opacity-50'}"
+		class="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-sidebar-accent {online
+			? ''
+			: 'opacity-50'}"
 	>
 		<div class="relative">
 			<Avatar {user} size="sm" />
 			<span
-				class="absolute -bottom-0.5 -right-0.5 block h-3 w-3 rounded-full border-2 border-sidebar {online ? 'bg-green-500' : 'bg-gray-500'}"
+				class="absolute -right-0.5 -bottom-0.5 block h-3 w-3 rounded-full border-2 border-sidebar {online
+					? 'bg-green-500'
+					: 'bg-gray-500'}"
 			></span>
 		</div>
 		<span class="truncate text-sm">{user.username}</span>
@@ -27,9 +34,7 @@
 {/snippet}
 
 {#snippet groupHeader(label: string, count: number)}
-	<span
-		class="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-	>
+	<span class="px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 		{label} — {count}
 	</span>
 {/snippet}

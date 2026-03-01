@@ -1,12 +1,15 @@
+import type { User } from './auth.types';
+
 export type ServerSettings = {
 	channel_order: number[];
 	[key: string]: any;
 };
 
 export type Server = {
-	id: number;
+	id?: number;
 	name: string;
-	created_at: string;
-	server_profile: Record<string, any>;
-	server_settings: ServerSettings;
+	created_at?: string;
+	server_profile?: Record<string, any>;
+	server_settings?: ServerSettings;
+	members?: User[];
 };
