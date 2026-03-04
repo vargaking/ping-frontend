@@ -150,7 +150,7 @@
 
 <div class="flex w-full flex-col bg-zinc-950 p-4">
 	<div
-		class="relative max-h-40 w-full overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-800 p-3 shadow-sm transition-colors focus-within:border-emerald-500 hover:border-zinc-600"
+		class="relative max-h-40 w-full overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-800 p-3 shadow-sm transition-colors focus-within:border-indigo-500 hover:border-zinc-600"
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div

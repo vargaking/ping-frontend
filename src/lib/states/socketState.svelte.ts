@@ -1,4 +1,5 @@
 import { PUBLIC_WS_URL } from '$env/static/public';
+import type { JSONContent } from '@tiptap/core';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { messagesState } from './messagesState.svelte';
@@ -73,7 +74,7 @@ class SocketState {
 		this.socket?.send(JSON.stringify({ type: 'connection_init', user_id: user.id }));
 	}
 
-	async sendMessage(message: unknown) {
+	async sendMessage(message: JSONContent) {
 		if (!message) return;
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 			console.warn('WebSocket is not connected. Message not sent:', message);
