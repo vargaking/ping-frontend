@@ -73,7 +73,7 @@ class SocketState {
 		this.socket?.send(JSON.stringify({ type: 'connection_init', user_id: user.id }));
 	}
 
-	async sendMessage(message: string) {
+	async sendMessage(message: unknown) {
 		if (!message) return;
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 			console.warn('WebSocket is not connected. Message not sent:', message);
@@ -100,6 +100,8 @@ class SocketState {
 			'channel:',
 			channel
 		);
+
+		if (!server.id || !channel.id) return;
 
 		const uuid = uuidv4();
 		const timestamp = new Date().toISOString();

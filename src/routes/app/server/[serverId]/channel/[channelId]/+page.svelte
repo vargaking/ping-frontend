@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import ChatInput from '$lib/components/ui/ChatInput.svelte';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Message from '$lib/components/ui/message/Message.svelte';
 	import UsersSidebar from '$lib/components/ui/sidebar/UsersSidebar.svelte';
@@ -62,18 +63,7 @@
 				<Message {...message} />
 			{/each}
 		</div>
-		<Input
-			onkeydown={(e) => {
-				if (e.key === 'Enter') {
-					// Handle sending message
-					socketState.sendMessage(messageText);
-					messageText = '';
-				}
-			}}
-			bind:value={messageText}
-			placeholder="Type your message here..."
-			class="bg-input-border w-full  rounded-b-md px-4 py-2 text-primary outline-none focus:ring-2 focus:ring-accent"
-		/>
+		<ChatInput />
 	</div>
 	<UsersSidebar />
 </div>
