@@ -1,6 +1,13 @@
 import { writable, get } from 'svelte/store';
-import * as mediasoupClient from 'mediasoup-client';
-import { socketState } from '$lib/states/socketState.svelte';
+import {
+	Room,
+	RoomEvent,
+	Track,
+	type RemoteTrack,
+	type RemoteTrackPublication,
+	type RemoteParticipant,
+	type Participant
+} from 'livekit-client';
 import { UserStore, CurrentServerIdStore } from './userStore';
 import { axiosClient } from '../requests/axiosClient';
 
@@ -15,411 +22,177 @@ export interface VoiceState {
 	channelId: number | null;
 	connected: boolean;
 	connecting: boolean;
-	peers: Map<string, VoicePeer>; // user_id -> VoicePeer
-	micProducer: mediasoupClient.types.Producer | null;
-	consumers: Map<string, mediasoupClient.types.Consumer>; // consumer_id -> Consumer
-	audioElements: Map<string, HTMLAudioElement>; // consumer_id -> AudioElement
+	peers: Map<string, VoicePeer>; // participant identity (user id) -> VoicePeer
 }
 
 const initialState: VoiceState = {
 	channelId: null,
 	connected: false,
 	connecting: false,
-	peers: new Map(),
-	micProducer: null,
-	consumers: new Map(),
-	audioElements: new Map()
+	peers: new Map()
 };
 
 function createVoiceStore() {
 	const { subscribe, update, set } = writable<VoiceState>(initialState);
 
-	let device: mediasoupClient.types.Device | null = null;
-	let sendTransport: mediasoupClient.types.Transport | null = null;
-	let recvTransport: mediasoupClient.types.Transport | null = null;
+	let room: Room | null = null;
+	// One <audio> element per remote track, attached to the DOM so it plays.
+	const audioEls = new Map<string, HTMLAudioElement>();
+
+	function parseProfile(p: Participant): any {
+		// We stash the user's profile JSON in participant metadata when we can;
+		// fall back to empty. Username comes from participant.name.
+		if (!p.metadata) return {};
+		try {
+			return JSON.parse(p.metadata);
+		} catch {
+			return {};
+		}
+	}
+
+	function upsertPeer(p: Participant, isSelf = false) {
+		update((s) => {
+			const peers = new Map(s.peers);
+			peers.set(p.identity, {
+				id: p.identity,
+				username: (p.name || 'Unknown') + (isSelf ? ' (You)' : ''),
+				profile: parseProfile(p),
+				isSpeaking: p.isSpeaking
+			});
+			return { ...s, peers };
+		});
+	}
+
+	function removePeer(identity: string) {
+		update((s) => {
+			const peers = new Map(s.peers);
+			peers.delete(identity);
+			return { ...s, peers };
+		});
+	}
+
+	function attachTrack(track: RemoteTrack) {
+		if (track.kind !== Track.Kind.Audio) return; // audio-only for now
+		const el = track.attach() as HTMLAudioElement;
+		el.autoplay = true;
+		document.body.appendChild(el);
+		audioEls.set(track.sid ?? Math.random().toString(36), el);
+	}
+
+	function detachTrack(track: RemoteTrack) {
+		track.detach().forEach((el) => el.remove());
+		if (track.sid) audioEls.delete(track.sid);
+	}
+
+	function wireRoom(r: Room) {
+		r.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+			attachTrack(track);
+		})
+			.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+				detachTrack(track);
+			})
+			.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
+				upsertPeer(p);
+			})
+			.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
+				removePeer(p.identity);
+			})
+			.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
+				const speaking = new Set(speakers.map((p) => p.identity));
+				update((s) => {
+					const peers = new Map(s.peers);
+					for (const [id, peer] of peers) {
+						const isSpeaking = speaking.has(id);
+						if (peer.isSpeaking !== isSpeaking) peers.set(id, { ...peer, isSpeaking });
+					}
+					return { ...s, peers };
+				});
+			})
+			.on(RoomEvent.Disconnected, () => {
+				cleanup();
+			});
+	}
+
+	function cleanup() {
+		audioEls.forEach((el) => {
+			el.pause();
+			el.srcObject = null;
+			el.remove();
+		});
+		audioEls.clear();
+		room = null;
+		set(initialState);
+	}
 
 	return {
 		subscribe,
-
-		init: async () => {
-			// Load device capabilities
-			try {
-				console.log('Initializing mediasoup device...');
-				device = new mediasoupClient.Device();
-				const response = await axiosClient.get('/api/media/router_capabilities');
-				const routerRtpCapabilities = response.data;
-				console.log('Got router capabilities:', routerRtpCapabilities);
-				await device.load({ routerRtpCapabilities });
-				console.log('Device loaded successfully');
-				return true;
-			} catch (e) {
-				console.error('Failed to load mediasoup device', e);
-				return false;
-			}
-		},
 
 		joinVoice: async (channelId: number) => {
 			const user = get(UserStore);
 			const serverId = get(CurrentServerIdStore);
 			if (!user || !serverId) return;
 
-			update((s) => ({ ...s, connecting: true }));
-			console.log(`Joining voice channel ${channelId}...`);
+			// Already connected somewhere: leave first.
+			if (room) await voiceStore.leaveVoice();
 
-			if (!device) {
-				const success = await voiceStore.init();
-				if (!success) {
-					console.error('Device init failed, aborting join');
-					update((s) => ({ ...s, connecting: false }));
-					return;
-				}
-			}
+			update((s) => ({ ...s, connecting: true, channelId }));
 
 			try {
-				// 1. Create Send Transport
-				console.log('Creating send transport...');
-				const sendTransportData = await axiosClient
-					.post('/api/media/create_transport', { is_sending: true })
+				// 1. Get a LiveKit token from ping-server (membership checked there).
+				const { token, url } = await axiosClient
+					.post('/api/voice/token', { channel_id: channelId })
 					.then((r) => r.data);
-				console.log('Send transport data:', sendTransportData);
 
-				sendTransport = device!.createSendTransport(sendTransportData);
+				// 2. Connect to LiveKit.
+				room = new Room({ adaptiveStream: true, dynacast: true });
+				wireRoom(room);
+				await room.connect(url, token);
 
-				sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-					console.log('Send transport connect event');
-					try {
-						await axiosClient.post('/api/media/connect_transport', {
-							transportId: sendTransport!.id,
-							dtlsParameters
-						});
-						callback();
-					} catch (error) {
-						console.error('Send transport connect failed', error);
-						errback(error as Error);
-					}
-				});
-
-				sendTransport.on('produce', async ({ kind, rtpParameters }, callback, errback) => {
-					console.log('Send transport produce event');
-					try {
-						const { id } = await axiosClient
-							.post('/api/media/produce', {
-								transportId: sendTransport!.id,
-								kind,
-								rtpParameters
-							})
-							.then((r) => r.data);
-						callback({ id });
-					} catch (error) {
-						console.error('Send transport produce failed', error);
-						errback(error as Error);
-					}
-				});
-
-				// 2. Create Receive Transport
-				console.log('Creating receive transport...');
-				const recvTransportData = await axiosClient
-					.post('/api/media/create_transport', { is_sending: false })
-					.then((r) => r.data);
-				recvTransport = device!.createRecvTransport(recvTransportData);
-
-				recvTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-					console.log('Recv transport connect event');
-					try {
-						await axiosClient.post('/api/media/connect_transport', {
-							transportId: recvTransport!.id,
-							dtlsParameters
-						});
-						callback();
-					} catch (error) {
-						console.error('Recv transport connect failed', error);
-						errback(error as Error);
-					}
-				});
-
-				// 3. Get User Media and Produce
-				console.log('Requesting user media...');
-
-				if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-					const errorMsg =
-						'Voice chat requires a secure context (HTTPS or localhost). If you are using an IP address, please switch to localhost or enable HTTPS.';
-					console.error(errorMsg);
-					alert(errorMsg);
-					throw new Error(errorMsg);
+				// 3. Publish the mic (audio-only).
+				if (!navigator.mediaDevices?.getUserMedia) {
+					throw new Error(
+						'Voice chat requires a secure context (HTTPS or localhost).'
+					);
 				}
+				await room.localParticipant.setMicrophoneEnabled(true);
 
-				const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-				console.log('Got user media stream');
-				const track = stream.getAudioTracks()[0];
-				const producer = await sendTransport.produce({ track });
-				console.log('Producer created:', producer.id);
-
-				// Speaking detection for own voice
-				const audioContext = new AudioContext();
-				const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-				const analyser = audioContext.createAnalyser();
-				analyser.fftSize = 256;
-				mediaStreamSource.connect(analyser);
-
-				const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-				const checkOwnSpeaking = () => {
-					if (producer.closed) {
-						audioContext.close();
-						return;
-					}
-
-					analyser.getByteFrequencyData(dataArray);
-					const sum = dataArray.reduce((a, b) => a + b, 0);
-					const average = sum / dataArray.length;
-					const isSpeaking = average > 5; // Lower threshold for detection
-
-					update((s) => {
-						const peer = s.peers.get(user.id.toString());
-						if (peer && peer.isSpeaking !== isSpeaking) {
-							const newPeers = new Map(s.peers);
-							newPeers.set(user.id.toString(), { ...peer, isSpeaking });
-							return { ...s, peers: newPeers };
-						}
-						return s;
-					});
-
-					requestAnimationFrame(checkOwnSpeaking);
-				};
-
-				checkOwnSpeaking();
-
-				// Add self to peers
-				update((s) => {
-					const newPeers = new Map(s.peers);
-					newPeers.set(user.id.toString(), {
-						id: user.id.toString(),
-						username: user.username + ' (You)',
-						profile: user.profile || {},
-						isSpeaking: false
-					});
-					return {
-						...s,
-						micProducer: producer,
-						connected: true,
-						connecting: false,
-						channelId,
-						peers: newPeers
-					};
+				// 4. Seed the peers map: self + everyone already in the room.
+				upsertPeer(room.localParticipant, true);
+				room.remoteParticipants.forEach((p) => {
+					upsertPeer(p);
+					// Existing tracks fire TrackSubscribed automatically on connect.
 				});
 
-				// 4. Signal Join to WS
-				socketState.sendSignal({
-					type: 'join_voice',
-					user_id: user.id,
-					server_id: serverId,
-					channel_id: channelId,
-					rtpCapabilities: device!.rtpCapabilities
-				});
-
-				// 5. Notify others about our producer
-				console.log('Sending producer_created signal for producer:', producer.id);
-				socketState.sendSignal({
-					type: 'producer_created',
-					user_id: user.id,
-					server_id: serverId,
-					channel_id: channelId,
-					producer_id: producer.id
-				});
+				update((s) => ({ ...s, connected: true, connecting: false, channelId }));
 			} catch (err) {
 				console.error('Error joining voice:', err);
-				update((s) => ({ ...s, connecting: false }));
-			}
-		},
-
-		leaveVoice: () => {
-			const state = get(voiceStore);
-			if (state.micProducer) state.micProducer.close();
-			if (sendTransport) sendTransport.close();
-			if (recvTransport) recvTransport.close();
-
-			// Clean up audio elements
-			state.audioElements.forEach((audio, id) => {
-				audio.pause();
-				audio.srcObject = null;
-				audio.remove(); // Remove from DOM
-			});
-
-			// Signal leave
-			const user = get(UserStore);
-			const serverId = get(CurrentServerIdStore);
-			if (user && state.channelId) {
-				socketState.sendSignal({
-					type: 'leave_voice',
-					user_id: user.id,
-					server_id: serverId,
-					channel_id: state.channelId
-				});
-			}
-
-			set(initialState);
-		},
-
-		handleSignal: async (message: any) => {
-			if (!device) return;
-
-			console.log('Voice signal received:', message.type, message);
-
-			switch (message.type) {
-				case 'voice_participants':
-					// Populate existing participants when joining
-					update((s) => {
-						const newPeers = new Map(s.peers);
-						for (const participant of message.participants) {
-							newPeers.set(participant.id.toString(), {
-								id: participant.id.toString(),
-								username: participant.username,
-								profile: participant.profile,
-								isSpeaking: false
-							});
-						}
-						return { ...s, peers: newPeers };
-					});
-					break;
-
-				case 'user_joined_voice':
-					const currentUser = get(UserStore);
-					// Don't add yourself again
-					if (message.user_id !== currentUser?.id) {
-						update((s) => {
-							const newPeers = new Map(s.peers);
-							newPeers.set(message.user_id.toString(), {
-								id: message.user_id.toString(),
-								username: message.user?.username || 'Unknown',
-								profile: message.user?.profile || {},
-								isSpeaking: false
-							});
-							return { ...s, peers: newPeers };
-						});
+				if (room) {
+					try {
+						await room.disconnect();
+					} catch {
+						/* ignore */
 					}
-					break;
-
-				case 'user_left_voice':
-					update((s) => {
-						const newPeers = new Map(s.peers);
-						newPeers.delete(message.user_id.toString());
-						return { ...s, peers: newPeers };
-					});
-					break;
-
-				case 'new_producer':
-					const { producerId, userId } = message;
-					console.log('New producer signal:', producerId, 'from user:', userId);
-					await voiceStore.consume(producerId, userId);
-					break;
+				}
+				cleanup();
 			}
 		},
 
-		consume: async (producerId: string, userId: string) => {
-			if (!recvTransport) {
-				console.error('No recv transport available');
-				return;
-			}
-
-			console.log('Starting consume for producer:', producerId, 'user:', userId);
-
-			const { rtpCapabilities } = device!;
-
-			const data = await axiosClient
-				.post('/api/media/consume', {
-					transportId: recvTransport.id,
-					producerId,
-					rtpCapabilities
-				})
-				.then((r) => r.data);
-
-			console.log('Consumer data received:', data);
-
-			const consumer = await recvTransport.consume(data);
-			console.log('Consumer created:', consumer.id, 'track:', consumer.track);
-
-			// Resume if needed (server starts paused)
-			try {
-				await axiosClient.post('/api/media/resume_consumer', { consumerId: consumer.id });
-				console.log('✅ Resumed consumer:', consumer.id);
-			} catch (e) {
-				console.error('❌ Failed to resume consumer:', e);
-			}
-
-			const stream = new MediaStream([consumer.track]);
-			const audio = new Audio();
-			audio.srcObject = stream;
-			audio.volume = 1.0;
-			audio.autoplay = true;
-			audio.id = `voice-audio-${userId}`;
-
-			// IMPORTANT: Attach to DOM for some browsers to play
-			document.body.appendChild(audio);
-
-			console.log('Audio element created and attached to DOM, attempting play...');
-			audio
-				.play()
-				.then(() => console.log('✅ Audio playing for user:', userId))
-				.catch((e) => {
-					console.error('❌ Audio play failed:', e);
-					// Try with muted first (autoplay policy workaround)
-					audio.muted = true;
-					audio.play().then(() => {
-						console.log('Playing muted, now unmuting...');
-						audio.muted = false;
-					});
-				});
-
-			update((s) => {
-				const newConsumers = new Map(s.consumers);
-				newConsumers.set(consumer.id, consumer);
-				const newAudio = new Map(s.audioElements);
-				newAudio.set(consumer.id, audio);
-				return { ...s, consumers: newConsumers, audioElements: newAudio };
-			});
-
-			// Speaking detection
-			const audioContext = new AudioContext();
-			const mediaStreamSource = audioContext.createMediaStreamSource(stream);
-			const analyser = audioContext.createAnalyser();
-			analyser.fftSize = 256;
-			mediaStreamSource.connect(analyser);
-
-			const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-			console.log('Setting up speaking detection for user:', userId);
-
-			const checkSpeaking = () => {
-				if (consumer.closed) {
-					console.log('Consumer closed, stopping speaking detection for user:', userId);
-					audioContext.close();
-					return;
+		leaveVoice: async () => {
+			if (room) {
+				try {
+					await room.disconnect();
+				} catch {
+					/* ignore */
 				}
+			}
+			cleanup();
+		},
 
-				analyser.getByteFrequencyData(dataArray);
-				const sum = dataArray.reduce((a, b) => a + b, 0);
-				const average = sum / dataArray.length;
-				const isSpeaking = average > 5; // Lower threshold
-
-				// Log first detection
-				if (isSpeaking) {
-					console.log(`🎤 User ${userId} is speaking (level: ${average.toFixed(2)})`);
-				}
-
-				update((s) => {
-					const peer = s.peers.get(userId);
-					if (peer && peer.isSpeaking !== isSpeaking) {
-						const newPeers = new Map(s.peers);
-						newPeers.set(userId, { ...peer, isSpeaking });
-						return { ...s, peers: newPeers };
-					}
-					return s;
-				});
-
-				requestAnimationFrame(checkSpeaking);
-			};
-
-			checkSpeaking();
+		// Voice signaling now runs over LiveKit's own connection, not the
+		// ping-server WebSocket. Kept as a no-op so existing WS routers that
+		// still call it don't break; removed in phase 4 cleanup.
+		handleSignal: async (_message: any) => {
+			/* no-op: LiveKit owns voice signaling now */
 		}
 	};
 }
