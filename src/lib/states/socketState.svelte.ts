@@ -186,16 +186,6 @@ class SocketState {
 			case 'user_updated':
 				this.handleUserUpdate(message.user);
 				break;
-			case 'user_joined_voice':
-			case 'user_left_voice':
-			case 'voice_signal':
-			case 'voice_participants':
-			case 'producer_created':
-			case 'new_producer':
-				import('$lib/stores/voiceStore').then(({ voiceStore }) => {
-					voiceStore.handleSignal(message);
-				});
-				break;
 			case 'presence_update':
 				if (message.online && message.user_id) {
 					usersState.setUserOnline(message.user_id);

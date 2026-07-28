@@ -191,20 +191,6 @@ class SocketManager {
 			case 'user_invalidated':
 				this.handleUserInvalidated(message.user_id);
 				break;
-			case 'user_joined_voice':
-			case 'user_left_voice':
-			case 'voice_signal':
-			case 'voice_participants':
-			case 'producer_created':
-			case 'new_producer':
-				// We need to pass this to VoiceStore.
-				// Since we can't easily import VoiceStore here (circular),
-				// we can dispatch a custom event or use a global handler.
-				// Or better, just import it. Circular deps in Svelte stores are sometimes tricky but often work if careful.
-				import('./voiceStore').then(({ voiceStore }) => {
-					voiceStore.handleSignal(message);
-				});
-				break;
 			default:
 				console.warn('Unknown message type:', message.type);
 		}

@@ -186,13 +186,6 @@ function createVoiceStore() {
 				}
 			}
 			cleanup();
-		},
-
-		// Voice signaling now runs over LiveKit's own connection, not the
-		// ping-server WebSocket. Kept as a no-op so existing WS routers that
-		// still call it don't break; removed in phase 4 cleanup.
-		handleSignal: async (_message: any) => {
-			/* no-op: LiveKit owns voice signaling now */
 		}
 	};
 }
