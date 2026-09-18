@@ -8,12 +8,21 @@ import { v4 as uuidv4 } from 'uuid';
 import type { MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
 
+/** Server close code for "no valid session" (see /ws in ping-server). */
+const WS_CLOSE_UNAUTHENTICATED = 4401;
+const RECONNECT_DELAY_MS = 2000;
+
 class SocketState {
 	private socket: WebSocket | null = null;
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	connected: boolean = $state(false);
 
+	/**
+	 * Open the socket. The server identifies us from the session cookie during
+	 * the handshake, so there is no init frame and no user id to send.
+	 */
 	connect() {
-		if (this.connected) return;
+		if (this.socket) return;
 
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const host = window.location.host;
@@ -24,54 +33,58 @@ class SocketState {
 		const socket = new WebSocket(wsUrl);
 		this.socket = socket;
 
-		this.socket.onopen = () => {
+		socket.onopen = () => {
 			console.log('WebSocket connection established');
 			this.connected = true;
-			this.sendInit();
 		};
 
-		this.socket.onclose = () => {
-			console.log('WebSocket connection closed');
+		socket.onclose = (event) => {
+			console.log('WebSocket connection closed', event.code);
+
+			// A close event from a socket we already replaced or dropped on
+			// purpose (see disconnect()) must not touch the current state.
+			if (this.socket !== socket) return;
+
+			this.socket = null;
 			this.connected = false;
 
-			setTimeout(() => {
-				this.socket = null;
+			if (event.code === WS_CLOSE_UNAUTHENTICATED) {
+				// Session is gone or expired. Retrying would loop forever, so
+				// hand over to the login page instead.
+				usersState.setLoggedInUser(null);
+				if (window.location.pathname.startsWith('/app')) {
+					window.location.href = '/login/';
+				}
+				return;
+			}
+
+			this.reconnectTimer = setTimeout(() => {
+				this.reconnectTimer = null;
 				this.connect();
-			}, 2000);
+			}, RECONNECT_DELAY_MS);
 		};
 
-		this.socket.onmessage = (event) => {
+		socket.onmessage = (event) => {
 			const data = JSON.parse(event.data);
 			this.commSwitch(data);
 		};
 
-		this.socket.onerror = (error) => {
+		socket.onerror = (error) => {
 			console.error('WebSocket error:', error);
 		};
 	}
 
+	/** Close the socket and stay closed (e.g. on logout). Call connect() to reopen. */
 	disconnect() {
-		if (this.socket) {
-			this.socket.close();
-			this.socket = null;
-			this.connected = false;
-
-			setTimeout(() => {
-				this.connect();
-			}, 2000);
+		if (this.reconnectTimer) {
+			clearTimeout(this.reconnectTimer);
+			this.reconnectTimer = null;
 		}
-	}
 
-	sendInit() {
-		const user = usersState.loggedInUser;
-
-		console.debug('SocketState sendInit called with user:', user);
-
-		if (!user || !user.id) return;
-
-		console.debug('Sending connection_init for user:', user);
-
-		this.socket?.send(JSON.stringify({ type: 'connection_init', user_id: user.id }));
+		const socket = this.socket;
+		this.socket = null;
+		this.connected = false;
+		socket?.close();
 	}
 
 	async sendMessage(message: JSONContent) {
@@ -113,7 +126,6 @@ class SocketState {
 				id: uuid,
 				server_id: server.id,
 				channel_id: channel.id,
-				user_id: user.id,
 				content: message,
 				timestamp: timestamp
 			})
@@ -197,6 +209,12 @@ class SocketState {
 				break;
 			case 'presence_init':
 				usersState.setOnlineUsers(message.user_ids);
+				break;
+			case 'error':
+				// e.g. { code: 'forbidden', ref: <message id> } when posting to a
+				// server/channel we have no access to. Surfacing this in the UI
+				// (failed-message state) is tracked separately.
+				console.warn('Server rejected a frame:', message.code, message.ref);
 				break;
 			default:
 				console.warn('Unknown message type:', message.type);
