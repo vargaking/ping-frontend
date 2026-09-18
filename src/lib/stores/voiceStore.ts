@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 import {
 	Room,
 	RoomEvent,
@@ -8,7 +8,8 @@ import {
 	type RemoteParticipant,
 	type Participant
 } from 'livekit-client';
-import { UserStore, CurrentServerIdStore } from './userStore';
+import { usersState } from '../states/usersState.svelte';
+import { serversState } from '../states/serversState.svelte';
 import { axiosClient } from '../requests/axiosClient';
 
 export interface VoicePeer {
@@ -128,8 +129,8 @@ function createVoiceStore() {
 		subscribe,
 
 		joinVoice: async (channelId: number) => {
-			const user = get(UserStore);
-			const serverId = get(CurrentServerIdStore);
+			const user = usersState.loggedInUser;
+			const serverId = serversState.selectedServer?.id;
 			if (!user || !serverId) return;
 
 			// Already connected somewhere: leave first.
