@@ -1,56 +1,45 @@
 <script lang="ts">
 	import { usersState } from '$lib/states/usersState.svelte';
-	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import type { User } from '$lib/types/auth.types';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import MemberRow from '$lib/components/ui/message/MemberRow.svelte';
 
 	const serverMembers = $derived(serversState.selectedServer?.members ?? []);
 
 	const onlineUsers: User[] = $derived(
 		serverMembers.filter((u) => usersState.onlineUsers.has(u.id))
 	);
-
 	const offlineUsers: User[] = $derived(
 		serverMembers.filter((u) => !usersState.onlineUsers.has(u.id))
 	);
 </script>
 
-{#snippet userItem(user: User, online: boolean)}
-	<div
-		class="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-sidebar-accent {online
-			? ''
-			: 'opacity-50'}"
-	>
-		<div class="relative">
-			<Avatar {user} size="sm" />
-			<span
-				class="absolute -right-0.5 -bottom-0.5 block h-3 w-3 rounded-full border-2 border-sidebar {online
-					? 'bg-online'
-					: 'bg-offline'}"
-			></span>
-		</div>
-		<span class="truncate text-sm">{user.username}</span>
-	</div>
-{/snippet}
+<aside class="flex h-full w-[232px] shrink-0 flex-col border-l border-border bg-sidebar">
+	<div class="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-5">
+		{#if onlineUsers.length > 0}
+			<section>
+				<h2 class="mb-1 px-2 text-xs font-medium text-text-subtle">
+					Online — {onlineUsers.length}
+				</h2>
+				{#each onlineUsers as user (user.id)}
+					<MemberRow {user} online />
+				{/each}
+			</section>
+		{/if}
 
-{#snippet groupHeader(label: string, count: number)}
-	<span class="px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-		{label} — {count}
-	</span>
-{/snippet}
+		{#if offlineUsers.length > 0}
+			<section>
+				<h2 class="mb-1 px-2 text-xs font-medium text-text-subtle">
+					Offline — {offlineUsers.length}
+				</h2>
+				{#each offlineUsers as user (user.id)}
+					<MemberRow {user} />
+				{/each}
+			</section>
+		{/if}
 
-<aside class="flex h-full w-60 shrink-0 flex-col border-l border-border bg-sidebar">
-	<span class="block px-4 py-3 text-sm font-bold">Members</span>
-
-	<div class="flex-1 overflow-y-auto px-2 pb-4">
-		{@render groupHeader('Online', onlineUsers.length)}
-		{#each onlineUsers as user (user.id)}
-			{@render userItem(user, true)}
-		{/each}
-
-		{@render groupHeader('Offline', offlineUsers.length)}
-		{#each offlineUsers as user (user.id)}
-			{@render userItem(user, false)}
-		{/each}
+		{#if serverMembers.length === 0}
+			<p class="px-2 text-sm text-text-subtle">No members to show.</p>
+		{/if}
 	</div>
 </aside>
