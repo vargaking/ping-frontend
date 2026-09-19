@@ -64,10 +64,10 @@
 	let CurrentComponent = $derived(currentTab?.component);
 </script>
 
-<div class="flex h-[600px] w-[800px] overflow-hidden rounded-lg bg-[#1e1e1e] text-white">
+<div class="flex h-[600px] w-[800px] overflow-hidden rounded-lg bg-surface-input text-foreground">
 	<!-- Sidebar -->
-	<div class="flex w-1/4 flex-col gap-2 overflow-y-auto bg-[#2b2d31] p-4">
-		<h2 class="mb-2 px-1 text-xs font-bold tracking-widest text-gray-400 uppercase">
+	<div class="flex w-1/4 flex-col gap-2 overflow-y-auto bg-card p-4">
+		<h2 class="mb-2 px-1 text-xs font-bold tracking-widest text-muted-foreground uppercase">
 			{#if category === 'account'}
 				User Settings
 			{:else if category === 'server'}
@@ -80,8 +80,8 @@
 			<button
 				class="rounded px-3 py-1.5 text-left text-sm font-medium transition-colors {activeTabId ===
 				tab.id
-					? 'bg-[#404249] text-white'
-					: 'text-gray-400 hover:bg-[#35373c] hover:text-gray-200'}"
+					? 'bg-accent text-foreground'
+					: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 				onclick={() => {
 					activeTabId = tab.id;
 				}}
@@ -92,7 +92,7 @@
 	</div>
 
 	<!-- Content -->
-	<div class="flex-1 overflow-y-auto bg-[#313338] p-8">
+	<div class="flex-1 overflow-y-auto bg-background p-8">
 		{#if CurrentComponent}
 			<CurrentComponent />
 		{/if}

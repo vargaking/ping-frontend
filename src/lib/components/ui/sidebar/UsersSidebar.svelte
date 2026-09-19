@@ -25,8 +25,8 @@
 			<Avatar {user} size="sm" />
 			<span
 				class="absolute -right-0.5 -bottom-0.5 block h-3 w-3 rounded-full border-2 border-sidebar {online
-					? 'bg-green-500'
-					: 'bg-gray-500'}"
+					? 'bg-online'
+					: 'bg-offline'}"
 			></span>
 		</div>
 		<span class="truncate text-sm">{user.username}</span>

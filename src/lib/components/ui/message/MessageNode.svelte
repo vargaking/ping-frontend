@@ -17,7 +17,7 @@
 		{:else if mark.type === 'strike'}
 			<s>{@render renderMarks(marksRemaining, currentIndex + 1, text)}</s>
 		{:else if mark.type === 'code'}
-			<code class="rounded bg-zinc-800 px-1 py-0.5 font-mono text-sm text-zinc-200"
+			<code class="rounded bg-accent px-1 py-0.5 font-mono text-sm text-foreground"
 				>{@render renderMarks(marksRemaining, currentIndex + 1, text)}</code
 			>
 		{:else}
@@ -48,7 +48,7 @@
 	{@render renderMarks(node.marks || [], 0, node.text || '')}
 {:else if node.type === 'mention'}
 	<span
-		class="rounded-md bg-indigo-500/20 px-1.5 py-0.5 font-semibold text-indigo-400"
+		class="rounded-md bg-primary/15 px-1.5 py-0.5 font-semibold text-primary"
 		data-user-id={node.attrs?.id}
 	>
 		@{node.attrs?.label || node.attrs?.id}
@@ -72,11 +72,11 @@
 		{/each}
 	</li>
 {:else if node.type === 'codeBlock'}
-	<pre class="my-2 overflow-x-auto rounded-md bg-zinc-800 p-3 font-mono text-sm text-zinc-100"><code
+	<pre class="my-2 overflow-x-auto rounded-md bg-accent p-3 font-mono text-sm text-foreground"><code
 			>{#each node.content || [] as child}<MessageNode node={child} />{/each}</code
 		></pre>
 {:else if node.type === 'blockquote'}
-	<blockquote class="my-2 border-l-4 border-zinc-600 py-1 pl-4 text-zinc-300">
+	<blockquote class="my-2 border-l-4 border-border py-1 pl-4 text-muted-foreground">
 		{#each node.content || [] as child}
 			<MessageNode node={child} />
 		{/each}
@@ -84,7 +84,7 @@
 {:else if node.type === 'heading'}
 	<svelte:element
 		this={`h${node.attrs?.level || 1}`}
-		class="font-bold text-zinc-100 {node.attrs?.level === 1
+		class="font-bold text-foreground {node.attrs?.level === 1
 			? 'mt-4 mb-2 text-2xl'
 			: node.attrs?.level === 2
 				? 'mt-3 mb-2 text-xl'
@@ -97,7 +97,7 @@
 {:else if node.type === 'hardBreak'}
 	<br />
 {:else if node.type === 'horizontalRule'}
-	<hr class="my-4 border-zinc-700" />
+	<hr class="my-4 border-border" />
 {:else}
 	<!-- Unknown node type fallback -->
 	{#if node.content}

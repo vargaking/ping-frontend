@@ -11,12 +11,12 @@
 
 {#if voiceState.connecting}
 	<div class="flex flex-col gap-2 border-t border-border bg-sidebar-accent/50 p-2">
-		<span class="text-sm font-bold text-yellow-500">Connecting...</span>
+		<span class="text-sm font-bold text-idle">Connecting...</span>
 	</div>
 {:else if voiceState.connected}
 	<div class="flex flex-col gap-2 border-t border-border bg-sidebar-accent/50 p-2">
 		<div class="flex items-center justify-between">
-			<span class="text-sm font-bold text-green-500">Voice Connected</span>
+			<span class="text-sm font-bold text-online">Voice Connected</span>
 			<Button
 				variant="ghost"
 				size="icon"
@@ -31,13 +31,13 @@
 			{#each Array.from(voiceState.peers.values()) as peer}
 				<div
 					class="flex items-center gap-2 rounded p-1 hover:bg-sidebar-accent/50 {peer.isSpeaking
-						? 'border-l-2 border-green-500 bg-green-500/10'
+						? 'border-l-2 border-online bg-online/10'
 						: ''}"
 				>
 					<div class="h-6 w-6">
 						<Avatar src={peer.profile?.avatar} size="sm" className="w-6 h-6" />
 					</div>
-					<span class="truncate text-xs {peer.isSpeaking ? 'font-bold text-green-500' : ''}"
+					<span class="truncate text-xs {peer.isSpeaking ? 'font-bold text-online' : ''}"
 						>{peer.username}</span
 					>
 				</div>

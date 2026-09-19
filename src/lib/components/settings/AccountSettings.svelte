@@ -80,7 +80,7 @@
 				<Avatar src={avatarPreview} user={usersState.loggedInUser} size="xl" />
 			</div>
 			<label
-				class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+				class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-background/80 opacity-0 transition-opacity group-hover:opacity-100"
 			>
 				<span class="text-xs font-bold">CHANGE</span>
 				<input
@@ -94,25 +94,25 @@
 		</div>
 		<div>
 			<div class="text-lg font-medium">{usersState.loggedInUser?.username ?? ''}</div>
-			<div class="text-sm text-gray-400">Click image to change avatar</div>
+			<div class="text-sm text-muted-foreground">Click image to change avatar</div>
 		</div>
 	</div>
 
 	<!-- Form -->
 	<div class="flex max-w-md flex-col gap-4">
 		<div class="flex flex-col gap-1">
-			<label class="text-xs font-bold text-gray-400 uppercase">
+			<label class="text-xs font-bold text-muted-foreground uppercase">
 				Username
 				<input
 					type="text"
 					bind:value={username}
-					class="mt-1 w-full rounded border border-transparent bg-[#1e1e1e] p-2 text-white outline-none focus:border-blue-500"
+					class="mt-1 w-full rounded border border-transparent bg-surface-input p-2 text-foreground outline-none focus:border-ring"
 				/>
 			</label>
 		</div>
 
 		<button
-			class="rounded bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+			class="rounded bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
 			onclick={handleSave}
 			disabled={isSaving || !hasChanges}
 		>
@@ -120,13 +120,13 @@
 		</button>
 	</div>
 
-	<hr class="my-2 border-gray-600" />
+	<hr class="my-2 border-border" />
 
 	<!-- Danger Zone -->
 	<div>
-		<h3 class="mb-2 font-bold text-red-400">Danger Zone</h3>
+		<h3 class="mb-2 font-bold text-destructive">Danger Zone</h3>
 		<button
-			class="rounded border border-red-500 px-4 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
+			class="rounded border border-destructive-border px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
 			onclick={handleDeleteAccount}
 		>
 			Delete Account

@@ -56,7 +56,7 @@
 				</Field.Field>
 
 				{#if errorMsg}
-					<div class="text-sm font-medium text-red-500">
+					<div class="text-sm font-medium text-destructive">
 						{errorMsg}
 					</div>
 				{/if}
@@ -65,8 +65,8 @@
 					{isRegistering ? 'Registering...' : 'Register'}
 				</Button>
 
-				<div class="mt-4 text-center text-sm text-gray-400">
-					Already have an account? <a href="/login" class="text-blue-500 hover:underline">Login</a>
+				<div class="mt-4 text-center text-sm text-muted-foreground">
+					Already have an account? <a href="/login" class="text-primary hover:underline">Login</a>
 				</div>
 			</form>
 		</Card.Content>

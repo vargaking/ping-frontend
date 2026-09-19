@@ -61,7 +61,7 @@
 				}),
 				Mention.configure({
 					HTMLAttributes: {
-						class: 'bg-indigo-500/20 text-indigo-400 font-semibold px-1.5 py-0.5 rounded-md'
+						class: 'bg-primary/15 text-primary font-semibold px-1.5 py-0.5 rounded-md'
 					},
 					suggestion: {
 						items: ({ query }) => {
@@ -148,14 +148,14 @@
 	});
 </script>
 
-<div class="flex w-full flex-col bg-zinc-950 p-4">
+<div class="flex w-full flex-col bg-background p-4">
 	<div
-		class="relative max-h-40 w-full overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-800 p-3 shadow-sm transition-colors focus-within:border-indigo-500 hover:border-zinc-600"
+		class="relative max-h-40 w-full overflow-y-auto rounded-xl border border-input bg-surface-input p-3 shadow-sm transition-colors focus-within:border-ring hover:border-border"
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			bind:this={element}
-			class="prose prose-sm w-full max-w-none wrap-break-word whitespace-pre-wrap text-zinc-100 prose-zinc outline-none dark:prose-invert prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
+			class="prose prose-sm w-full max-w-none wrap-break-word whitespace-pre-wrap text-foreground prose-zinc outline-none dark:prose-invert prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 		></div>
 	</div>
 </div>
@@ -169,7 +169,7 @@
 
 	/* Placeholder CSS */
 	:global(.ProseMirror p.is-editor-empty:first-child::before) {
-		color: #71717a; /* Tailwind zinc-500 */
+		color: var(--text-subtle);
 		content: attr(data-placeholder);
 		float: left;
 		height: 0;

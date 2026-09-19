@@ -35,14 +35,14 @@
 </script>
 
 <div
-	class="min-w-[150px] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
+	class="min-w-[150px] overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-xl"
 >
 	{#if items.length > 0}
 		{#each items as item, index}
 			<button
 				class="w-full px-3 py-2 text-left text-sm transition-colors {index === selectedIndex
-					? 'bg-indigo-600/20 text-indigo-400'
-					: 'text-indigo-100 hover:bg-indigo-800'}"
+					? 'bg-primary/15 text-primary'
+					: 'text-primary hover:bg-accent'}"
 				onmouseenter={() => (selectedIndex = index)}
 				onclick={() => selectItem(index)}
 			>

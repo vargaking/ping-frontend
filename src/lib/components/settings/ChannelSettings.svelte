@@ -10,16 +10,16 @@
 	{#if serversState.selectedChannel}
 		<div class="flex max-w-md flex-col gap-4">
 			<div class="flex flex-col gap-1">
-				<label class="text-xs font-bold text-gray-400 uppercase">Channel Name</label>
+				<label class="text-xs font-bold text-muted-foreground uppercase">Channel Name</label>
 				<input
 					type="text"
 					bind:value={channelName}
-					class="rounded border border-transparent bg-[#1e1e1e] p-2 text-white outline-none focus:border-blue-500"
+					class="rounded border border-transparent bg-surface-input p-2 text-foreground outline-none focus:border-ring"
 				/>
 			</div>
 
 			<button
-				class="rounded bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
+				class="rounded bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
 			>
 				Save Changes
 			</button>

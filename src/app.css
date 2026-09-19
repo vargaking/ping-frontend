@@ -4,78 +4,69 @@
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
+/* Dark is the only theme in the alpha. The palette is defined once in :root;
+   @custom-variant dark stays so shadcn `dark:` utilities still resolve, but
+   there are no separate light/dark overrides. See UI spec §1. */
 @custom-variant dark (&:is(.dark *));
 
 :root {
 	--radius: 0.625rem;
-	--background: oklch(1 0 0);
-	--foreground: oklch(0.145 0 0);
-	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.145 0 0);
-	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.145 0 0);
-	--primary: oklch(0.205 0 0);
-	--primary-foreground: oklch(0.985 0 0);
-	--secondary: oklch(0.97 0 0);
-	--secondary-foreground: oklch(0.205 0 0);
-	--muted: oklch(0.97 0 0);
-	--muted-foreground: oklch(0.556 0 0);
-	--accent: oklch(0.97 0 0);
-	--accent-foreground: oklch(0.205 0 0);
-	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.922 0 0);
-	--input: oklch(0.922 0 0);
-	--ring: oklch(0.708 0 0);
-	--chart-1: oklch(0.646 0.222 41.116);
-	--chart-2: oklch(0.6 0.118 184.704);
-	--chart-3: oklch(0.398 0.07 227.392);
-	--chart-4: oklch(0.828 0.189 84.429);
-	--chart-5: oklch(0.769 0.188 70.08);
-	--sidebar: oklch(0.985 0 0);
-	--sidebar-foreground: oklch(0.145 0 0);
-	--sidebar-primary: oklch(0.205 0 0);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent: oklch(0.97 0 0);
-	--sidebar-accent-foreground: oklch(0.205 0 0);
-	--sidebar-border: oklch(0.922 0 0);
-	--sidebar-ring: oklch(0.708 0 0);
-}
 
-.dark {
-	--background: oklch(0.145 0 0);
-	--foreground: oklch(0.985 0 0);
-	--card: oklch(0.205 0 0);
-	--card-foreground: oklch(0.985 0 0);
-	--popover: oklch(0.205 0 0);
-	--popover-foreground: oklch(0.985 0 0);
-	--primary: oklch(0.922 0 0);
-	--primary-foreground: oklch(0.205 0 0);
-	--secondary: oklch(0.269 0 0);
-	--secondary-foreground: oklch(0.985 0 0);
-	--muted: oklch(0.269 0 0);
-	--muted-foreground: oklch(0.708 0 0);
-	--accent: oklch(0.269 0 0);
-	--accent-foreground: oklch(0.985 0 0);
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(1 0 0 / 10%);
-	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.556 0 0);
-	--chart-1: oklch(0.488 0.243 264.376);
-	--chart-2: oklch(0.696 0.17 162.48);
-	--chart-3: oklch(0.769 0.188 70.08);
-	--chart-4: oklch(0.627 0.265 303.9);
-	--chart-5: oklch(0.645 0.246 16.439);
-	--sidebar: oklch(0.205 0 0);
-	--sidebar-foreground: oklch(0.985 0 0);
-	--sidebar-primary: oklch(0.488 0.243 264.376);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent: oklch(0.269 0 0);
-	--sidebar-accent-foreground: oklch(0.985 0 0);
-	--sidebar-border: oklch(1 0 0 / 10%);
-	--sidebar-ring: oklch(0.556 0 0);
+	/* shadcn tokens */
+	--background: oklch(0.176 0.005 248.1);
+	--foreground: oklch(0.93 0.003 247.9);
+	--card: oklch(0.216 0.007 248.2);
+	--card-foreground: oklch(0.93 0.003 247.9);
+	--popover: oklch(0.216 0.007 248.2);
+	--popover-foreground: oklch(0.93 0.003 247.9);
+	--primary: oklch(0.753 0.069 244.8);
+	--primary-foreground: oklch(0.187 0.016 244.7);
+	--secondary: oklch(0.237 0.01 248.2);
+	--secondary-foreground: oklch(0.93 0.003 247.9);
+	--muted: oklch(0.216 0.007 248.2);
+	--muted-foreground: oklch(0.706 0.013 248);
+	--accent: oklch(0.237 0.01 248.2);
+	--accent-foreground: oklch(0.93 0.003 247.9);
+	--destructive: oklch(0.713 0.144 24.4);
+	--border: oklch(0.27 0.009 248.2);
+	--input: oklch(0.286 0.012 248.2);
+	--ring: oklch(0.753 0.069 244.8);
+
+	--sidebar: oklch(0.19 0.005 248.1);
+	--sidebar-foreground: oklch(0.93 0.003 247.9);
+	--sidebar-primary: oklch(0.753 0.069 244.8);
+	--sidebar-primary-foreground: oklch(0.187 0.016 244.7);
+	--sidebar-accent: oklch(0.237 0.01 248.2);
+	--sidebar-accent-foreground: oklch(0.93 0.003 247.9);
+	--sidebar-border: oklch(0.27 0.009 248.2);
+	--sidebar-ring: oklch(0.753 0.069 244.8);
+
+	--chart-1: oklch(0.753 0.069 244.8);
+	--chart-2: oklch(0.732 0.121 157.4);
+	--chart-3: oklch(0.785 0.121 91);
+	--chart-4: oklch(0.713 0.144 24.4);
+	--chart-5: oklch(0.706 0.013 248);
+
+	/* project tokens (not shadcn) — see UI spec §1 */
+	--rail: oklch(0.167 0.005 248.1);
+	--surface-input: oklch(0.207 0.008 248.2);
+	--border-strong: oklch(0.322 0.014 248.2);
+	--text-subtle: oklch(0.619 0.015 248.1);
+	--text-body: oklch(0.887 0.005 247.9);
+	--text-label: oklch(0.83 0.009 247.9);
+	--online: oklch(0.732 0.121 157.4);
+	--idle: oklch(0.785 0.121 91);
+	--offline: oklch(0.496 0.016 248.2);
+	--destructive-border: oklch(0.36 0.063 23.5);
 }
 
 @theme inline {
+	/* Geist for UI, Geist Mono for meta (UI spec §2). Geist is optional — the
+	   design only needs one neutral sans + one mono, so we ship system fallbacks
+	   and Geist takes over automatically if a @fontsource package is added. */
+	--font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'Geist Mono', ui-monospace, monospace;
+
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -111,6 +102,18 @@
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-ring: var(--sidebar-ring);
+
+	/* project tokens exposed as Tailwind colour utilities */
+	--color-rail: var(--rail);
+	--color-surface-input: var(--surface-input);
+	--color-border-strong: var(--border-strong);
+	--color-text-subtle: var(--text-subtle);
+	--color-text-body: var(--text-body);
+	--color-text-label: var(--text-label);
+	--color-online: var(--online);
+	--color-idle: var(--idle);
+	--color-offline: var(--offline);
+	--color-destructive-border: var(--destructive-border);
 }
 
 @layer base {
@@ -118,6 +121,6 @@
 		@apply border-border outline-ring/50;
 	}
 	body {
-		@apply bg-background text-foreground;
+		@apply bg-background font-sans text-foreground;
 	}
 }

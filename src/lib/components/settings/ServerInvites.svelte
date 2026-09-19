@@ -86,45 +86,45 @@
 <div class="flex flex-col gap-6" in:fade={{ duration: 150 }}>
 	<div>
 		<h2 class="mb-1 text-xl font-bold">Server Invites</h2>
-		<p class="text-sm text-gray-400">Manage invitations to this server.</p>
+		<p class="text-sm text-muted-foreground">Manage invitations to this server.</p>
 	</div>
 
 	<!-- Create Invite Section -->
-	<div class="flex flex-col gap-4 rounded-md bg-[#2b2d31] p-4">
-		<h3 class="text-sm font-bold text-gray-300 uppercase">Create New Invite</h3>
+	<div class="flex flex-col gap-4 rounded-md bg-card p-4">
+		<h3 class="text-sm font-bold text-foreground uppercase">Create New Invite</h3>
 		<div class="flex flex-col gap-4">
-			<label class="flex flex-col gap-1 text-xs font-bold text-gray-400 uppercase">
+			<label class="flex flex-col gap-1 text-xs font-bold text-muted-foreground uppercase">
 				Max Uses (0 for unlimited)
 				<input
 					type="number"
 					min="0"
 					bind:value={maxUses}
-					class="rounded border border-transparent bg-[#1e1e1e] p-2 font-normal text-white outline-none focus:border-blue-500"
+					class="rounded border border-transparent bg-surface-input p-2 font-normal text-foreground outline-none focus:border-ring"
 					placeholder="Unlimited"
 				/>
 			</label>
-			<label class="flex flex-col gap-1 text-xs font-bold text-gray-400 uppercase">
+			<label class="flex flex-col gap-1 text-xs font-bold text-muted-foreground uppercase">
 				Expires in (Hours)
 				<input
 					type="number"
 					min="0"
 					bind:value={validUntilHours}
-					class="rounded border border-transparent bg-[#1e1e1e] p-2 font-normal text-white outline-none focus:border-blue-500"
+					class="rounded border border-transparent bg-surface-input p-2 font-normal text-foreground outline-none focus:border-ring"
 					placeholder="Never"
 				/>
 			</label>
-			<label class="flex flex-col gap-1 text-xs font-bold text-gray-400 uppercase">
+			<label class="flex flex-col gap-1 text-xs font-bold text-muted-foreground uppercase">
 				Password
 				<input
 					type="password"
 					bind:value={password}
-					class="rounded border border-transparent bg-[#1e1e1e] p-2 font-normal text-white outline-none focus:border-blue-500"
+					class="rounded border border-transparent bg-surface-input p-2 font-normal text-foreground outline-none focus:border-ring"
 					placeholder="Optional"
 				/>
 			</label>
 		</div>
 		<button
-			class="w-max rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+			class="w-max rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
 			onclick={handleCreateInvite}
 			disabled={isCreating}
 		>
@@ -134,27 +134,27 @@
 
 	<!-- Invites List Section -->
 	<div>
-		<h3 class="mb-3 text-sm font-bold text-gray-400 uppercase">Active Invites</h3>
+		<h3 class="mb-3 text-sm font-bold text-muted-foreground uppercase">Active Invites</h3>
 
 		{#if isLoading}
-			<div class="text-sm text-gray-500">Loading invites...</div>
+			<div class="text-sm text-muted-foreground">Loading invites...</div>
 		{:else if invites.length === 0}
-			<div class="text-sm text-gray-400 italic">No active invites for this server.</div>
+			<div class="text-sm text-muted-foreground italic">No active invites for this server.</div>
 		{:else}
 			<div class="flex flex-col gap-2">
 				{#each invites as invite (invite.id)}
-					<div class="flex items-center justify-between gap-4 rounded bg-[#2b2d31] p-3">
+					<div class="flex items-center justify-between gap-4 rounded bg-card p-3">
 						<div class="flex flex-col gap-1 overflow-hidden">
 							<div class="flex items-center gap-2 text-sm font-medium">
 								<button
-									class="cursor-pointer truncate border-none bg-transparent p-0 text-left text-blue-400 hover:underline"
+									class="cursor-pointer truncate border-none bg-transparent p-0 text-left text-primary hover:underline"
 									onclick={() => copyToClipboard(invite.id)}
 									title="Click to copy"
 								>
 									{window.location.origin}/invite/{invite.id}
 								</button>
 							</div>
-							<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-400">
+							<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
 								<span
 									>Uses: {invite.use_count}
 									{invite.max_uses ? `/ ${invite.max_uses}` : '(Unlimited)'}</span
@@ -165,18 +165,18 @@
 										: 'Never'}</span
 								>
 								{#if invite.has_password}
-									<span class="text-yellow-500">Password Protected</span>
+									<span class="text-idle">Password Protected</span>
 								{/if}
 							</div>
 						</div>
 						<div class="flex shrink-0 gap-2">
 							<button
-								class="flex h-8 w-8 items-center justify-center rounded bg-gray-600 transition-colors hover:bg-gray-500"
+								class="flex h-8 w-8 items-center justify-center rounded bg-secondary transition-colors hover:bg-offline"
 								onclick={() => copyToClipboard(invite.id)}
 								title="Copy Link"
 							>
 								<svg
-									class="h-4 w-4 text-white"
+									class="h-4 w-4 text-foreground"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
@@ -190,12 +190,12 @@
 								>
 							</button>
 							<button
-								class="flex h-8 w-8 items-center justify-center rounded bg-red-600 transition-colors hover:bg-red-700"
+								class="flex h-8 w-8 items-center justify-center rounded bg-destructive transition-colors hover:bg-destructive/90"
 								onclick={() => handleRevoke(invite.id)}
 								title="Revoke Invite"
 							>
 								<svg
-									class="h-4 w-4 text-white"
+									class="h-4 w-4 text-foreground"
 									fill="none"
 									stroke="currentColor"
 									viewBox="0 0 24 24"
