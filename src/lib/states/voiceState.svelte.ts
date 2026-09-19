@@ -22,6 +22,8 @@ class VoiceState {
 	channelId: number | null = $state(null);
 	connected: boolean = $state(false);
 	connecting: boolean = $state(false);
+	muted: boolean = $state(false);
+	deafened: boolean = $state(false);
 	// participant identity (user id) -> VoicePeer
 	peers: SvelteMap<string, VoicePeer> = $state(new SvelteMap());
 
@@ -57,6 +59,7 @@ class VoiceState {
 		if (track.kind !== Track.Kind.Audio) return; // audio-only for now
 		const el = track.attach() as HTMLAudioElement;
 		el.autoplay = true;
+		el.muted = this.deafened; // respect deafen for tracks that arrive later
 		document.body.appendChild(el);
 		this.audioEls.set(track.sid ?? Math.random().toString(36), el);
 	}
@@ -102,7 +105,38 @@ class VoiceState {
 		this.channelId = null;
 		this.connected = false;
 		this.connecting = false;
+		this.muted = false;
+		this.deafened = false;
 		this.peers = new SvelteMap();
+	}
+
+	/** Toggle the local microphone. */
+	async toggleMute() {
+		if (!this.room) return;
+		const next = !this.muted;
+		this.muted = next;
+		try {
+			await this.room.localParticipant.setMicrophoneEnabled(!next);
+		} catch (err) {
+			console.error('Failed to toggle mic:', err);
+			this.muted = !next; // revert on failure
+		}
+	}
+
+	/** Toggle deafen: silence everyone else's audio (and mute your own mic). */
+	async toggleDeafen() {
+		if (!this.room) return;
+		const next = !this.deafened;
+		this.deafened = next;
+		this.audioEls.forEach((el) => (el.muted = next));
+
+		// Deafening also mutes your mic; undeafening restores it.
+		this.muted = next;
+		try {
+			await this.room.localParticipant.setMicrophoneEnabled(!next);
+		} catch (err) {
+			console.error('Failed to toggle mic while deafening:', err);
+		}
 	}
 
 	async joinVoice(channelId: number) {

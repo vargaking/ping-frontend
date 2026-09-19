@@ -1,24 +1,23 @@
 <script lang="ts">
-	import Sidebar from '$lib/components/ui/sidebar/Sidebar.svelte';
-	import { onMount } from 'svelte';
-
+	import TopBar from '$lib/components/ui/shell/TopBar.svelte';
+	import ServerRail from '$lib/components/ui/shell/ServerRail.svelte';
+	import ChannelSidebar from '$lib/components/ui/shell/ChannelSidebar.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
+	import { serversState } from '$lib/states/serversState.svelte';
 
 	let { children } = $props();
-
-	onMount(() => {
-		return () => {
-			// cleanup on destroy
-			//socketState.disconnect();
-		};
-	});
 </script>
 
-<div class="flex h-screen w-screen">
-	<Sidebar />
-
-	<div class="h-full w-full">
-		{@render children()}
+<div class="flex h-screen w-screen flex-col overflow-hidden">
+	<TopBar />
+	<div class="flex min-h-0 flex-1">
+		<ServerRail />
+		{#if serversState.selectedServer}
+			<ChannelSidebar />
+		{/if}
+		<div class="min-w-0 flex-1">
+			{@render children()}
+		</div>
 	</div>
 </div>
 
