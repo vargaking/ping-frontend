@@ -151,9 +151,7 @@ function createVoiceStore() {
 
 				// 3. Publish the mic (audio-only).
 				if (!navigator.mediaDevices?.getUserMedia) {
-					throw new Error(
-						'Voice chat requires a secure context (HTTPS or localhost).'
-					);
+					throw new Error('Voice chat requires a secure context (HTTPS or localhost).');
 				}
 				await room.localParticipant.setMicrophoneEnabled(true);
 

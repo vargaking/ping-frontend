@@ -14,7 +14,7 @@ export const getOrFetchUser = async (user_id: number): Promise<User | null> => {
 	const user = await db.users.where('id').equals(user_id).first();
 
 	// If user exists but has no avatar in profile, we might have stale data.
-    // Force a re-fetch in that case.
+	// Force a re-fetch in that case.
 	if (!user || !user.profile?.avatar) {
 		const fetchedUser = await getUser(user_id);
 
