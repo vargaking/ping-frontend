@@ -24,7 +24,24 @@ export default defineConfig(
 		rules: {
 			// typescript-eslint strongly recommend that you do not use the no-undef lint rule on TypeScript projects.
 			// see: https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors
-			'no-undef': 'off'
+			'no-undef': 'off',
+
+			// Routes are static string paths and the app has no base path, so the
+			// resolve() ceremony adds noise without value here.
+			'svelte/no-navigation-without-resolve': 'off',
+
+			// Profiles / server_profile / channel_settings are free-form JSON from
+			// the backend; `any` is intentional at those boundaries. Keep it visible
+			// as a warning rather than a hard failure.
+			'@typescript-eslint/no-explicit-any': 'warn',
+
+			// MessageNode renders recursive TipTap JSON that has no stable per-node
+			// id; keying by index there is fine. Real data lists are keyed already.
+			'svelte/require-each-key': 'warn',
+
+			// new Date() is used for one-off formatting, not as reactive state, so
+			// SvelteDate is unnecessary. Downgraded to a warning.
+			'svelte/prefer-svelte-reactivity': 'warn'
 		}
 	},
 	{

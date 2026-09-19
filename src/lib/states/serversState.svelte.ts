@@ -24,7 +24,7 @@ export class ServersState {
 	setSelectedServer(server: Server | null) {
 		this.selectedServer = server;
 
-		if (server) {
+		if (server && server.id != null) {
 			this.servers[server.id] = server;
 		}
 	}
@@ -54,7 +54,7 @@ export class ServersState {
 	async fetchUserServers(): Promise<Server[]> {
 		const fetchedServers = await getUserServers();
 		fetchedServers.forEach((server) => {
-			this.servers[server.id] = server;
+			if (server.id != null) this.servers[server.id] = server;
 		});
 		return fetchedServers;
 	}

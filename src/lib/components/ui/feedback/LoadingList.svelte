@@ -10,7 +10,7 @@
 
 <div class="flex flex-col gap-3" aria-busy="true" aria-live="polite">
 	<span class="sr-only">Loading…</span>
-	{#each Array(rows) as _, i (i)}
+	{#each Array.from({ length: rows }, (_, i) => i) as i (i)}
 		<div class="flex items-center gap-3">
 			{#if avatar}
 				<div class="h-9 w-9 shrink-0 animate-pulse rounded-[10px] bg-accent"></div>
