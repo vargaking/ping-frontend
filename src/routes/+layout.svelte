@@ -7,6 +7,7 @@
 	import { page } from '$app/state';
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { Toaster } from '$lib/components/ui/sonner/index';
 
 	let { children } = $props();
 
@@ -38,4 +39,5 @@
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 <ModeWatcher defaultMode="dark" />
+<Toaster position="bottom-right" />
 {@render children()}

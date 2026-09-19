@@ -5,11 +5,14 @@
 	import { uploadAvatar } from '$lib/requests/users/uploadAvatar';
 	import { deleteUser } from '$lib/requests/users/deleteUser';
 	import { toast } from 'svelte-sonner';
+	import * as Dialog from '$lib/components/ui/dialog/index';
+	import Button from '$lib/components/ui/button/button.svelte';
 
 	let username = $state(usersState.loggedInUser?.username ?? '');
 	let avatarFile: File | null = $state(null);
 	let avatarPreview: string | null = $state(null);
 	let isSaving = $state(false);
+	let deleteOpen = $state(false);
 	let fileInput: HTMLInputElement;
 
 	const hasUsernameChanged = $derived(username !== (usersState.loggedInUser?.username ?? ''));
@@ -48,11 +51,10 @@
 		const user = usersState.loggedInUser;
 		if (!user) return;
 
-		if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
-
 		try {
 			await deleteUser(user.id);
 			usersState.setLoggedInUser(null);
+			deleteOpen = false;
 			window.location.href = '/login';
 		} catch (e: any) {
 			const message = e?.response?.data?.detail ?? 'Failed to delete account';
@@ -125,11 +127,29 @@
 	<!-- Danger Zone -->
 	<div>
 		<h3 class="mb-2 font-bold text-destructive">Danger Zone</h3>
-		<button
-			class="rounded border border-destructive-border px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-			onclick={handleDeleteAccount}
-		>
-			Delete Account
-		</button>
+		<Dialog.Root bind:open={deleteOpen}>
+			<Dialog.Trigger
+				class="rounded border border-destructive-border px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				Delete Account
+			</Dialog.Trigger>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>Delete account?</Dialog.Title>
+					<Dialog.Description>
+						This permanently deletes your account and cannot be undone.
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="secondary" onclick={() => (deleteOpen = false)}>Cancel</Button>
+					<Button
+						class="border border-destructive-border bg-transparent text-destructive hover:bg-destructive/10"
+						onclick={handleDeleteAccount}
+					>
+						Delete account
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 	</div>
 </div>

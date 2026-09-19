@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
+	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { listServerInvites, createInvite, deleteInvite } from '$lib/requests/invites';
 	import type { InviteResponse } from '$lib/types/invite.types';
+	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
+	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
+	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
+	import { Ticket } from 'lucide-svelte';
 
 	let invites = $state<InviteResponse[]>([]);
 	let isLoading = $state(true);
+	let loadError = $state(false);
 	let isCreating = $state(false);
 
 	// Create form bound variables
@@ -24,10 +30,12 @@
 	async function fetchInvites() {
 		if (!serverId) return;
 		isLoading = true;
+		loadError = false;
 		try {
 			invites = await listServerInvites(serverId);
 		} catch (e) {
 			console.error('Failed to fetch invites', e);
+			loadError = true;
 		} finally {
 			isLoading = false;
 		}
@@ -57,9 +65,10 @@
 			maxUses = null;
 			validUntilHours = null;
 			password = '';
+			toast.success('Invite created');
 		} catch (e) {
 			console.error('Failed to create invite', e);
-			alert('Failed to create invite');
+			toast.error('Failed to create invite');
 		} finally {
 			isCreating = false;
 		}
@@ -69,9 +78,10 @@
 		try {
 			await deleteInvite(inviteId);
 			invites = invites.filter((i) => i.id !== inviteId);
+			toast.success('Invite revoked');
 		} catch (e) {
 			console.error('Failed to revoke invite', e);
-			alert('Failed to revoke invite');
+			toast.error('Failed to revoke invite');
 		}
 	}
 
@@ -79,7 +89,7 @@
 		// Here we build an invite link. Adjust domain based on your app.
 		const inviteLink = `${window.location.origin}/invite/${id}`;
 		navigator.clipboard.writeText(inviteLink);
-		alert('Invite link copied to clipboard!');
+		toast.success('Invite link copied to clipboard');
 	}
 </script>
 
@@ -137,9 +147,19 @@
 		<h3 class="mb-3 text-sm font-bold text-muted-foreground uppercase">Active Invites</h3>
 
 		{#if isLoading}
-			<div class="text-sm text-muted-foreground">Loading invites...</div>
+			<LoadingList rows={2} />
+		{:else if loadError}
+			<ErrorState
+				title="Couldn’t load invites"
+				description="There was a problem reaching the server."
+				onRetry={fetchInvites}
+			/>
 		{:else if invites.length === 0}
-			<div class="text-sm text-muted-foreground italic">No active invites for this server.</div>
+			<EmptyState title="No active invites" description="Generate a link above to invite people.">
+				{#snippet icon()}
+					<Ticket size={20} strokeWidth={1.75} />
+				{/snippet}
+			</EmptyState>
 		{:else}
 			<div class="flex flex-col gap-2">
 				{#each invites as invite (invite.id)}

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { PUBLIC_BASE_URL } from '$env/static/public';
+	import { toast } from 'svelte-sonner';
 
 	let serverName = $state(serversState.selectedServer?.name || '');
 	let iconFile = $state<File | null>(null);
@@ -30,13 +31,13 @@
 				if (res.ok) {
 					const updatedServer = await res.json();
 					serversState.setSelectedServer(updatedServer);
-					alert('Server icon updated!');
+					toast.success('Server icon updated');
 				} else {
-					alert('Failed to update icon');
+					toast.error('Failed to update icon');
 				}
 			} catch (e) {
 				console.error(e);
-				alert('Error uploading icon');
+				toast.error('Error uploading icon');
 			} finally {
 				isUploading = false;
 			}

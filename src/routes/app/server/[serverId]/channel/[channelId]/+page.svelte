@@ -7,14 +7,21 @@
 	import UnreadDivider from '$lib/components/ui/message/UnreadDivider.svelte';
 	import TypingIndicator from '$lib/components/ui/message/TypingIndicator.svelte';
 	import UsersSidebar from '$lib/components/ui/sidebar/UsersSidebar.svelte';
+	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
+	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
+	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import type { MessageType } from '$lib/types/messages.types';
 	import { messagesState } from '$lib/states/messagesState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { db } from '$lib/utils/db';
 	import { tick } from 'svelte';
+	import { MessagesSquare } from 'lucide-svelte';
 
 	let messageWrapper = $state<HTMLDivElement>();
 	let membersOpen = $state(true);
+	let loadState = $state<'loading' | 'error' | 'ready'>('loading');
+
+	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
 	// Timestamp (ms) of the last message seen on the previous visit to this
 	// channel — everything newer renders under the "New" divider.
@@ -97,10 +104,8 @@
 		messageWrapper?.scrollTo({ top: messageWrapper.scrollHeight });
 	};
 
-	$effect(() => {
-		if (!page.params.channelId) return;
-		const channelId = parseInt(page.params.channelId);
-		serversState.setSelectedChannelById(channelId);
+	function loadMessages(channelId: number) {
+		loadState = 'loading';
 		messagesState.clear();
 
 		// Capture the previous read marker, then advance it for next time.
@@ -113,10 +118,21 @@
 			.sortBy('timestamp')
 			.then((messages) => {
 				messagesState.set(messages);
+				loadState = 'ready';
 				const latest = messages.at(-1)?.timestamp;
 				if (latest) localStorage.setItem(readKey, latest);
 				tick().then(() => setTimeout(scrollToBottom, 100));
+			})
+			.catch((e) => {
+				console.error('Failed to load messages', e);
+				loadState = 'error';
 			});
+	}
+
+	$effect(() => {
+		if (currentChannelId == null) return;
+		serversState.setSelectedChannelById(currentChannelId);
+		loadMessages(currentChannelId);
 	});
 
 	$effect(() => {
@@ -131,9 +147,28 @@
 		<ChannelHeader {membersOpen} onToggleMembers={() => (membersOpen = !membersOpen)} />
 
 		<div bind:this={messageWrapper} class="min-h-0 flex-1 overflow-y-auto">
-			{#if items.length === 0}
+			{#if loadState === 'loading'}
+				<div class="px-8 pt-6">
+					<LoadingList rows={6} avatar />
+				</div>
+			{:else if loadState === 'error'}
 				<div class="flex h-full items-center justify-center px-8">
-					<p class="text-sm text-text-subtle">No messages yet — say hello.</p>
+					<ErrorState
+						title="Couldn’t load messages"
+						description="There was a problem reading this channel."
+						onRetry={() => currentChannelId != null && loadMessages(currentChannelId)}
+					/>
+				</div>
+			{:else if items.length === 0}
+				<div class="flex h-full items-center justify-center px-8">
+					<EmptyState
+						title="No messages yet"
+						description="Be the first to say something in this channel."
+					>
+						{#snippet icon()}
+							<MessagesSquare size={20} strokeWidth={1.75} />
+						{/snippet}
+					</EmptyState>
 				</div>
 			{:else}
 				<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2">
