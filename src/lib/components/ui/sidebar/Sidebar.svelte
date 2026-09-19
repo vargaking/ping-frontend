@@ -1,14 +1,6 @@
 <script lang="ts">
 	import ChatSVG from '$lib/components/icons/ChatSVG.svelte';
 	import PlusSVG from '$lib/components/icons/PlusSVG.svelte';
-	import { UserChannelsStore } from '$lib/stores/channelsStore';
-	import {
-		CurrentChannelIdStore,
-		CurrentServerIdStore,
-		CurrentServerStore,
-		UserServersStore,
-		UserStore
-	} from '$lib/stores/userStore';
 	import SidebarItem from './SidebarItem.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Input from '../input/input.svelte';
@@ -16,7 +8,7 @@
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import { page } from '$app/stores';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
-	import { voiceStore } from '$lib/stores/voiceStore';
+	import { voiceState } from '$lib/states/voiceState.svelte';
 	import VoiceControls from '$lib/components/voice/VoiceControls.svelte';
 	import { Hash, Volume2, Menu, LogOut, UserPlus, Settings } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
@@ -199,7 +191,7 @@
 									class="flex grow cursor-pointer items-center gap-2 text-left {active
 										? 'font-bold'
 										: ''}"
-									onclick={() => voiceStore.joinVoice(channel.id)}
+									onclick={() => voiceState.joinVoice(channel.id)}
 								>
 									<Volume2 size={16} class="text-muted-foreground" />
 									{channel.name}
@@ -229,7 +221,6 @@
 
 	<div class="flex h-fit items-center justify-start gap-2 border-t border-border p-2">
 		<div class="rounded-xl">
-			<!-- {console.log('Sidebar UserStore:', $UserStore)} -->
 			<Avatar user={usersState.loggedInUser} size="md" />
 		</div>
 		<span>{usersState.loggedInUser?.username}</span>

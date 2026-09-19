@@ -1,7 +1,6 @@
 <script lang="ts">
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
-	import { getOrFetchUser } from '$lib/stores/userStore';
 	import type { MessageType } from '$lib/types/messages.types';
 	import MessageNode from './MessageNode.svelte';
 	import { onMount } from 'svelte';

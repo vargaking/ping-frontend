@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { CurrentChannelStore } from '$lib/stores/userStore';
+	import { serversState } from '$lib/states/serversState.svelte';
 
-	let channelName = $CurrentChannelStore?.name || '';
+	let channelName = $state(serversState.selectedChannel?.name || '');
 </script>
 
 <div class="flex flex-col gap-6">
 	<h2 class="text-xl font-bold">Channel Settings</h2>
 
-	{#if $CurrentChannelStore}
+	{#if serversState.selectedChannel}
 		<div class="flex max-w-md flex-col gap-4">
 			<div class="flex flex-col gap-1">
 				<label class="text-xs font-bold text-gray-400 uppercase">Channel Name</label>

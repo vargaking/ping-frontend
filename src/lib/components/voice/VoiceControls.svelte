@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { voiceStore } from '$lib/stores/voiceStore';
+	import { voiceState } from '$lib/states/voiceState.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { PhoneOff } from 'lucide-svelte';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 
 	const disconnect = () => {
-		voiceStore.leaveVoice();
+		voiceState.leaveVoice();
 	};
 </script>
 
-{#if $voiceStore.connecting}
+{#if voiceState.connecting}
 	<div class="flex flex-col gap-2 border-t border-border bg-sidebar-accent/50 p-2">
 		<span class="text-sm font-bold text-yellow-500">Connecting...</span>
 	</div>
-{:else if $voiceStore.connected}
+{:else if voiceState.connected}
 	<div class="flex flex-col gap-2 border-t border-border bg-sidebar-accent/50 p-2">
 		<div class="flex items-center justify-between">
 			<span class="text-sm font-bold text-green-500">Voice Connected</span>
@@ -28,7 +28,7 @@
 		</div>
 
 		<div class="flex max-h-40 flex-col gap-1 overflow-y-auto">
-			{#each Array.from($voiceStore.peers.values()) as peer}
+			{#each Array.from(voiceState.peers.values()) as peer}
 				<div
 					class="flex items-center gap-2 rounded p-1 hover:bg-sidebar-accent/50 {peer.isSpeaking
 						? 'border-l-2 border-green-500 bg-green-500/10'
@@ -42,13 +42,13 @@
 					>
 				</div>
 			{/each}
-			{#if $voiceStore.peers.size === 0}
+			{#if voiceState.peers.size === 0}
 				<span class="px-1 text-xs text-muted-foreground italic">No one else is here</span>
 			{/if}
 		</div>
 
 		<div class="mt-1 text-xs text-muted-foreground">
-			Channel ID: {$voiceStore.channelId}
+			Channel ID: {voiceState.channelId}
 		</div>
 	</div>
 {/if}
