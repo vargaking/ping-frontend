@@ -10,11 +10,14 @@
 	{#if serversState.selectedChannel}
 		<div class="flex max-w-md flex-col gap-4">
 			<div class="flex flex-col gap-1">
-				<label class="text-xs font-bold text-muted-foreground uppercase">Channel Name</label>
+				<label for="channel-name" class="text-xs font-bold text-muted-foreground uppercase">
+					Channel Name
+				</label>
 				<input
+					id="channel-name"
 					type="text"
 					bind:value={channelName}
-					class="rounded border border-transparent bg-surface-input p-2 text-foreground outline-none focus:border-ring"
+					class="rounded border border-transparent bg-surface-input p-2 text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring"
 				/>
 			</div>
 
