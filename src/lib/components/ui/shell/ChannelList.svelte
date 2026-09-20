@@ -135,7 +135,8 @@
 										type="radio"
 										name="channelType"
 										value="text"
-										bind:group={channelType}
+										checked={channelType === 'text'}
+										onchange={() => (channelType = 'text')}
 										class="accent-primary"
 									/>
 									Text
@@ -145,7 +146,8 @@
 										type="radio"
 										name="channelType"
 										value="voice"
-										bind:group={channelType}
+										checked={channelType === 'voice'}
+										onchange={() => (channelType = 'voice')}
 										class="accent-primary"
 									/>
 									Voice

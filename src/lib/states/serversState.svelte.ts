@@ -13,12 +13,17 @@ export class ServersState {
 	serversList: Server[] = $derived(Object.values(this.servers));
 	selectedServerChannelsList: Channel[] = $derived.by(() => {
 		const channels = this.selectedServerChannels;
+		const all = Object.values(channels);
 		const order = this.selectedServer?.server_settings?.channel_order;
-		if (!order || order.length === 0) return Object.values(channels);
+		if (!order || order.length === 0) return all;
 
-		// Map over the order array to get channels in the correct order,
-		// filtering out any IDs that don't have a corresponding channel
-		return order.map((id) => channels[id]).filter((ch): ch is Channel => ch != null);
+		// Channels in the saved order first...
+		const ordered = order.map((id) => channels[id]).filter((ch): ch is Channel => ch != null);
+		// ...then any channel not yet in channel_order (e.g. just created) appended,
+		// so new channels show immediately instead of only after a reload.
+		const orderedIds = new Set(order);
+		const rest = all.filter((ch) => !orderedIds.has(ch.id));
+		return [...ordered, ...rest];
 	});
 
 	setSelectedServer(server: Server | null) {

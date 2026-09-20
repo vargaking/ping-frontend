@@ -2,7 +2,10 @@
 	import type { MessageType } from '$lib/types/messages.types';
 	import MessageNode from './MessageNode.svelte';
 
-	let { message }: { message: MessageType } = $props();
+	// The first row in a group already shows the timestamp in the group header,
+	// so the hover-gutter time is only rendered on continuation rows.
+	let { message, showHoverTime = true }: { message: MessageType; showHoverTime?: boolean } =
+		$props();
 
 	const parsedContent = $derived.by(() => {
 		// `content` is typed as JSONContent, but legacy rows can still be strings.
@@ -33,12 +36,14 @@
 </script>
 
 <div class="group/row relative">
-	<span
-		class="pointer-events-none absolute top-0.5 -left-12 hidden w-11 pr-2 text-right font-mono text-[11px] text-text-subtle select-none group-hover/row:block"
-		aria-hidden="true"
-	>
-		{hoverTime}
-	</span>
+	{#if showHoverTime}
+		<span
+			class="pointer-events-none absolute top-0.5 -left-12 hidden w-11 pr-2 text-right font-mono text-[11px] text-text-subtle select-none group-hover/row:block"
+			aria-hidden="true"
+		>
+			{hoverTime}
+		</span>
+	{/if}
 	<div
 		class="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
 	>

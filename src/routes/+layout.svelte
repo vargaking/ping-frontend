@@ -11,33 +11,52 @@
 
 	let { children } = $props();
 
+	// Gate rendering until we know who the user is, so a protected route never
+	// flashes its (empty) shell before the redirect to /login lands, and a
+	// logged-in user doesn't see /login before bouncing to /app.
+	let ready = $state(false);
+	let redirecting = $state(false);
+
+	const isPublic = (path: string) => path === '/' || path === '/login/';
+
+	function resolveAuth(loggedIn: boolean) {
+		const path = page.url.pathname;
+		if (loggedIn && (path === '/' || path === '/login/')) {
+			redirecting = true;
+			window.location.href = '/app';
+			return;
+		}
+		if (!loggedIn && !isPublic(path)) {
+			redirecting = true;
+			window.location.href = '/login/';
+			return;
+		}
+		ready = true;
+	}
+
 	onMount(() => {
 		initializeAppData()
-			.then(() => {
-				// If on login page, redirect to home
-				if (usersState.loggedInUser) {
-					if (page.url.pathname === '/login/' || page.url.pathname === '/') {
-						console.log('Redirecting to home page', page.url.pathname);
-						window.location.href = '/app';
-					}
-				} else {
-					if (page.url.pathname !== '/login/' && page.url.pathname !== '/') {
-						console.log('Redirecting to login page', page.url.pathname);
-						window.location.href = '/login/';
-					}
-				}
-			})
-			.catch(() => {
-				// If not on login page, redirect to login
-				if (page.url.pathname !== '/login/' && page.url.pathname !== '/') {
-					console.log('Redirecting to login page', page.url.pathname);
-					window.location.href = '/login/';
-				}
-			});
+			.then(() => resolveAuth(!!usersState.loggedInUser))
+			.catch(() => resolveAuth(false));
 	});
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
-{@render children()}
+
+{#if ready && !redirecting}
+	{@render children()}
+{:else}
+	<div class="flex h-screen w-screen items-center justify-center bg-background">
+		<div class="flex flex-col items-center gap-3">
+			<div
+				class="flex h-11 w-11 animate-pulse items-center justify-center rounded-xl bg-primary/15 font-mono text-lg font-semibold text-primary"
+				aria-hidden="true"
+			>
+				z
+			</div>
+			<span class="sr-only">Loading…</span>
+		</div>
+	</div>
+{/if}
