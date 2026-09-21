@@ -210,6 +210,13 @@ class SocketState {
 			case 'presence_init':
 				usersState.setOnlineUsers(message.user_ids);
 				break;
+			case 'channel_created':
+				serversState.addChannel(message.server_id, message.channel);
+				break;
+			case 'member_joined':
+				usersState.users[message.member.id] = message.member;
+				serversState.addMember(message.server_id, message.member);
+				break;
 			case 'error':
 				// e.g. { code: 'forbidden', ref: <message id> } when posting to a
 				// server/channel we have no access to. Surfacing this in the UI
