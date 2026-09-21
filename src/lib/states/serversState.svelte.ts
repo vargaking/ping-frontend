@@ -3,6 +3,7 @@ import { getUserServers } from '$lib/requests/servers/getUserServers';
 import { updateServer } from '$lib/requests/servers/updateServer';
 import type { Channel } from '$lib/types/channel.types';
 import type { Server } from '$lib/types/server.types';
+import type { User } from '$lib/types/auth.types';
 
 export class ServersState {
 	servers: Record<number, Server> = $state({});
@@ -70,6 +71,26 @@ export class ServersState {
 			this.selectedServerChannels[channel.id] = channel;
 		});
 		return fetchedChannels;
+	}
+
+	/** Patch in a channel we learned about over the socket (channel_created). */
+	addChannel(serverId: number, channel: Channel) {
+		// Only the selected server's channels live in this record; other servers
+		// re-fetch their channels when opened, so there's nothing to patch there.
+		if (this.selectedServer?.id !== serverId) return;
+		if (this.selectedServerChannels[channel.id]) return;
+		this.selectedServerChannels[channel.id] = channel;
+	}
+
+	/** Patch in a member who joined over the socket (member_joined). */
+	addMember(serverId: number, member: User) {
+		const server = this.servers[serverId];
+		if (!server) return;
+		if (server.members?.some((m) => m.id === member.id)) return;
+
+		const updated = { ...server, members: [...(server.members ?? []), member] };
+		this.servers[serverId] = updated;
+		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
 	}
 
 	private reorderTimeout: ReturnType<typeof setTimeout> | null = null;

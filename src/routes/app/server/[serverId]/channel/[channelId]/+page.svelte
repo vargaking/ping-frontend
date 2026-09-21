@@ -104,19 +104,30 @@
 		messageWrapper?.scrollTo({ top: messageWrapper.scrollHeight });
 	};
 
-	function loadMessages(channelId: number) {
-		loadState = 'loading';
-		messagesState.clear();
+	// Bumped on every switch so a slow read for a channel we've already left
+	// can't overwrite the one we're now looking at.
+	let loadToken = 0;
 
-		// Capture the previous read marker, then advance it for next time.
+	function loadMessages(channelId: number) {
+		const token = ++loadToken;
+
+		// Only flash the skeleton on the first load, when there's nothing to
+		// show yet. On a channel switch we keep the current messages on screen
+		// until the new ones are read, so the switch doesn't flicker through an
+		// empty loading state (the read from IndexedDB is near-instant).
+		if (loadState !== 'ready') loadState = 'loading';
+
 		const readKey = `read:${channelId}`;
 		const prevRead = localStorage.getItem(readKey);
-		unreadBoundary = prevRead ? Date.parse(prevRead) : null;
 
 		db.messages
 			.where({ server_id: serversState.selectedServer?.id, channel_id: channelId })
 			.sortBy('timestamp')
 			.then((messages) => {
+				if (token !== loadToken) return; // a newer switch superseded us
+
+				// Everything newer than the previous visit renders under "New".
+				unreadBoundary = prevRead ? Date.parse(prevRead) : null;
 				messagesState.set(messages);
 				loadState = 'ready';
 				const latest = messages.at(-1)?.timestamp;
@@ -124,6 +135,7 @@
 				tick().then(() => setTimeout(scrollToBottom, 100));
 			})
 			.catch((e) => {
+				if (token !== loadToken) return;
 				console.error('Failed to load messages', e);
 				loadState = 'error';
 			});
