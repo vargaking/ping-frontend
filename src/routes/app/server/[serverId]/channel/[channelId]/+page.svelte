@@ -15,7 +15,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { db } from '$lib/utils/db';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { MessagesSquare } from 'lucide-svelte';
 
 	let messageWrapper = $state<HTMLDivElement>();
@@ -35,8 +35,11 @@
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
 	// Timestamp (ms) of the last message seen on the previous visit to this
-	// channel — everything newer renders under the "New" divider.
+	// channel, and the id of the first message past it. The divider is pinned to
+	// that message once on open, so messages sent or received while we're looking
+	// never move it or spawn a second one.
 	let unreadBoundary = $state<number | null>(null);
+	let unreadAnchorId = $state<string | null>(null);
 
 	const GROUP_GAP_MS = 5 * 60 * 1000;
 
@@ -85,11 +88,7 @@
 				lastDay = day;
 			}
 
-			if (
-				!unreadInserted &&
-				unreadBoundary != null &&
-				new Date(m.timestamp).getTime() > unreadBoundary
-			) {
+			if (!unreadInserted && unreadAnchorId != null && m.id === unreadAnchorId) {
 				flush();
 				result.push({ kind: 'unread', key: `u-${m.id}` });
 				unreadInserted = true;
@@ -122,6 +121,14 @@
 	function applyPage(channelId: number, messages: MessageType[], hasMore: boolean) {
 		messagesState.set(channelId, messages, hasMore);
 		autoScrollAnchorId = messages.at(-1)?.id ?? null;
+
+		// Pin the unread divider to the first message past the boundary, once.
+		const boundary = unreadBoundary;
+		unreadAnchorId =
+			boundary != null
+				? (messages.find((m) => new Date(m.timestamp).getTime() > boundary)?.id ?? null)
+				: null;
+
 		loadState = 'ready';
 		const latest = messages.at(-1)?.timestamp;
 		if (latest) localStorage.setItem(`read:${channelId}`, latest);
@@ -200,10 +207,16 @@
 		}
 	}
 
+	// Reload only when the channel itself changes. loadMessages reads message
+	// state, so without untrack this effect would re-fire on every send, receive
+	// or older-page prepend — reloading the newest page and snapping to bottom.
 	$effect(() => {
-		if (currentChannelId == null) return;
-		serversState.setSelectedChannelById(currentChannelId);
-		loadMessages(currentChannelId);
+		const channelId = currentChannelId;
+		if (channelId == null) return;
+		untrack(() => {
+			serversState.setSelectedChannelById(channelId);
+			loadMessages(channelId);
+		});
 	});
 
 	// Load older history when the top of the list scrolls into view.
