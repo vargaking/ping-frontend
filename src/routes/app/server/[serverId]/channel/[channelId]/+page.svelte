@@ -13,13 +13,24 @@
 	import type { MessageType } from '$lib/types/messages.types';
 	import { messagesState } from '$lib/states/messagesState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { db } from '$lib/utils/db';
 	import { tick } from 'svelte';
 	import { MessagesSquare } from 'lucide-svelte';
 
 	let messageWrapper = $state<HTMLDivElement>();
+	let topSentinel = $state<HTMLDivElement>();
 	let membersOpen = $state(true);
 	let loadState = $state<'loading' | 'error' | 'ready'>('loading');
+
+	// Cursor for the next older page, and a guard so overlapping scrolls don't
+	// fire two history loads at once.
+	let nextCursor = $state<string | null>(null);
+	let loadingOlder = $state(false);
+
+	// Id of the newest message we've already scrolled to, so a live message at
+	// the bottom pins the view but prepending older history never does.
+	let autoScrollAnchorId = $state<string | null>(null);
 
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
@@ -66,7 +77,7 @@
 			}
 		};
 
-		for (const m of messagesState.messages) {
+		for (const m of messagesState.messages(currentChannelId ?? -1)) {
 			const day = dayKey(m.timestamp);
 			if (day !== lastDay) {
 				flush();
@@ -108,37 +119,85 @@
 	// can't overwrite the one we're now looking at.
 	let loadToken = 0;
 
-	function loadMessages(channelId: number) {
+	function applyPage(channelId: number, messages: MessageType[], hasMore: boolean) {
+		messagesState.set(channelId, messages, hasMore);
+		autoScrollAnchorId = messages.at(-1)?.id ?? null;
+		loadState = 'ready';
+		const latest = messages.at(-1)?.timestamp;
+		if (latest) localStorage.setItem(`read:${channelId}`, latest);
+		tick().then(() => setTimeout(scrollToBottom, 100));
+	}
+
+	async function loadMessages(channelId: number) {
 		const token = ++loadToken;
+		nextCursor = null;
 
-		// Only flash the skeleton on the first load, when there's nothing to
-		// show yet. On a channel switch we keep the current messages on screen
-		// until the new ones are read, so the switch doesn't flicker through an
-		// empty loading state (the read from IndexedDB is near-instant).
-		if (loadState !== 'ready') loadState = 'loading';
+		// Only flash the skeleton on a first visit, when there's nothing cached
+		// for this channel yet. Revisits keep their per-channel messages on
+		// screen while we refresh, so the switch doesn't flicker.
+		if (messagesState.messages(channelId).length === 0) loadState = 'loading';
 
-		const readKey = `read:${channelId}`;
-		const prevRead = localStorage.getItem(readKey);
+		// Everything newer than the previous visit renders under "New".
+		const prevRead = localStorage.getItem(`read:${channelId}`);
+		unreadBoundary = prevRead ? Date.parse(prevRead) : null;
 
-		db.messages
-			.where({ server_id: serversState.selectedServer?.id, channel_id: channelId })
-			.sortBy('timestamp')
-			.then((messages) => {
-				if (token !== loadToken) return; // a newer switch superseded us
+		try {
+			// The API is the source of truth for the newest page; Dexie is a cache.
+			const pageData = await getChannelMessages(channelId);
+			if (token !== loadToken) return; // a newer switch superseded us
 
-				// Everything newer than the previous visit renders under "New".
-				unreadBoundary = prevRead ? Date.parse(prevRead) : null;
-				messagesState.set(messages);
-				loadState = 'ready';
-				const latest = messages.at(-1)?.timestamp;
-				if (latest) localStorage.setItem(readKey, latest);
-				tick().then(() => setTimeout(scrollToBottom, 100));
-			})
-			.catch((e) => {
+			const ascending = [...pageData.messages].reverse();
+			nextCursor = pageData.next_cursor;
+			applyPage(channelId, ascending, pageData.has_more);
+			db.messages.bulkPut(ascending).catch((e) => console.warn('Failed to cache messages', e));
+		} catch (e) {
+			if (token !== loadToken) return;
+			console.warn('Failed to load messages from API, falling back to cache', e);
+			try {
+				const cached = await db.messages
+					.where({ server_id: serversState.selectedServer?.id, channel_id: channelId })
+					.sortBy('timestamp');
 				if (token !== loadToken) return;
-				console.error('Failed to load messages', e);
-				loadState = 'error';
-			});
+				nextCursor = null;
+				applyPage(channelId, cached, false);
+			} catch (cacheError) {
+				if (token !== loadToken) return;
+				console.error('Failed to load messages', cacheError);
+				if (messagesState.messages(channelId).length === 0) loadState = 'error';
+			}
+		}
+	}
+
+	async function loadOlder() {
+		const channelId = currentChannelId;
+		if (channelId == null || loadingOlder) return;
+		if (!messagesState.hasMore(channelId) || !nextCursor) return;
+
+		loadingOlder = true;
+		const el = messageWrapper;
+		const prevHeight = el?.scrollHeight ?? 0;
+		const prevTop = el?.scrollTop ?? 0;
+
+		try {
+			const pageData = await getChannelMessages(channelId, nextCursor);
+			if (channelId !== currentChannelId) return;
+
+			const olderAscending = [...pageData.messages].reverse();
+			messagesState.prependOlder(channelId, olderAscending, pageData.has_more);
+			nextCursor = pageData.next_cursor;
+			db.messages
+				.bulkPut(olderAscending)
+				.catch((e) => console.warn('Failed to cache older messages', e));
+
+			// Keep the viewport pinned to the same message: prepending taller
+			// content on top would otherwise make the view jump.
+			await tick();
+			if (el) el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
+		} catch (e) {
+			console.error('Failed to load older messages', e);
+		} finally {
+			loadingOlder = false;
+		}
 	}
 
 	$effect(() => {
@@ -147,10 +206,33 @@
 		loadMessages(currentChannelId);
 	});
 
+	// Load older history when the top of the list scrolls into view.
 	$effect(() => {
-		if (messagesState.messages.length > 0) {
-			tick().then(scrollToBottom);
-		}
+		const root = messageWrapper;
+		const target = topSentinel;
+		if (!root || !target) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0]?.isIntersecting) loadOlder();
+			},
+			{ root, rootMargin: '150px 0px 0px 0px' }
+		);
+		observer.observe(target);
+		return () => observer.disconnect();
+	});
+
+	// Pin the view to the bottom when a new message lands there, but never when
+	// older history is prepended (the newest id is unchanged in that case).
+	$effect(() => {
+		if (currentChannelId == null) return;
+		const msgs = messagesState.messages(currentChannelId);
+		const newestId = msgs.length ? msgs[msgs.length - 1].id : null;
+		if (!newestId || newestId === autoScrollAnchorId) return;
+
+		const el = messageWrapper;
+		const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+		autoScrollAnchorId = newestId;
+		if (nearBottom) tick().then(scrollToBottom);
 	});
 </script>
 
@@ -184,6 +266,7 @@
 				</div>
 			{:else}
 				<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2">
+					<div bind:this={topSentinel} aria-hidden="true"></div>
 					{#each items as item (item.key)}
 						{#if item.kind === 'date'}
 							<DateDivider label={item.label} />

@@ -24,7 +24,7 @@ export async function clearSession(): Promise<void> {
 	serversState.selectedServerChannels = {};
 	serversState.selectedChannel = null;
 
-	messagesState.clear();
+	messagesState.clearAll();
 
 	try {
 		await clearLocalCache();
