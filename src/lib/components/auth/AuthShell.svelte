@@ -20,8 +20,4 @@
 			{@render children()}
 		</div>
 	</main>
-
-	<footer class="px-4 py-6 text-center text-xs text-text-subtle">
-		Self-hosted. Your messages live on this server, not ours.
-	</footer>
 </div>
