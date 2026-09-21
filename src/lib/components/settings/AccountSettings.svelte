@@ -5,11 +5,14 @@
 	import { uploadAvatar } from '$lib/requests/users/uploadAvatar';
 	import { deleteUser } from '$lib/requests/users/deleteUser';
 	import { toast } from 'svelte-sonner';
+	import * as Dialog from '$lib/components/ui/dialog/index';
+	import Button from '$lib/components/ui/button/button.svelte';
 
 	let username = $state(usersState.loggedInUser?.username ?? '');
 	let avatarFile: File | null = $state(null);
 	let avatarPreview: string | null = $state(null);
 	let isSaving = $state(false);
+	let deleteOpen = $state(false);
 	let fileInput: HTMLInputElement;
 
 	const hasUsernameChanged = $derived(username !== (usersState.loggedInUser?.username ?? ''));
@@ -48,11 +51,10 @@
 		const user = usersState.loggedInUser;
 		if (!user) return;
 
-		if (!confirm('Are you sure you want to delete your account? This cannot be undone.')) return;
-
 		try {
 			await deleteUser(user.id);
 			usersState.setLoggedInUser(null);
+			deleteOpen = false;
 			window.location.href = '/login';
 		} catch (e: any) {
 			const message = e?.response?.data?.detail ?? 'Failed to delete account';
@@ -80,7 +82,7 @@
 				<Avatar src={avatarPreview} user={usersState.loggedInUser} size="xl" />
 			</div>
 			<label
-				class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+				class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-background/80 opacity-0 transition-opacity group-hover:opacity-100"
 			>
 				<span class="text-xs font-bold">CHANGE</span>
 				<input
@@ -94,25 +96,25 @@
 		</div>
 		<div>
 			<div class="text-lg font-medium">{usersState.loggedInUser?.username ?? ''}</div>
-			<div class="text-sm text-gray-400">Click image to change avatar</div>
+			<div class="text-sm text-muted-foreground">Click image to change avatar</div>
 		</div>
 	</div>
 
 	<!-- Form -->
 	<div class="flex max-w-md flex-col gap-4">
 		<div class="flex flex-col gap-1">
-			<label class="text-xs font-bold text-gray-400 uppercase">
+			<label class="text-xs font-bold text-muted-foreground uppercase">
 				Username
 				<input
 					type="text"
 					bind:value={username}
-					class="mt-1 w-full rounded border border-transparent bg-[#1e1e1e] p-2 text-white outline-none focus:border-blue-500"
+					class="mt-1 w-full rounded border border-transparent bg-surface-input p-2 text-foreground outline-none focus:border-ring"
 				/>
 			</label>
 		</div>
 
 		<button
-			class="rounded bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+			class="rounded bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
 			onclick={handleSave}
 			disabled={isSaving || !hasChanges}
 		>
@@ -120,16 +122,34 @@
 		</button>
 	</div>
 
-	<hr class="my-2 border-gray-600" />
+	<hr class="my-2 border-border" />
 
 	<!-- Danger Zone -->
 	<div>
-		<h3 class="mb-2 font-bold text-red-400">Danger Zone</h3>
-		<button
-			class="rounded border border-red-500 px-4 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
-			onclick={handleDeleteAccount}
-		>
-			Delete Account
-		</button>
+		<h3 class="mb-2 font-bold text-destructive">Danger Zone</h3>
+		<Dialog.Root bind:open={deleteOpen}>
+			<Dialog.Trigger
+				class="rounded border border-destructive-border px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				Delete Account
+			</Dialog.Trigger>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>Delete account?</Dialog.Title>
+					<Dialog.Description>
+						This permanently deletes your account and cannot be undone.
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="secondary" onclick={() => (deleteOpen = false)}>Cancel</Button>
+					<Button
+						class="border border-destructive-border bg-transparent text-destructive hover:bg-destructive/10"
+						onclick={handleDeleteAccount}
+					>
+						Delete account
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 	</div>
 </div>

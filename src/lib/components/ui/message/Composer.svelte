@@ -5,13 +5,15 @@
 	import Placeholder from '@tiptap/extension-placeholder';
 	import tippy, { type Instance } from 'tippy.js';
 	import { mount, unmount } from 'svelte';
-	import MentionList from './MentionList.svelte';
+	import MentionList from '$lib/components/ui/MentionList.svelte';
 	import type { User } from '$lib/types/auth.types';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { socketState } from '$lib/states/socketState.svelte';
+	import { Paperclip, Smile, SendHorizontal } from 'lucide-svelte';
 
 	let element: HTMLElement;
 	let editor: Editor | null = $state(null);
+	let isEmpty = $state(true);
 
 	function handleSend() {
 		if (!editor || editor.isEmpty) return;
@@ -20,8 +22,8 @@
 		if (!serversState.selectedServer || !serversState.selectedChannel) return;
 
 		socketState.sendMessage(messageAST);
-
 		editor.commands.clearContent();
+		editor.commands.focus();
 	}
 
 	$effect(() => {
@@ -52,16 +54,19 @@
 
 		editor = new Editor({
 			element: element,
+			onTransaction: () => {
+				isEmpty = editor?.isEmpty ?? true;
+			},
 			extensions: [
 				StarterKit,
 				ChatShortcuts,
 				Placeholder.configure({
-					placeholder: 'Type a message...',
+					placeholder: 'Type a message…',
 					emptyEditorClass: 'is-editor-empty'
 				}),
 				Mention.configure({
 					HTMLAttributes: {
-						class: 'bg-indigo-500/20 text-indigo-400 font-semibold px-1.5 py-0.5 rounded-md'
+						class: 'bg-primary/15 text-primary font-semibold px-1.5 py-0.5 rounded-md'
 					},
 					suggestion: {
 						items: ({ query }) => {
@@ -82,11 +87,8 @@
 									propsState.items = props.items;
 									propsState.command = props.command;
 
-									// create container for the popup
 									const targetDiv = document.createElement('div');
 
-									// mount the MentionList component into the container
-									// the props must be a getter object in Svelte 5 to remain reactive
 									component = mount(MentionList, {
 										target: targetDiv,
 										props: {
@@ -99,7 +101,6 @@
 										}
 									});
 
-									// Tippy.js for positioning
 									popup = tippy('body', {
 										getReferenceClientRect: props.clientRect as () => DOMRect,
 										appendTo: () => document.body,
@@ -111,14 +112,12 @@
 									});
 								},
 								onUpdate: (props) => {
-									// update the Svelte 5 state, the getter props will reactively propagate to the MentionList
 									propsState.items = props.items;
 									propsState.command = props.command;
 
 									popup[0].setProps({ getReferenceClientRect: props.clientRect as () => DOMRect });
 								},
 								onKeyDown: (props) => {
-									// forward the key presses to the Svelte component's onKeyDown function
 									if (props.event.key === 'Escape') {
 										popup[0].hide();
 										return true;
@@ -132,7 +131,7 @@
 								},
 								onExit: () => {
 									popup[0].destroy();
-									unmount(component); // Svelte 5 DOM cleanup
+									unmount(component);
 								}
 							};
 						}
@@ -148,28 +147,51 @@
 	});
 </script>
 
-<div class="flex w-full flex-col bg-zinc-950 p-4">
+<div class="px-8 pb-6">
 	<div
-		class="relative max-h-40 w-full overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-800 p-3 shadow-sm transition-colors focus-within:border-indigo-500 hover:border-zinc-600"
+		class="flex min-h-[52px] items-end gap-1 rounded-xl border border-input bg-surface-input py-2 pr-2 pl-2.5 transition-colors focus-within:border-ring"
 	>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<button
+			type="button"
+			aria-label="Attach a file"
+			class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		>
+			<Paperclip size={18} strokeWidth={1.75} />
+		</button>
+
 		<div
 			bind:this={element}
-			class="prose prose-sm w-full max-w-none wrap-break-word whitespace-pre-wrap text-zinc-100 prose-zinc outline-none dark:prose-invert prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
+			class="prose prose-sm max-h-40 w-full max-w-none min-w-0 flex-1 self-center overflow-y-auto py-1.5 text-[15px] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 		></div>
+
+		<button
+			type="button"
+			aria-label="Add emoji"
+			class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		>
+			<Smile size={18} strokeWidth={1.75} />
+		</button>
+
+		<button
+			type="button"
+			aria-label="Send message"
+			onclick={handleSend}
+			disabled={isEmpty}
+			class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-input focus-visible:outline-none disabled:opacity-40"
+		>
+			<SendHorizontal size={18} strokeWidth={1.75} />
+		</button>
 	</div>
 </div>
 
 <style>
-	/* Tiptap CSS */
 	:global(.ProseMirror) {
 		min-height: 24px;
 		outline: none;
 	}
 
-	/* Placeholder CSS */
 	:global(.ProseMirror p.is-editor-empty:first-child::before) {
-		color: #71717a; /* Tailwind zinc-500 */
+		color: var(--text-subtle);
 		content: attr(data-placeholder);
 		float: left;
 		height: 0;

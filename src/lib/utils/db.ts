@@ -4,20 +4,106 @@ import type { MessageType } from '$lib/types/messages.types';
 import type { Server } from '$lib/types/server.types';
 import Dexie, { type EntityTable } from 'dexie';
 
-// using only messages for now, syncing everything is
-// kinda hard and useless until we have more users
-const db = new Dexie('PingDatabase') as Dexie & {
+type AppDb = Dexie & {
 	servers: EntityTable<Server>;
 	channels: EntityTable<Channel>;
 	messages: EntityTable<MessageType>;
 	users: EntityTable<User>;
 };
 
-db.version(1).stores({
-	servers: '++id, name, server_profile, server_settings',
-	channels: '++id, server_id, name, channel_settings',
-	messages: 'id, server_id, channel_id, user_id, content, timestamp',
-	users: '++id, username, public_key, profile'
-});
+/**
+ * Minimal in-memory stand-in for the slice of the Dexie API this app uses,
+ * so the client still works when IndexedDB is unavailable (private mode, some
+ * embedded webviews, SSR). Data lives only for the session — it is not persisted.
+ */
+class MemoryCollection<T extends Record<string, unknown>> {
+	constructor(private rows: T[]) {}
+	async toArray(): Promise<T[]> {
+		return [...this.rows];
+	}
+	async first(): Promise<T | undefined> {
+		return this.rows[0];
+	}
+	async sortBy(key: keyof T): Promise<T[]> {
+		return [...this.rows].sort((a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0));
+	}
+}
+
+class MemoryTable<T extends Record<string, unknown>> {
+	private rows: T[] = [];
+	constructor(private pk: keyof T) {}
+
+	private upsert(item: T) {
+		const i = this.rows.findIndex((r) => r[this.pk] === item[this.pk]);
+		if (i >= 0) this.rows[i] = item;
+		else this.rows.push(item);
+	}
+
+	async add(item: T): Promise<unknown> {
+		this.rows.push(item);
+		return item[this.pk];
+	}
+	async put(item: T): Promise<unknown> {
+		this.upsert(item);
+		return item[this.pk];
+	}
+	async bulkPut(items: T[]): Promise<void> {
+		items.forEach((i) => this.upsert(i));
+	}
+
+	where(criteria: keyof T | Partial<T>) {
+		if (typeof criteria === 'object') {
+			const filtered = this.rows.filter((r) =>
+				Object.entries(criteria).every(([k, v]) => r[k as keyof T] === v)
+			);
+			return new MemoryCollection<T>(filtered);
+		}
+		const field = criteria;
+		return {
+			equals: (value: unknown) =>
+				new MemoryCollection<T>(this.rows.filter((r) => r[field] === value))
+		};
+	}
+}
+
+function createMemoryDb(): AppDb {
+	return {
+		servers: new MemoryTable<Server>('id' as keyof Server),
+		channels: new MemoryTable<Channel>('id'),
+		messages: new MemoryTable<MessageType>('id'),
+		users: new MemoryTable<User>('id')
+	} as unknown as AppDb;
+}
+
+function indexedDBAvailable(): boolean {
+	try {
+		return typeof globalThis.indexedDB !== 'undefined' && globalThis.indexedDB !== null;
+	} catch {
+		return false;
+	}
+}
+
+function createDb(): AppDb {
+	if (indexedDBAvailable()) {
+		try {
+			const dexieDb = new Dexie('PingDatabase') as AppDb;
+			dexieDb.version(1).stores({
+				servers: '++id, name, server_profile, server_settings',
+				channels: '++id, server_id, name, channel_settings',
+				messages: 'id, server_id, channel_id, user_id, content, timestamp',
+				users: '++id, username, public_key, profile'
+			});
+			return dexieDb;
+		} catch (e) {
+			console.warn('IndexedDB unavailable — falling back to in-memory store.', e);
+			return createMemoryDb();
+		}
+	}
+
+	console.warn('IndexedDB unavailable — falling back to in-memory store.');
+	return createMemoryDb();
+}
+
+const db = createDb();
 
 export { db };

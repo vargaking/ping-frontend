@@ -67,19 +67,19 @@
 	}
 </script>
 
-<div class="flex h-screen w-full items-center justify-center bg-[#1e1e1e] p-4 text-white">
+<div class="flex h-screen w-full items-center justify-center bg-surface-input p-4 text-foreground">
 	<div
-		class="flex w-full max-w-sm flex-col items-center gap-6 rounded-lg bg-[#2b2d31] p-8 shadow-xl"
+		class="flex w-full max-w-sm flex-col items-center gap-6 rounded-lg bg-card p-8 shadow-xl"
 		in:fade={{ duration: 200 }}
 	>
 		{#if isLoading}
 			<div class="flex h-32 w-full items-center justify-center">
-				<span class="text-gray-400">Loading invite details...</span>
+				<span class="text-muted-foreground">Loading invite details...</span>
 			</div>
 		{:else if loadError || !invite || !server}
 			<div class="text-center">
 				<div
-					class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10 text-red-500"
+					class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive"
 				>
 					<svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path
@@ -90,13 +90,13 @@
 						/>
 					</svg>
 				</div>
-				<h2 class="text-lg font-bold text-gray-100">Invite Invalid</h2>
-				<p class="mt-2 text-sm text-balance text-gray-400">
+				<h2 class="text-lg font-bold text-foreground">Invite Invalid</h2>
+				<p class="mt-2 text-sm text-balance text-muted-foreground">
 					{loadError || 'This invite link is invalid or has expired.'}
 				</p>
 				<a
 					href="/app/direct"
-					class="mt-6 inline-block rounded bg-[#35373c] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#404249]"
+					class="mt-6 inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
 				>
 					Return to App
 				</a>
@@ -104,7 +104,7 @@
 		{:else}
 			<!-- Server Icon -->
 			<div
-				class="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-[#1e1e1e] text-2xl font-bold shadow-md"
+				class="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-surface-input text-2xl font-bold shadow-md"
 			>
 				{#if server.server_profile?.iconUrl}
 					<img
@@ -119,47 +119,47 @@
 
 			<!-- Title & Subtitle -->
 			<div class="text-center">
-				<h2 class="text-xs font-bold tracking-widest text-gray-400 uppercase">
+				<h2 class="text-xs font-bold tracking-widest text-muted-foreground uppercase">
 					You've been invited to join
 				</h2>
-				<h1 class="mt-2 text-2xl font-bold text-gray-100">{server.name}</h1>
+				<h1 class="mt-2 text-2xl font-bold text-foreground">{server.name}</h1>
 			</div>
 
 			{#if !invite.is_valid}
 				<div
-					class="w-full rounded border border-red-500/20 bg-red-500/10 p-4 text-center text-sm font-medium text-red-500"
+					class="w-full rounded border border-destructive-border bg-destructive/10 p-4 text-center text-sm font-medium text-destructive"
 				>
 					This invite link is invalid or has expired.
 				</div>
 				<a
 					href="/app/direct"
-					class="mt-2 text-sm text-gray-400 transition-colors hover:text-gray-200"
+					class="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
 				>
 					No thanks, return to DMs
 				</a>
 			{:else}
 				{#if invite.has_password}
 					<div class="flex w-full flex-col gap-2">
-						<label class="text-xs font-bold text-gray-400 uppercase">
+						<label class="text-xs font-bold text-muted-foreground uppercase">
 							Invite Password Required
 							<input
 								type="password"
 								bind:value={password}
 								placeholder="Enter password"
-								class="mt-1 w-full rounded border border-transparent bg-[#1e1e1e] p-3 text-white transition-colors outline-none focus:border-blue-500"
+								class="mt-1 w-full rounded border border-transparent bg-surface-input p-3 text-foreground transition-colors outline-none focus:border-ring"
 							/>
 						</label>
 					</div>
 				{/if}
 
 				{#if joinError}
-					<div class="w-full text-center text-sm font-medium text-red-500">
+					<div class="w-full text-center text-sm font-medium text-destructive">
 						{joinError}
 					</div>
 				{/if}
 
 				<button
-					class="w-full rounded bg-indigo-500 px-4 py-3 font-bold text-white transition-all hover:bg-indigo-600 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+					class="w-full rounded bg-primary px-4 py-3 font-bold text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
 					onclick={handleJoin}
 					disabled={isJoining || (invite.has_password && !password)}
 				>
@@ -168,7 +168,7 @@
 
 				<a
 					href="/app/direct"
-					class="mt-2 text-sm text-gray-400 transition-colors hover:text-gray-200"
+					class="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
 				>
 					No thanks, return to DMs
 				</a>

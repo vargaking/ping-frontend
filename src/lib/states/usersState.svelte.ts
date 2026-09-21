@@ -1,6 +1,5 @@
 import { getUser } from '$lib/requests/users/getUser';
 import type { User } from '$lib/types/auth.types';
-import { db } from '$lib/utils/db';
 import { SvelteSet } from 'svelte/reactivity';
 
 class UsersState {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { PUBLIC_BASE_URL } from '$env/static/public';
+	import { toast } from 'svelte-sonner';
 
 	let serverName = $state(serversState.selectedServer?.name || '');
 	let iconFile = $state<File | null>(null);
@@ -30,13 +31,13 @@
 				if (res.ok) {
 					const updatedServer = await res.json();
 					serversState.setSelectedServer(updatedServer);
-					alert('Server icon updated!');
+					toast.success('Server icon updated');
 				} else {
-					alert('Failed to update icon');
+					toast.error('Failed to update icon');
 				}
 			} catch (e) {
 				console.error(e);
-				alert('Error uploading icon');
+				toast.error('Error uploading icon');
 			} finally {
 				isUploading = false;
 			}
@@ -59,7 +60,7 @@
 		<!-- Icon Section -->
 		<div class="flex items-center gap-4">
 			<div class="group relative">
-				<div class="h-24 w-24 overflow-hidden rounded-full bg-gray-600">
+				<div class="h-24 w-24 overflow-hidden rounded-full bg-secondary">
 					{#if iconPreview}
 						<img src={iconPreview} alt="Server Icon" class="h-full w-full object-cover" />
 					{:else}
@@ -69,7 +70,7 @@
 					{/if}
 				</div>
 				<label
-					class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+					class="absolute inset-0 flex cursor-pointer items-center justify-center rounded-full bg-background/80 opacity-0 transition-opacity group-hover:opacity-100"
 				>
 					<span class="text-xs font-bold">CHANGE</span>
 					<input type="file" accept="image/*" class="hidden" onchange={handleFileSelect} />
@@ -80,18 +81,18 @@
 		<!-- Form -->
 		<div class="flex max-w-md flex-col gap-4">
 			<div class="flex flex-col gap-1">
-				<label class="text-xs font-bold text-gray-400 uppercase">
+				<label class="text-xs font-bold text-muted-foreground uppercase">
 					Server Name
 					<input
 						type="text"
 						bind:value={serverName}
-						class="mt-1 w-full rounded border border-transparent bg-[#1e1e1e] p-2 text-white outline-none focus:border-blue-500"
+						class="mt-1 w-full rounded border border-transparent bg-surface-input p-2 text-foreground outline-none focus:border-ring"
 					/>
 				</label>
 			</div>
 
 			<button
-				class="rounded bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+				class="rounded bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
 				onclick={handleSave}
 				disabled={isUploading}
 			>
