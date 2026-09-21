@@ -50,6 +50,9 @@ class MemoryTable<T extends Record<string, unknown>> {
 	async bulkPut(items: T[]): Promise<void> {
 		items.forEach((i) => this.upsert(i));
 	}
+	async clear(): Promise<void> {
+		this.rows = [];
+	}
 
 	where(criteria: keyof T | Partial<T>) {
 		if (typeof criteria === 'object') {
@@ -105,5 +108,16 @@ function createDb(): AppDb {
 }
 
 const db = createDb();
+
+/** Wipe every locally cached table. Used when tearing down a session (logout,
+ *  or a 401 that means the session is gone) so no data leaks to the next user. */
+export async function clearLocalCache(): Promise<void> {
+	await Promise.all([
+		db.servers.clear(),
+		db.channels.clear(),
+		db.messages.clear(),
+		db.users.clear()
+	]);
+}
 
 export { db };
