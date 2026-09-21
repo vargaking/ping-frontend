@@ -12,6 +12,13 @@ class UsersState {
 		return this.onlineUsers.has(userId);
 	}
 
+	/** Drop everything tied to the current session (used on logout / 401). */
+	reset() {
+		this.loggedInUser = null;
+		this.users = {};
+		this.onlineUsers = new SvelteSet();
+	}
+
 	setLoggedInUser(user: User | null) {
 		this.loggedInUser = user;
 		if (user) {

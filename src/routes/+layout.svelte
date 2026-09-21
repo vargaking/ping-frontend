@@ -5,39 +5,73 @@
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { safeNext } from '$lib/auth/session';
 	import { Toaster } from '$lib/components/ui/sonner/index';
 
 	let { children } = $props();
 
-	// Gate rendering until we know who the user is, so a protected route never
-	// flashes its (empty) shell before the redirect to /login lands, and a
-	// logged-in user doesn't see /login before bouncing to /app.
-	let ready = $state(false);
-	let redirecting = $state(false);
-
-	const isPublic = (path: string) => path === '/' || path === '/login/';
-
-	function resolveAuth(loggedIn: boolean) {
-		const path = page.url.pathname;
-		if (loggedIn && (path === '/' || path === '/login/')) {
-			redirecting = true;
-			window.location.href = '/app';
-			return;
-		}
-		if (!loggedIn && !isPublic(path)) {
-			redirecting = true;
-			window.location.href = '/login/';
-			return;
-		}
-		ready = true;
+	// Routes a logged-out user may see. Everything else is protected. `/invite/*`
+	// is public so an invite link renders instead of bouncing to /login, and
+	// `/register` is public so direct navigation there stays put.
+	function isPublicPath(path: string): boolean {
+		const p = path.replace(/\/+$/, '') || '/';
+		if (p === '/' || p === '/login' || p === '/register') return true;
+		if (p === '/invite' || p.startsWith('/invite/')) return true;
+		return false;
 	}
 
+	// Pages a logged-in user has no reason to sit on — send them into the app.
+	function isAuthOnlyPath(path: string): boolean {
+		const p = path.replace(/\/+$/, '') || '/';
+		return p === '/' || p === '/login' || p === '/register';
+	}
+
+	// True once getMe() has resolved, so the guard doesn't act on an unknown
+	// auth state. `loggedIn` stays reactive to logout / 401 teardown.
+	let authChecked = $state(false);
+	const loggedIn = $derived(!!usersState.loggedInUser);
+
+	// Gate rendering until we've resolved auth AND the current path is allowed,
+	// so a protected route never flashes its shell before the redirect lands and
+	// a logged-in user never sees /login before bouncing to /app.
+	let ready = $state(false);
+
 	onMount(() => {
-		initializeAppData()
-			.then(() => resolveAuth(!!usersState.loggedInUser))
-			.catch(() => resolveAuth(false));
+		initializeAppData().finally(() => {
+			authChecked = true;
+		});
+	});
+
+	$effect(() => {
+		if (!authChecked) return;
+
+		const url = page.url;
+		const path = url.pathname;
+
+		if (loggedIn) {
+			if (isAuthOnlyPath(path)) {
+				const next = safeNext(url.searchParams.get('next'));
+				const dest = next && !isAuthOnlyPath(next) ? next : '/app';
+				ready = false;
+				goto(dest, { replaceState: true });
+				return;
+			}
+			ready = true;
+			return;
+		}
+
+		if (isPublicPath(path)) {
+			ready = true;
+			return;
+		}
+
+		// Protected route while logged out: remember where they were headed.
+		ready = false;
+		const target = safeNext(path + url.search);
+		goto(target ? `/login?next=${encodeURIComponent(target)}` : '/login', { replaceState: true });
 	});
 </script>
 
@@ -45,7 +79,7 @@
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
 
-{#if ready && !redirecting}
+{#if ready}
 	{@render children()}
 {:else}
 	<div class="flex h-screen w-screen items-center justify-center bg-background">
