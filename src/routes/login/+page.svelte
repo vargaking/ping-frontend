@@ -1,60 +1,108 @@
 <script lang="ts">
-	import Button from '$lib/components/ui/button/button.svelte';
-	import * as Card from '$lib/components/ui/card/index';
-	import * as Field from '$lib/components/ui/field/index';
-	import Input from '$lib/components/ui/input/input.svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import AuthShell from '$lib/components/auth/AuthShell.svelte';
+	import AuthField from '$lib/components/auth/AuthField.svelte';
 	import { login } from '$lib/requests/auth/login';
+	import { initializeAppData } from '$lib/utils/initializeAppData';
+	import { getErrorMessage, normalizeError } from '$lib/requests/errors';
+	import { safeNext } from '$lib/auth/session';
 
-	// username and password variables
-	let username: string = '';
-	let password: string = '';
+	let username = $state('');
+	let password = $state('');
+	let isSubmitting = $state(false);
+	let formError = $state<string | null>(null);
+	// A 401 means "wrong username or password" — highlight both fields, since we
+	// can't tell which one is wrong.
+	let credsInvalid = $state(false);
 
-	const loginUser = async () => {
-		await login(username, password)
-			.then((data) => {
-				console.log('Login successful:', data);
-				// Redirect to home page or perform other actions
-				window.location.href = '/app';
-			})
-			.catch((error) => {
-				console.error('Login failed:', error);
-				// Handle login failure (e.g., show error message)
-			});
-	};
+	// Clear the error state once the user starts fixing their input.
+	function clearError() {
+		if (formError || credsInvalid) {
+			formError = null;
+			credsInvalid = false;
+		}
+	}
+
+	const registerHref = $derived.by(() => {
+		const next = safeNext(page.url.searchParams.get('next'));
+		return next ? `/register?next=${encodeURIComponent(next)}` : '/register';
+	});
+
+	async function handleSubmit(event: SubmitEvent) {
+		event.preventDefault();
+		if (isSubmitting) return;
+
+		if (!username || !password) {
+			formError = 'Please enter your username and password.';
+			return;
+		}
+
+		isSubmitting = true;
+		formError = null;
+		credsInvalid = false;
+
+		try {
+			await login(username, password);
+			// Populate state + open the socket now, so goto() lands in a working app
+			// without a full-page reload.
+			await initializeAppData();
+			const next = safeNext(page.url.searchParams.get('next'));
+			await goto(next ?? '/app');
+		} catch (error) {
+			credsInvalid = normalizeError(error).status === 401;
+			formError = getErrorMessage(error);
+		} finally {
+			isSubmitting = false;
+		}
+	}
 </script>
 
-<div class="mx-auto flex h-screen w-screen items-center justify-center">
-	<Card.Root class="w-full max-w-md">
-		<Card.Header>
-			<Card.Title>Login</Card.Title>
-		</Card.Header>
-		<Card.Content>
-			<form class="space-y-6">
-				<Field.Field>
-					<Field.Label for="username">Username</Field.Label>
-					<Input
-						id="username"
-						type="text"
-						placeholder="Enter your username"
-						bind:value={username}
-					/>
-				</Field.Field>
-				<Field.Field>
-					<Field.Label for="password">Password</Field.Label>
-					<Input
-						id="password"
-						type="password"
-						placeholder="Enter your password"
-						bind:value={password}
-					/>
-				</Field.Field>
-				<Button type="submit" class="w-full" onclick={loginUser}>Login</Button>
-				<div class="mt-4 text-center text-sm text-muted-foreground">
-					Don't have an account? <a href="/register" class="text-primary hover:underline"
-						>Register</a
-					>
-				</div>
-			</form>
-		</Card.Content>
-	</Card.Root>
-</div>
+<AuthShell>
+	<div class="flex flex-col gap-2">
+		<h1 class="text-[26px] leading-tight font-semibold">Sign in</h1>
+		<p class="text-sm text-muted-foreground">Welcome back. Sign in to continue.</p>
+	</div>
+
+	<form class="flex flex-col gap-6" onsubmit={handleSubmit} novalidate>
+		<div class="flex flex-col gap-4">
+			<AuthField
+				id="username"
+				label="Username"
+				autocomplete="username"
+				bind:value={username}
+				invalid={credsInvalid}
+				disabled={isSubmitting}
+				oninput={clearError}
+			/>
+			<AuthField
+				id="password"
+				label="Password"
+				type="password"
+				autocomplete="current-password"
+				bind:value={password}
+				invalid={credsInvalid}
+				disabled={isSubmitting}
+				oninput={clearError}
+			/>
+
+			{#if formError}
+				<div role="alert" class="text-[13px] text-destructive">{formError}</div>
+			{/if}
+		</div>
+
+		<button
+			type="submit"
+			disabled={isSubmitting}
+			class="h-11 w-full rounded-[10px] bg-primary font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+		>
+			{isSubmitting ? 'Signing in…' : 'Sign in'}
+		</button>
+	</form>
+
+	<p class="text-center text-sm text-muted-foreground">
+		New here? <a href={registerHref} class="font-medium text-foreground hover:underline"
+			>Create an account</a
+		>
+	</p>
+</AuthShell>

@@ -2,11 +2,15 @@
 	import { useInvite, getInvite } from '$lib/requests/invites';
 	import { getServer } from '$lib/requests/servers/getServer';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { getErrorMessage } from '$lib/requests/errors';
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import type { InvitePublicResponse } from '$lib/types/invite.types';
 	import type { Server } from '$lib/types/server.types';
+
+	const loggedIn = $derived(!!usersState.loggedInUser);
 
 	let password = $state('');
 	let isJoining = $state(false);
@@ -36,9 +40,9 @@
 
 			// Fetch server details
 			server = await getServer(invite.server_id);
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error('Failed to load invite data:', e);
-			loadError = e?.response?.data?.detail || 'Invite not found or invalid.';
+			loadError = getErrorMessage(e) || 'Invite not found or invalid.';
 		} finally {
 			isLoading = false;
 		}
@@ -46,6 +50,13 @@
 
 	async function handleJoin() {
 		if (!invite || !invite.is_valid) return;
+
+		// Accepting requires an account. Send guests through login first, preserving
+		// the invite as `next` so they land back here and complete the join.
+		if (!loggedIn) {
+			goto(`/login?next=${encodeURIComponent(`/invite/${inviteCode}`)}`);
+			return;
+		}
 
 		isJoining = true;
 		joinError = null;
@@ -58,16 +69,16 @@
 
 			// Navigate to the server page
 			goto(`/app/server/${result.server_id}`);
-		} catch (e: any) {
+		} catch (e: unknown) {
 			console.error('Failed to join server via invite:', e);
-			joinError = e?.response?.data?.detail || 'Failed to join the server.';
+			joinError = getErrorMessage(e) || 'Failed to join the server.';
 		} finally {
 			isJoining = false;
 		}
 	}
 </script>
 
-<div class="flex h-screen w-full items-center justify-center bg-surface-input p-4 text-foreground">
+<div class="flex h-screen w-full items-center justify-center bg-background p-4 text-foreground">
 	<div
 		class="flex w-full max-w-sm flex-col items-center gap-6 rounded-lg bg-card p-8 shadow-xl"
 		in:fade={{ duration: 200 }}
@@ -138,7 +149,7 @@
 					No thanks, return to DMs
 				</a>
 			{:else}
-				{#if invite.has_password}
+				{#if loggedIn && invite.has_password}
 					<div class="flex w-full flex-col gap-2">
 						<label class="text-xs font-bold text-muted-foreground uppercase">
 							Invite Password Required
@@ -161,9 +172,15 @@
 				<button
 					class="w-full rounded bg-primary px-4 py-3 font-bold text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
 					onclick={handleJoin}
-					disabled={isJoining || (invite.has_password && !password)}
+					disabled={isJoining || (loggedIn && invite.has_password && !password)}
 				>
-					{isJoining ? 'Joining...' : 'Accept Invite'}
+					{#if !loggedIn}
+						Sign in to accept
+					{:else if isJoining}
+						Joining...
+					{:else}
+						Accept Invite
+					{/if}
 				</button>
 
 				<a
