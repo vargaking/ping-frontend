@@ -3,7 +3,20 @@
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-	import { Settings } from 'lucide-svelte';
+	import { logout } from '$lib/auth/session';
+	import { LogOut, Settings } from 'lucide-svelte';
+
+	let loggingOut = $state(false);
+
+	async function handleLogout() {
+		if (loggingOut) return;
+		loggingOut = true;
+		try {
+			await logout();
+		} finally {
+			loggingOut = false;
+		}
+	}
 </script>
 
 <div class="flex items-center gap-2.5 border-t border-border px-3 py-2.5">
@@ -19,5 +32,14 @@
 		class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 	>
 		<Settings size={18} strokeWidth={1.75} />
+	</button>
+	<button
+		type="button"
+		aria-label="Log out"
+		onclick={handleLogout}
+		disabled={loggingOut}
+		class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
+	>
+		<LogOut size={18} strokeWidth={1.75} />
 	</button>
 </div>

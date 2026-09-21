@@ -7,6 +7,19 @@
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import { logout } from '$lib/auth/session';
+
+	let loggingOut = $state(false);
+
+	async function handleLogout() {
+		if (loggingOut) return;
+		loggingOut = true;
+		try {
+			await logout();
+		} finally {
+			loggingOut = false;
+		}
+	}
 
 	let username = $state(usersState.loggedInUser?.username ?? '');
 	let avatarFile: File | null = $state(null);
@@ -120,6 +133,16 @@
 		>
 			{isSaving ? 'Saving...' : 'Save Changes'}
 		</button>
+	</div>
+
+	<hr class="my-2 border-border" />
+
+	<!-- Session -->
+	<div class="flex flex-col gap-2">
+		<h3 class="font-bold">Session</h3>
+		<Button variant="secondary" class="w-fit" disabled={loggingOut} onclick={handleLogout}>
+			{loggingOut ? 'Logging out…' : 'Log out'}
+		</Button>
 	</div>
 
 	<hr class="my-2 border-border" />
