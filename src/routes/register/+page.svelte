@@ -79,6 +79,10 @@
 		submitAttempted = true;
 		if (!isValid) return;
 
+		// Read `next` before any await: initializeAppData() flips the auth state,
+		// which lets the layout guard navigate away and drop the query string.
+		const next = safeNext(page.url.searchParams.get('next'));
+
 		isSubmitting = true;
 		formError = null;
 
@@ -87,8 +91,7 @@
 			// success — populate state and go straight into the app.
 			await register(username, password);
 			await initializeAppData();
-			const next = safeNext(page.url.searchParams.get('next'));
-			await goto(next ?? '/app');
+			await goto(next ?? '/app', { replaceState: true });
 		} catch (error) {
 			const status = normalizeError(error).status;
 			const fields = fieldErrorsFrom(error);

@@ -38,6 +38,11 @@
 			return;
 		}
 
+		// Read `next` before any await: initializeAppData() flips the auth state,
+		// which lets the layout guard navigate away and drop the query string, so
+		// reading it afterwards would lose the invite we're meant to return to.
+		const next = safeNext(page.url.searchParams.get('next'));
+
 		isSubmitting = true;
 		formError = null;
 		credsInvalid = false;
@@ -47,8 +52,7 @@
 			// Populate state + open the socket now, so goto() lands in a working app
 			// without a full-page reload.
 			await initializeAppData();
-			const next = safeNext(page.url.searchParams.get('next'));
-			await goto(next ?? '/app');
+			await goto(next ?? '/app', { replaceState: true });
 		} catch (error) {
 			credsInvalid = normalizeError(error).status === 401;
 			formError = getErrorMessage(error);
