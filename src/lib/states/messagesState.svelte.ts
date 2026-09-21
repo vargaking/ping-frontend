@@ -53,6 +53,26 @@ class MessagesState {
 		if (channel.messages.some((m) => m.id === message.id)) return;
 		channel.messages.push(message);
 	}
+
+	updateMessage(id: string, changes: Partial<MessageType>) {
+		for (const channel of Object.values(this.channels)) {
+			const i = channel.messages.findIndex((m) => m.id === id);
+			if (i !== -1) {
+				channel.messages[i] = { ...channel.messages[i], ...changes };
+				return;
+			}
+		}
+	}
+
+	removeMessage(id: string) {
+		for (const channel of Object.values(this.channels)) {
+			const i = channel.messages.findIndex((m) => m.id === id);
+			if (i !== -1) {
+				channel.messages.splice(i, 1);
+				return;
+			}
+		}
+	}
 }
 
 export const messagesState = new MessagesState();

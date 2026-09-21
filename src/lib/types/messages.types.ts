@@ -7,4 +7,5 @@ export type MessageType = {
 	timestamp: string;
 	server_id: number;
 	channel_id: number;
+	edited_at?: string | null;
 };

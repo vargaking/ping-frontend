@@ -164,6 +164,22 @@ class SocketState {
 		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
+	async handleMessageUpdated(message: MessageType) {
+		messagesState.updateMessage(message.id, {
+			content: message.content,
+			edited_at: message.edited_at
+		});
+		await db.messages.update(message.id, {
+			content: message.content,
+			edited_at: message.edited_at
+		});
+	}
+
+	async handleMessageDeleted(message: { id: string }) {
+		messagesState.removeMessage(message.id);
+		await db.messages.delete(message.id);
+	}
+
 	async handleUserUpdate(user: User) {
 		console.log('Received user update:', user);
 
@@ -194,6 +210,12 @@ class SocketState {
 		switch (message.type) {
 			case 'message':
 				this.handleIncomingMessage(message);
+				break;
+			case 'message_updated':
+				this.handleMessageUpdated(message);
+				break;
+			case 'message_deleted':
+				this.handleMessageDeleted(message);
 				break;
 			case 'user_updated':
 				this.handleUserUpdate(message.user);

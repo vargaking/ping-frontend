@@ -7,7 +7,7 @@ import Dexie, { type EntityTable } from 'dexie';
 type AppDb = Dexie & {
 	servers: EntityTable<Server>;
 	channels: EntityTable<Channel>;
-	messages: EntityTable<MessageType>;
+	messages: EntityTable<MessageType, 'id'>;
 	users: EntityTable<User>;
 };
 
@@ -49,6 +49,15 @@ class MemoryTable<T extends Record<string, unknown>> {
 	}
 	async bulkPut(items: T[]): Promise<void> {
 		items.forEach((i) => this.upsert(i));
+	}
+	async update(key: T[keyof T], changes: Partial<T>): Promise<number> {
+		const i = this.rows.findIndex((r) => r[this.pk] === key);
+		if (i < 0) return 0;
+		this.rows[i] = { ...this.rows[i], ...changes };
+		return 1;
+	}
+	async delete(key: T[keyof T]): Promise<void> {
+		this.rows = this.rows.filter((r) => r[this.pk] !== key);
 	}
 	async clear(): Promise<void> {
 		this.rows = [];

@@ -11,5 +11,6 @@ export type Server = {
 	created_at?: string;
 	server_profile?: Record<string, any>;
 	server_settings?: ServerSettings;
+	owner_id?: number | null;
 	members?: User[];
 };
