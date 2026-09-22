@@ -35,10 +35,10 @@
 	);
 </script>
 
-<div class="flex max-w-[760px] gap-3">
+<div class="flex gap-3">
 	<Avatar {user} size="md" rounded="rounded-[10px]" className="mt-0.5 h-9 w-9" />
 	<div class="flex min-w-0 flex-1 flex-col">
-		<div class="flex items-baseline gap-2">
+		<div class="flex max-w-[760px] items-baseline gap-2">
 			<span class="text-sm font-semibold text-foreground">
 				{user?.username ?? '…'}
 			</span>

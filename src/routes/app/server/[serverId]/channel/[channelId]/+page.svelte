@@ -173,8 +173,20 @@
 		if (channelId == null || loadingOlder) return;
 		if (!messagesState.hasMore(channelId) || !nextCursor) return;
 
-		loadingOlder = true;
 		const el = messageWrapper;
+		// The top sentinel stays permanently in view while the loaded history is
+		// too short to overflow the viewport, which would otherwise make the
+		// observer drain every page back-to-back the moment a channel opens. Only
+		// auto-load older history once the list is actually scrollable and the
+		// user has scrolled near the top — i.e. there's a real "scroll up" gesture.
+		if (el) {
+			const scrollable = el.scrollHeight - el.clientHeight;
+			const OVERFLOW_SLACK = 4; // ignore sub-pixel rounding
+			if (scrollable <= OVERFLOW_SLACK) return;
+			if (el.scrollTop > 150) return;
+		}
+
+		loadingOlder = true;
 		const prevHeight = el?.scrollHeight ?? 0;
 		const prevTop = el?.scrollTop ?? 0;
 

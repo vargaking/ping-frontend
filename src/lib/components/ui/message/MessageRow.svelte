@@ -92,7 +92,7 @@
 
 <div class="group/row relative">
 	{#if editing}
-		<div class="rounded-lg border border-input bg-surface-input px-3 py-2">
+		<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-2">
 			<MessageEditor
 				content={parsedContent}
 				autofocus
@@ -148,7 +148,7 @@
 		{/if}
 
 		<div
-			class="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
+			class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
 		>
 			<MessageNode node={parsedContent} />
 			{#if message.edited_at}
