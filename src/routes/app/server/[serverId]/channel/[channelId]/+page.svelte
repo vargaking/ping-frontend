@@ -32,6 +32,16 @@
 	// the bottom pins the view but prepending older history never does.
 	let autoScrollAnchorId = $state<string | null>(null);
 
+	// Whether the viewport is parked at the bottom. Tracked from real scroll
+	// events (not measured the instant a message lands) so reading older history
+	// is never yanked back down when a new message arrives.
+	let stickToBottom = true;
+
+	function handleScroll() {
+		const el = messageWrapper;
+		if (el) stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+	}
+
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
 	// Timestamp (ms) of the last message seen on the previous visit to this
@@ -122,6 +132,7 @@
 	function applyPage(channelId: number, messages: MessageType[], hasMore: boolean) {
 		messagesState.set(channelId, messages, hasMore);
 		autoScrollAnchorId = messages.at(-1)?.id ?? null;
+		stickToBottom = true;
 		loadState = 'ready';
 		const latest = messages.at(-1)?.timestamp;
 		if (latest) localStorage.setItem(`read:${channelId}`, latest);
@@ -241,10 +252,8 @@
 		const newestId = msgs.length ? msgs[msgs.length - 1].id : null;
 		if (!newestId || newestId === autoScrollAnchorId) return;
 
-		const el = messageWrapper;
-		const nearBottom = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 150;
 		autoScrollAnchorId = newestId;
-		if (nearBottom) tick().then(scrollToBottom);
+		if (stickToBottom) tick().then(scrollToBottom);
 	});
 </script>
 
@@ -252,7 +261,7 @@
 	<div class="flex min-w-0 flex-1 flex-col">
 		<ChannelHeader {membersOpen} onToggleMembers={() => (membersOpen = !membersOpen)} />
 
-		<div bind:this={messageWrapper} class="min-h-0 flex-1 overflow-y-auto">
+		<div bind:this={messageWrapper} onscroll={handleScroll} class="min-h-0 flex-1 overflow-y-auto">
 			{#if loadState === 'loading'}
 				<div class="px-8 pt-6">
 					<LoadingList rows={6} avatar />
