@@ -2,16 +2,32 @@
 	import './layout.css';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import faviconUnread from '$lib/assets/favicon-unread.svg';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { safeNext } from '$lib/auth/session';
 	import { Toaster } from '$lib/components/ui/sonner/index';
+	import { primeNotificationSound } from '$lib/utils/notificationSound';
 
 	let { children } = $props();
+
+	// "(N) zeta" when there's something unread, else just "zeta".
+	const badgeTotal = $derived(unreadState.badgeTotal);
+	const title = $derived(
+		badgeTotal > 0 ? `(${badgeTotal > 99 ? '99+' : badgeTotal}) zeta` : 'zeta'
+	);
+	const icon = $derived(usersState.loggedInUser && unreadState.anyUnread ? faviconUnread : favicon);
+
+	// The AudioContext can only be resumed from a user gesture (autoplay policy).
+	onMount(() => {
+		window.addEventListener('pointerdown', primeNotificationSound, { once: true });
+		window.addEventListener('keydown', primeNotificationSound, { once: true });
+	});
 
 	// Routes a logged-out user may see. Everything else is protected. `/invite/*`
 	// is public so an invite link renders instead of bouncing to /login, and
@@ -75,7 +91,10 @@
 	});
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head>
+	<title>{title}</title>
+	<link rel="icon" href={icon} />
+</svelte:head>
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
 

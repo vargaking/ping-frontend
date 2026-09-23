@@ -8,6 +8,8 @@
 		href?: string;
 		active?: boolean;
 		unread?: boolean;
+		/** Number of mentions — shows a numeric badge instead of the unread dot. */
+		mentions?: number;
 		muted?: boolean;
 		dragging?: boolean;
 		children?: Snippet;
@@ -19,6 +21,7 @@
 		href,
 		active = false,
 		unread = false,
+		mentions = 0,
 		muted = false,
 		dragging = false,
 		children,
@@ -34,6 +37,10 @@
 					: 'text-foreground hover:bg-card'
 		} ${unread && !active ? 'font-semibold' : ''} ${dragging ? 'opacity-50' : ''}`
 	);
+
+	const stateLabel = $derived(
+		mentions > 0 ? `, ${mentions} mention${mentions === 1 ? '' : 's'}` : unread ? ', unread' : ''
+	);
 </script>
 
 {#snippet inner()}
@@ -41,7 +48,17 @@
 		<span class="shrink-0 text-text-subtle">{@render icon()}</span>
 	{/if}
 	<span class="min-w-0 flex-1 truncate text-left">{label}</span>
-	{#if unread}
+	{#if stateLabel}
+		<span class="sr-only">{stateLabel}</span>
+	{/if}
+	{#if mentions > 0}
+		<span
+			class="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-lg bg-primary px-1 font-mono text-[10px] leading-none font-semibold text-primary-foreground"
+			aria-hidden="true"
+		>
+			{mentions > 99 ? '99+' : mentions}
+		</span>
+	{:else if unread}
 		<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true"></span>
 	{/if}
 	{@render children?.()}
