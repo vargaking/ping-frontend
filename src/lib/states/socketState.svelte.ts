@@ -259,6 +259,9 @@ class SocketState {
 			else playMessageBlip();
 		}
 
+		// Permission can be revoked in the browser at any time; re-read it so a
+		// blocked notification is never attempted.
+		notificationsState.refreshPermission();
 		if (!notificationsState.desktop || notificationsState.permission !== 'granted') return;
 
 		const sender = usersState.users[args.senderId];
@@ -275,10 +278,9 @@ class SocketState {
 		}
 
 		const server = serversState.servers[args.serverId];
-		const channel = serversState.selectedServerChannels[args.channelId];
 		notifyChannelMessage({
 			tag: channelThreadKey(args.channelId),
-			channelName: channel?.name ?? '',
+			channelName: unreadState.channelName(args.channelId),
 			serverName: server?.name ?? '',
 			senderUsername,
 			content: args.content,
@@ -299,6 +301,7 @@ class SocketState {
 	async handleMessageDeleted(message: { id: string }) {
 		messagesState.removeMessage(message.id);
 		conversationsState.messageDeleted(message.id);
+		unreadState.messageDeleted(message.id);
 		await db.messages.delete(message.id);
 	}
 

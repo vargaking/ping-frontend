@@ -44,6 +44,10 @@ class UnreadState {
 		return this.channels[channelId]?.mentions ?? 0;
 	}
 
+	channelName(channelId: number): string {
+		return this.channels[channelId]?.name ?? '';
+	}
+
 	channelLastReadId(channelId: number): string | null {
 		return this.channels[channelId]?.lastReadId ?? null;
 	}
@@ -80,19 +84,22 @@ class UnreadState {
 	);
 
 	/** Seed/patch channels from a fetched list (initial load, refetch, or a
-	 *  freshly created/joined server). Existing local read progress (from a
-	 *  read_state frame that raced the fetch) is kept if it's already caught up
-	 *  to what the server reports, otherwise the fetched value wins. */
+	 *  freshly created/joined server). The fetched markers win. */
 	private applyChannels(serverId: number, fetched: Channel[]) {
 		for (const channel of fetched) {
 			if (channel.type !== 'text') continue;
 			const existing = this.channels[channel.id];
+			const lastReadId = channel.last_read_message_id ?? null;
+			const lastMessageId = channel.last_message_id ?? null;
+			// Mentions are only counted live, so keep them unless the server says
+			// the channel has been read since.
+			const caughtUp = lastMessageId == null || lastMessageId === lastReadId;
 			this.channels[channel.id] = {
 				serverId,
 				name: channel.name,
-				lastReadId: channel.last_read_message_id ?? null,
-				lastMessageId: channel.last_message_id ?? null,
-				mentions: existing?.mentions ?? 0
+				lastReadId,
+				lastMessageId,
+				mentions: caughtUp ? 0 : (existing?.mentions ?? 0)
 			};
 		}
 	}
@@ -170,6 +177,18 @@ class UnreadState {
 		const existing = this.channels[channelId];
 		if (!existing) return;
 		this.channels[channelId] = { ...existing, lastReadId: messageId, mentions: 0 };
+	}
+
+	/** The newest message of a channel was deleted: we can't know the one before
+	 *  it locally, so refetch that server's markers. */
+	async messageDeleted(messageId: string) {
+		const channel = Object.values(this.channels).find((c) => c.lastMessageId === messageId);
+		if (!channel) return;
+		try {
+			this.applyChannels(channel.serverId, await getServerChannels(channel.serverId));
+		} catch (e) {
+			console.warn('Failed to refresh unread state after a delete', e);
+		}
 	}
 
 	/** Persist the read marker for a channel. Never throws. */

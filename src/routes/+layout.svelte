@@ -16,11 +16,6 @@
 
 	let { children } = $props();
 
-	// "(N) zeta" when there's something unread, else just "zeta".
-	const badgeTotal = $derived(unreadState.badgeTotal);
-	const title = $derived(
-		badgeTotal > 0 ? `(${badgeTotal > 99 ? '99+' : badgeTotal}) zeta` : 'zeta'
-	);
 	const icon = $derived(usersState.loggedInUser && unreadState.anyUnread ? faviconUnread : favicon);
 
 	// The AudioContext can only be resumed from a user gesture (autoplay policy).
@@ -91,10 +86,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{title}</title>
-	<link rel="icon" href={icon} />
-</svelte:head>
+<svelte:head><link rel="icon" href={icon} /></svelte:head>
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
 

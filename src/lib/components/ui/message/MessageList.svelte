@@ -193,8 +193,8 @@
 		stickToBottom = true;
 
 		// Pin the unread divider to the message right after the boundary, once. If
-		// the boundary isn't in this page (older than it, or null but the thread
-		// was unread), anchor on the first loaded message instead.
+		// the boundary is older than this page, anchor on the first loaded message.
+		// A thread that was never read (no marker) gets no divider.
 		const boundary = unreadBoundaryId;
 		if (boundary != null) {
 			const idx = messages.findIndex((m) => m.id === boundary);
