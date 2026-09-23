@@ -26,6 +26,8 @@ export type InviteResponse = InviteBase & {
 export type InvitePublicResponse = {
 	id: string;
 	server_id: number;
+	server_name: string;
+	server_icon: string | null;
 	is_valid: boolean;
 	has_password: boolean;
 };

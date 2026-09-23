@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { useInvite, getInvite } from '$lib/requests/invites';
-	import { getServer } from '$lib/requests/servers/getServer';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { getErrorMessage } from '$lib/requests/errors';
@@ -8,7 +7,6 @@
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import type { InvitePublicResponse } from '$lib/types/invite.types';
-	import type { Server } from '$lib/types/server.types';
 
 	const loggedIn = $derived(!!usersState.loggedInUser);
 
@@ -20,7 +18,6 @@
 	let loadError = $state<string | null>(null);
 
 	let invite = $state<InvitePublicResponse | null>(null);
-	let server = $state<Server | null>(null);
 
 	let inviteCode = $derived($page.params.code);
 
@@ -35,11 +32,9 @@
 		loadError = null;
 
 		try {
-			// Fetch invite details
+			// The invite carries the server's name and icon: the server itself is
+			// members-only, so it can't be fetched before joining.
 			invite = await getInvite(code);
-
-			// Fetch server details
-			server = await getServer(invite.server_id);
 		} catch (e: unknown) {
 			console.error('Failed to load invite data:', e);
 			loadError = getErrorMessage(e) || 'Invite not found or invalid.';
@@ -87,7 +82,7 @@
 			<div class="flex h-32 w-full items-center justify-center">
 				<span class="text-muted-foreground">Loading invite details...</span>
 			</div>
-		{:else if loadError || !invite || !server}
+		{:else if loadError || !invite}
 			<div class="text-center">
 				<div
 					class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10 text-destructive"
@@ -117,14 +112,14 @@
 			<div
 				class="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-surface-input text-2xl font-bold shadow-md"
 			>
-				{#if server.server_profile?.iconUrl}
+				{#if invite.server_icon}
 					<img
-						src={server.server_profile.iconUrl}
-						alt={server.name}
+						src={invite.server_icon}
+						alt={invite.server_name}
 						class="h-full w-full object-cover"
 					/>
 				{:else}
-					<span class="text-3xl text-primary">{server.name[0]?.toUpperCase()}</span>
+					<span class="text-3xl text-primary">{invite.server_name[0]?.toUpperCase()}</span>
 				{/if}
 			</div>
 
@@ -133,7 +128,7 @@
 				<h2 class="text-xs font-bold tracking-widest text-muted-foreground uppercase">
 					You've been invited to join
 				</h2>
-				<h1 class="mt-2 text-2xl font-bold text-foreground">{server.name}</h1>
+				<h1 class="mt-2 text-2xl font-bold text-foreground">{invite.server_name}</h1>
 			</div>
 
 			{#if !invite.is_valid}
