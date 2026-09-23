@@ -15,7 +15,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { db } from '$lib/utils/db';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { MessagesSquare } from 'lucide-svelte';
 
 	let messageWrapper = $state<HTMLDivElement>();
@@ -223,10 +223,15 @@
 		}
 	}
 
+	// Only re-run on a channel switch. loadMessages reads the message list, and
+	// tracking it would reload (and jump to the bottom) whenever it changes.
 	$effect(() => {
-		if (currentChannelId == null) return;
-		serversState.setSelectedChannelById(currentChannelId);
-		loadMessages(currentChannelId);
+		const channelId = currentChannelId;
+		if (channelId == null) return;
+		untrack(() => {
+			serversState.setSelectedChannelById(channelId);
+			loadMessages(channelId);
+		});
 	});
 
 	// Load older history when the top of the list scrolls into view.
