@@ -15,6 +15,8 @@ export default defineConfig({
 			'/users': `http://${process.env.LOCAL_IP}:8000`,
 			'/servers': `http://${process.env.LOCAL_IP}:8000`,
 			'/channels': `http://${process.env.LOCAL_IP}:8000`,
+			'/conversations': `http://${process.env.LOCAL_IP}:8000`,
+			'/messages': `http://${process.env.LOCAL_IP}:8000`,
 			'/invites': `http://${process.env.LOCAL_IP}:8000`,
 			'/ws': { target: `ws://${process.env.LOCAL_IP}:8000`, ws: true }
 		}

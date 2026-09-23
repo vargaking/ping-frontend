@@ -7,11 +7,13 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { messagesState } from '$lib/states/messagesState.svelte';
+	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { editMessage } from '$lib/requests/messages/editMessage';
 	import { deleteMessage } from '$lib/requests/messages/deleteMessage';
 	import { db } from '$lib/utils/db';
+	import { parseMessageContent } from '$lib/utils/messageContent';
 	import { Pencil, Trash2 } from 'lucide-svelte';
 
 	// The first row in a group already shows the timestamp in the group header,
@@ -19,28 +21,7 @@
 	let { message, showHoverTime = true }: { message: MessageType; showHoverTime?: boolean } =
 		$props();
 
-	const parsedContent = $derived.by(() => {
-		// `content` is typed as JSONContent, but legacy rows can still be strings.
-		const raw: unknown = message.content;
-		if (typeof raw === 'string') {
-			try {
-				return JSON.parse(raw);
-			} catch {
-				try {
-					// Fallback for Python-style stringified dicts (single quotes / None).
-					const fixed = raw
-						.replace(/'/g, '"')
-						.replace(/False/g, 'false')
-						.replace(/True/g, 'true')
-						.replace(/None/g, 'null');
-					return JSON.parse(fixed);
-				} catch {
-					return message.content; // legacy plain-string message
-				}
-			}
-		}
-		return message.content;
-	});
+	const parsedContent = $derived(parseMessageContent(message.content));
 
 	const hoverTime = $derived(
 		new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -49,21 +30,19 @@
 	const me = $derived(usersState.loggedInUser);
 	const isAuthor = $derived(me != null && me.id === message.user_id);
 	const isOwner = $derived(me != null && serversState.selectedServer?.owner_id === me.id);
+	// A DM has no owner, so only the author can delete there.
+	const isDirect = $derived(message.conversation_id != null);
 	const canEdit = $derived(isAuthor);
-	const canDelete = $derived(isAuthor || isOwner);
+	const canDelete = $derived(isAuthor || (isOwner && !isDirect));
 	const editing = $derived(messageEditState.isEditing(message.id));
 
 	async function saveEdit(content: JSONContent) {
 		try {
 			const updated = await editMessage(message.id, content);
-			messagesState.updateMessage(message.id, {
-				content: updated.content,
-				edited_at: updated.edited_at
-			});
-			await db.messages.update(message.id, {
-				content: updated.content,
-				edited_at: updated.edited_at
-			});
+			const changes = { content: updated.content, edited_at: updated.edited_at };
+			messagesState.updateMessage(message.id, changes);
+			conversationsState.messageEdited(message.id, changes);
+			await db.messages.update(message.id, changes);
 			messageEditState.stop();
 		} catch (e) {
 			// Keep the editor open so the edit isn't lost.
@@ -81,6 +60,7 @@
 				try {
 					await deleteMessage(message.id);
 					messagesState.removeMessage(message.id);
+					conversationsState.messageDeleted(message.id);
 					await db.messages.delete(message.id);
 				} catch (e) {
 					console.error('Failed to delete message', e);

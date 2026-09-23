@@ -2,10 +2,11 @@ import { PUBLIC_WS_URL } from '$env/static/public';
 import type { JSONContent } from '@tiptap/core';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
-import { messagesState } from './messagesState.svelte';
+import { messagesState, messageThreadKey } from './messagesState.svelte';
+import { conversationsState } from './conversationsState.svelte';
 import { db } from '$lib/utils/db';
 import { v4 as uuidv4 } from 'uuid';
-import type { MessageType } from '$lib/types/messages.types';
+import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
@@ -87,7 +88,7 @@ class SocketState {
 		socket?.close();
 	}
 
-	async sendMessage(message: JSONContent) {
+	async sendMessage(target: MessageTarget, message: JSONContent) {
 		if (!message) return;
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 			console.warn('WebSocket is not connected. Message not sent:', message);
@@ -95,59 +96,56 @@ class SocketState {
 		}
 
 		const user = usersState.loggedInUser;
-		const server = serversState.selectedServer;
-		const channel = serversState.selectedChannel;
-
-		if (!user || !server || !channel) {
-			console.warn('Cannot send message. Missing user, server, or channel information.');
-			console.debug('User:', user, 'Server:', server, 'Channel:', channel);
+		if (!user) {
+			console.warn('Cannot send message without a logged-in user.');
 			return;
 		}
 
-		console.debug(
-			'Sending message:',
-			message,
-			'from user:',
-			user,
-			'to server:',
-			server,
-			'channel:',
-			channel
-		);
-
-		if (!server.id || !channel.id) return;
-
-		const uuid = uuidv4();
+		const id = uuidv4();
 		const timestamp = new Date().toISOString();
 
-		this.socket?.send(
-			JSON.stringify({
-				type: 'message',
-				id: uuid,
-				server_id: server.id,
-				channel_id: channel.id,
-				content: message,
-				timestamp: timestamp
-			})
-		);
+		const local: MessageType =
+			target.kind === 'channel'
+				? {
+						id,
+						server_id: target.serverId,
+						channel_id: target.channelId,
+						user_id: user.id,
+						content: message,
+						timestamp
+					}
+				: {
+						id,
+						conversation_id: target.conversationId,
+						user_id: user.id,
+						content: message,
+						timestamp
+					};
 
-		messagesState.addMessage({
-			id: uuid,
-			server_id: server.id,
-			channel_id: channel.id,
-			user_id: user.id,
-			content: message,
-			timestamp: timestamp
-		});
+		const frame =
+			target.kind === 'channel'
+				? {
+						type: 'message',
+						id,
+						server_id: target.serverId,
+						channel_id: target.channelId,
+						content: message,
+						timestamp
+					}
+				: {
+						type: 'direct_message',
+						id,
+						conversation_id: target.conversationId,
+						content: message,
+						timestamp
+					};
 
-		await db.messages.add({
-			id: uuid,
-			server_id: server.id,
-			channel_id: channel.id,
-			user_id: user.id,
-			content: message,
-			timestamp: timestamp
-		});
+		this.socket.send(JSON.stringify(frame));
+
+		messagesState.addMessage(local);
+		if (target.kind === 'direct') conversationsState.noteMessage(local);
+
+		await db.messages.add(local);
 	}
 
 	async handleIncomingMessage(message: MessageType) {
@@ -164,11 +162,21 @@ class SocketState {
 		localStorage.setItem(`last_updated`, message.timestamp);
 	}
 
+	async handleIncomingDirectMessage(message: MessageType) {
+		// Only append to threads already loaded; an unopened one fetches its
+		// history (including this message) when opened.
+		if (messagesState.has(messageThreadKey(message))) {
+			messagesState.addMessage(message);
+		}
+		conversationsState.noteMessage(message);
+
+		await db.messages.put(message);
+	}
+
 	async handleMessageUpdated(message: MessageType) {
-		messagesState.updateMessage(message.id, {
-			content: message.content,
-			edited_at: message.edited_at
-		});
+		const changes = { content: message.content, edited_at: message.edited_at };
+		messagesState.updateMessage(message.id, changes);
+		conversationsState.messageEdited(message.id, changes);
 		await db.messages.update(message.id, {
 			content: message.content,
 			edited_at: message.edited_at
@@ -177,6 +185,7 @@ class SocketState {
 
 	async handleMessageDeleted(message: { id: string }) {
 		messagesState.removeMessage(message.id);
+		conversationsState.messageDeleted(message.id);
 		await db.messages.delete(message.id);
 	}
 
@@ -210,6 +219,9 @@ class SocketState {
 		switch (message.type) {
 			case 'message':
 				this.handleIncomingMessage(message);
+				break;
+			case 'direct_message':
+				this.handleIncomingDirectMessage(message);
 				break;
 			case 'message_updated':
 				this.handleMessageUpdated(message);
