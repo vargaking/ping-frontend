@@ -17,4 +17,9 @@ export type Conversation = {
 	other_user: User;
 	last_message: ConversationPreview | null;
 	last_activity: string;
+	/** Message uuids, null when nothing has been read/sent yet. */
+	last_read_message_id?: string | null;
+	last_message_id?: string | null;
+	/** Messages after the marker not authored by us. */
+	unread_count?: number;
 };

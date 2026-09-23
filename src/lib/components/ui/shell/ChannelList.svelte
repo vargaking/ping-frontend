@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
+	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import type { Channel } from '$lib/types/channel.types';
 	import SidebarRow from './SidebarRow.svelte';
@@ -162,6 +163,8 @@
 						label={channel.name}
 						href={channelHref(channel)}
 						active={channel.id === activeChannelId}
+						unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
+						mentions={unreadState.channelMentions(channel.id)}
 						dragging={dragType === 'text' && dragIndex === i}
 						draggable="true"
 						ondragstart={() => handleDragStart('text', i)}

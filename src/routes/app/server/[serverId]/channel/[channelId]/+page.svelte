@@ -40,6 +40,7 @@
 			{@const channelId = currentChannelId}
 			<MessageList
 				threadKey={channelThreadKey(channelId)}
+				{target}
 				fetchPage={(before) => getChannelMessages(channelId, before)}
 				readCache={() =>
 					db.messages

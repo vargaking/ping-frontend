@@ -5,17 +5,23 @@
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
-	import type { MessageType } from '$lib/types/messages.types';
+	import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 	import type { MessagePage } from '$lib/requests/channels/getChannelMessages';
 	import { messagesState } from '$lib/states/messagesState.svelte';
 	import { normalizeError } from '$lib/requests/errors';
 	import { db } from '$lib/utils/db';
 	import { tick, untrack } from 'svelte';
 	import { MessagesSquare } from 'lucide-svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { unreadState } from '$lib/states/unreadState.svelte';
+	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { documentFocusState } from '$lib/utils/documentFocus.svelte';
 
 	type Props = {
 		/** messagesState key of the thread shown (see threadKey). */
 		threadKey: string;
+		/** Channel or DM this list belongs to — drives read-state tracking. */
+		target: MessageTarget | null;
 		/** Newest-first page of history, older than `before` when given. */
 		fetchPage: (before?: string | null) => Promise<MessagePage>;
 		/** Cached messages (oldest first), used when the API is unreachable. */
@@ -26,8 +32,15 @@
 		onNotFound?: () => void;
 	};
 
-	let { threadKey, fetchPage, readCache, emptyDescription, errorDescription, onNotFound }: Props =
-		$props();
+	let {
+		threadKey,
+		target,
+		fetchPage,
+		readCache,
+		emptyDescription,
+		errorDescription,
+		onNotFound
+	}: Props = $props();
 
 	let messageWrapper = $state<HTMLDivElement>();
 	let topSentinel = $state<HTMLDivElement>();
@@ -52,11 +65,11 @@
 		if (el) stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 	}
 
-	// Timestamp (ms) of the last message seen on the previous visit to this
-	// thread, and the id of the first message past it. The divider is pinned to
-	// that message once on open, so messages sent or received while we're looking
-	// never move it or spawn a second one.
-	let unreadBoundary = $state<number | null>(null);
+	// Id of the last message read before this open (from unreadState/conversationsState,
+	// snapshotted before we mark the thread read), and the id of the first loaded
+	// message past it. The divider is pinned to that message once on open, so
+	// messages sent or received while we're looking never move it or spawn a second one.
+	let unreadBoundaryId = $state<string | null>(null);
 	let unreadAnchorId = $state<string | null>(null);
 
 	const GROUP_GAP_MS = 5 * 60 * 1000;
@@ -136,21 +149,61 @@
 	// can't overwrite the one we're now looking at.
 	let loadToken = 0;
 
+	// --- mark read (replaces the old localStorage `read:<key>` marker) ---
+
+	type ReadMarkers = { lastReadId: string | null; lastMessageId: string | null };
+
+	/** Current read markers for `target`, read from the single source of truth. */
+	function readSnapshot(): ReadMarkers | null {
+		if (!target) return null;
+		if (target.kind === 'channel') {
+			return {
+				lastReadId: unreadState.channelLastReadId(target.channelId),
+				lastMessageId: unreadState.channelLastMessageId(target.channelId)
+			};
+		}
+		const conversation = conversationsState.conversations[target.conversationId];
+		return {
+			lastReadId: conversation?.last_read_message_id ?? null,
+			lastMessageId: conversation?.last_message_id ?? null
+		};
+	}
+
+	function markReadLocally(messageId: string) {
+		if (!target) return;
+		if (target.kind === 'channel') {
+			unreadState.markChannelReadLocally(target.channelId, messageId);
+		} else {
+			conversationsState.markReadLocally(target.conversationId, messageId);
+		}
+	}
+
+	function persistRead(messageId: string) {
+		if (!target) return;
+		if (target.kind === 'channel') {
+			unreadState.persistChannelRead(target.channelId, messageId);
+		} else {
+			conversationsState.persistRead(target.conversationId, messageId);
+		}
+	}
+
 	function applyPage(key: string, messages: MessageType[], hasMore: boolean) {
 		messagesState.set(key, messages, hasMore);
 		autoScrollAnchorId = messages.at(-1)?.id ?? null;
 		stickToBottom = true;
 
-		// Pin the unread divider to the first message past the boundary, once.
-		const boundary = unreadBoundary;
-		unreadAnchorId =
-			boundary != null
-				? (messages.find((m) => new Date(m.timestamp).getTime() > boundary)?.id ?? null)
-				: null;
+		// Pin the unread divider to the message right after the boundary, once. If
+		// the boundary is older than this page, anchor on the first loaded message.
+		// A thread that was never read (no marker) gets no divider.
+		const boundary = unreadBoundaryId;
+		if (boundary != null) {
+			const idx = messages.findIndex((m) => m.id === boundary);
+			unreadAnchorId = idx >= 0 ? (messages[idx + 1]?.id ?? null) : (messages[0]?.id ?? null);
+		} else {
+			unreadAnchorId = null;
+		}
 
 		loadState = 'ready';
-		const latest = messages.at(-1)?.timestamp;
-		if (latest) localStorage.setItem(`read:${key}`, latest);
 		tick().then(() => setTimeout(scrollToBottom, 100));
 	}
 
@@ -163,9 +216,13 @@
 		// refresh, so the switch doesn't flicker.
 		if (messagesState.messages(key).length === 0) loadState = 'loading';
 
-		// Everything newer than the previous visit renders under "New".
-		const prevRead = localStorage.getItem(`read:${key}`);
-		unreadBoundary = prevRead ? Date.parse(prevRead) : null;
+		// Snapshot the read markers BEFORE marking the thread read, so the divider
+		// anchors on what was actually unread when we opened it.
+		const snapshot = readSnapshot();
+		unreadBoundaryId =
+			snapshot && snapshot.lastMessageId != null && snapshot.lastMessageId !== snapshot.lastReadId
+				? snapshot.lastReadId
+				: null;
 
 		try {
 			// The API is the source of truth for the newest page; Dexie is a cache.
@@ -251,15 +308,15 @@
 	// Load older history when the top of the list scrolls into view.
 	$effect(() => {
 		const root = messageWrapper;
-		const target = topSentinel;
-		if (!root || !target) return;
+		const sentinel = topSentinel;
+		if (!root || !sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0]?.isIntersecting) loadOlder();
 			},
 			{ root, rootMargin: '150px 0px 0px 0px' }
 		);
-		observer.observe(target);
+		observer.observe(sentinel);
 		return () => observer.disconnect();
 	});
 
@@ -272,6 +329,78 @@
 
 		autoScrollAnchorId = newestId;
 		if (stickToBottom) tick().then(scrollToBottom);
+	});
+
+	documentFocusState.attach();
+
+	// The thread is "being read" when it's the one this list shows, the tab is
+	// visible, and the window is focused — never just because a message arrived
+	// while we're hidden or unfocused.
+	const beingRead = $derived(
+		target != null && documentFocusState.visible && documentFocusState.focused
+	);
+
+	$effect(() => {
+		const key = threadKey;
+		unreadState.setActiveThread(beingRead ? key : null);
+		return () => {
+			// Only clear if we're still the active thread when this effect tears
+			// down — otherwise a newer thread's registration would be wiped out.
+			if (unreadState.isBeingRead(key)) unreadState.setActiveThread(null);
+		};
+	});
+
+	let markReadTimer: ReturnType<typeof setTimeout> | null = null;
+	let lastPersisted: string | null = null;
+
+	function scheduleMarkRead() {
+		if (!beingRead || !target) return;
+
+		const msgs = messagesState.messages(threadKey);
+		const newest = msgs.at(-1);
+		if (!newest) return;
+
+		const me = usersState.loggedInUser;
+		const isOwn = me != null && newest.user_id === me.id;
+		const snapshot = readSnapshot();
+		const alreadyRead = snapshot?.lastReadId === newest.id;
+
+		// The server already advanced our marker when we sent it (and an optimistic
+		// send may not even be persisted yet), and there's nothing to do if we're
+		// already caught up.
+		if (isOwn || alreadyRead) return;
+
+		markReadLocally(newest.id);
+
+		if (markReadTimer) clearTimeout(markReadTimer);
+		markReadTimer = setTimeout(() => {
+			markReadTimer = null;
+			if (lastPersisted === newest.id) return;
+			lastPersisted = newest.id;
+			persistRead(newest.id);
+		}, 750);
+	}
+
+	// Re-check whenever the thread becomes read-eligible or the newest loaded
+	// message changes (a fresh send/receive). scheduleMarkRead re-reads current
+	// state itself; this effect only needs to establish the dependencies.
+	$effect(() => {
+		const read = beingRead;
+		const newestId = messagesState.messages(threadKey).at(-1)?.id ?? null;
+		if (read && newestId) scheduleMarkRead();
+	});
+
+	// Cancel any pending PUT for the thread we're leaving, and forget what we
+	// last persisted so a revisit re-evaluates from scratch.
+	$effect(() => {
+		void threadKey;
+		return () => {
+			if (markReadTimer) {
+				clearTimeout(markReadTimer);
+				markReadTimer = null;
+			}
+			lastPersisted = null;
+		};
 	});
 </script>
 
