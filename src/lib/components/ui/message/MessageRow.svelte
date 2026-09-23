@@ -7,6 +7,7 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { messagesState } from '$lib/states/messagesState.svelte';
+	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { editMessage } from '$lib/requests/messages/editMessage';
@@ -29,24 +30,19 @@
 	const me = $derived(usersState.loggedInUser);
 	const isAuthor = $derived(me != null && me.id === message.user_id);
 	const isOwner = $derived(me != null && serversState.selectedServer?.owner_id === me.id);
-	// Edit/delete only exist for server channels on the backend so far, so DM
-	// rows stay read-only.
+	// A DM has no owner, so only the author can delete there.
 	const isDirect = $derived(message.conversation_id != null);
-	const canEdit = $derived(isAuthor && !isDirect);
-	const canDelete = $derived((isAuthor || isOwner) && !isDirect);
+	const canEdit = $derived(isAuthor);
+	const canDelete = $derived(isAuthor || (isOwner && !isDirect));
 	const editing = $derived(messageEditState.isEditing(message.id));
 
 	async function saveEdit(content: JSONContent) {
 		try {
 			const updated = await editMessage(message.id, content);
-			messagesState.updateMessage(message.id, {
-				content: updated.content,
-				edited_at: updated.edited_at
-			});
-			await db.messages.update(message.id, {
-				content: updated.content,
-				edited_at: updated.edited_at
-			});
+			const changes = { content: updated.content, edited_at: updated.edited_at };
+			messagesState.updateMessage(message.id, changes);
+			conversationsState.messageEdited(message.id, changes);
+			await db.messages.update(message.id, changes);
 			messageEditState.stop();
 		} catch (e) {
 			// Keep the editor open so the edit isn't lost.
@@ -64,6 +60,7 @@
 				try {
 					await deleteMessage(message.id);
 					messagesState.removeMessage(message.id);
+					conversationsState.messageDeleted(message.id);
 					await db.messages.delete(message.id);
 				} catch (e) {
 					console.error('Failed to delete message', e);

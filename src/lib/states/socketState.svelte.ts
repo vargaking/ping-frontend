@@ -174,10 +174,9 @@ class SocketState {
 	}
 
 	async handleMessageUpdated(message: MessageType) {
-		messagesState.updateMessage(message.id, {
-			content: message.content,
-			edited_at: message.edited_at
-		});
+		const changes = { content: message.content, edited_at: message.edited_at };
+		messagesState.updateMessage(message.id, changes);
+		conversationsState.messageEdited(message.id, changes);
 		await db.messages.update(message.id, {
 			content: message.content,
 			edited_at: message.edited_at
@@ -186,6 +185,7 @@ class SocketState {
 
 	async handleMessageDeleted(message: { id: string }) {
 		messagesState.removeMessage(message.id);
+		conversationsState.messageDeleted(message.id);
 		await db.messages.delete(message.id);
 	}
 

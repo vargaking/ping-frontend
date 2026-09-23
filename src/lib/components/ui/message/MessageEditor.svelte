@@ -87,7 +87,11 @@
 				isEmpty = editor.isEmpty;
 			},
 			onTransaction: ({ editor }) => {
-				isEmpty = editor.isEmpty;
+				// Removing a focused editor fires a blur transaction mid-teardown,
+				// where writing state throws; blur never changes emptiness. Read
+				// untracked: this also runs inside the creating effect (autofocus),
+				// and tracking isEmpty there would rebuild the editor.
+				if (editor.isEmpty !== untrack(() => isEmpty)) isEmpty = editor.isEmpty;
 			},
 			extensions: [
 				StarterKit,

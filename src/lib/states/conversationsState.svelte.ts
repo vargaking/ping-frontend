@@ -74,6 +74,24 @@ class ConversationsState {
 		};
 	}
 
+	/** Keep a preview in step when the message it shows is edited. */
+	messageEdited(id: string, changes: Pick<MessageType, 'content' | 'edited_at'>) {
+		for (const conversation of Object.values(this.conversations)) {
+			if (conversation.last_message?.id === id) {
+				this.conversations[conversation.id] = {
+					...conversation,
+					last_message: { ...conversation.last_message, ...changes }
+				};
+				return;
+			}
+		}
+	}
+
+	/** The previewed message was deleted: refetch to preview the one before it. */
+	messageDeleted(id: string) {
+		if (Object.values(this.conversations).some((c) => c.last_message?.id === id)) this.fetch();
+	}
+
 	/** Drop a conversation that turned out to be gone or not ours. */
 	forget(id: number) {
 		delete this.conversations[id];

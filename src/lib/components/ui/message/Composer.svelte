@@ -21,10 +21,9 @@
 	}
 
 	// ↑ on an empty composer jumps to editing your most recent message here.
-	// Channel messages only: DM messages can't be edited yet.
 	function editLastOwnMessage() {
 		const me = usersState.loggedInUser;
-		if (!me || target?.kind !== 'channel') return;
+		if (!me || !target) return;
 
 		const messages = messagesState.messages(threadKey(target));
 		for (let i = messages.length - 1; i >= 0; i--) {
