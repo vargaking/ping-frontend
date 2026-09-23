@@ -92,13 +92,13 @@
 
 <div class="group/row relative">
 	{#if editing}
-		<div class="rounded-lg border border-input bg-surface-input px-3 py-2">
+		<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
 			<MessageEditor
 				content={parsedContent}
 				autofocus
 				onSubmit={saveEdit}
 				onCancel={() => messageEditState.stop()}
-				editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none"
+				editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 			/>
 			<div class="mt-1 text-[11px] text-text-subtle">
 				escape to
@@ -148,11 +148,11 @@
 		{/if}
 
 		<div
-			class="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
+			class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
 		>
 			<MessageNode node={parsedContent} />
 			{#if message.edited_at}
-				<span class="ml-1 align-baseline text-[11px] text-text-subtle select-none">(edited)</span>
+				<span class="align-baseline text-[11px] text-text-subtle select-none">(edited)</span>
 			{/if}
 		</div>
 	{/if}

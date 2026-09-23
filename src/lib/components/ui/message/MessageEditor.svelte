@@ -80,7 +80,7 @@
 			}
 		});
 
-		editor = new Editor({
+		const instance = new Editor({
 			element,
 			content: initialContent,
 			onCreate: ({ editor }) => {
@@ -172,10 +172,16 @@
 			]
 		});
 
-		if (autofocus) editor.commands.focus('end');
+		// Assign the reactive handle only after construction, and drive autofocus
+		// off the local instance. Reading the `editor` $state we just wrote from
+		// inside this effect would make the effect depend on a value it sets,
+		// looping forever (effect_update_depth_exceeded) — which is exactly what
+		// the autofocus path did before.
+		editor = instance;
+		if (autofocus) instance.commands.focus('end');
 
 		return () => {
-			editor?.destroy();
+			instance.destroy();
 			editor = null;
 		};
 	});
