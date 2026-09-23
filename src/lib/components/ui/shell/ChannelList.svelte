@@ -12,7 +12,7 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-	import { Hash, Volume2, ChevronDown, Plus, Settings, LogOut } from 'lucide-svelte';
+	import { Hash, Volume2, ChevronDown, Plus, Settings } from 'lucide-svelte';
 
 	let channelName = $state('');
 	let channelType: 'text' | 'voice' = $state('text');
@@ -103,11 +103,6 @@
 			<DropdownMenu.Item onclick={() => overlayState.open(SettingsModal, { category: 'server' })}>
 				<Settings size={16} strokeWidth={1.75} />
 				Server settings
-			</DropdownMenu.Item>
-			<DropdownMenu.Separator />
-			<DropdownMenu.Item variant="destructive">
-				<LogOut size={16} strokeWidth={1.75} />
-				Leave server
 			</DropdownMenu.Item>
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>

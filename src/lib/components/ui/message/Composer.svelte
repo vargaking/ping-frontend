@@ -1,30 +1,32 @@
 <script lang="ts">
 	import type { JSONContent } from '@tiptap/core';
-	import { serversState } from '$lib/states/serversState.svelte';
+	import type { MessageTarget } from '$lib/types/messages.types';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
-	import { messagesState } from '$lib/states/messagesState.svelte';
+	import { messagesState, threadKey } from '$lib/states/messagesState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import { Paperclip, Smile, SendHorizontal } from 'lucide-svelte';
+
+	let { target }: { target: MessageTarget | null } = $props();
 
 	let editor = $state<ReturnType<typeof MessageEditor>>();
 	let isEmpty = $state(true);
 
 	function handleSubmit(message: JSONContent) {
-		if (!serversState.selectedServer || !serversState.selectedChannel) return;
-		socketState.sendMessage(message);
+		if (!target) return;
+		socketState.sendMessage(target, message);
 		editor?.clear();
 		editor?.focus();
 	}
 
 	// ↑ on an empty composer jumps to editing your most recent message here.
+	// Channel messages only: DM messages can't be edited yet.
 	function editLastOwnMessage() {
 		const me = usersState.loggedInUser;
-		const channelId = serversState.selectedChannel?.id;
-		if (!me || channelId == null) return;
+		if (!me || target?.kind !== 'channel') return;
 
-		const messages = messagesState.messages(channelId);
+		const messages = messagesState.messages(threadKey(target));
 		for (let i = messages.length - 1; i >= 0; i--) {
 			if (messages[i].user_id === me.id) {
 				messageEditState.start(messages[i].id);

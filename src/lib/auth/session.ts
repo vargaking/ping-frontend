@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { usersState } from '$lib/states/usersState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { messagesState } from '$lib/states/messagesState.svelte';
+import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { socketState } from '$lib/states/socketState.svelte';
 import { clearLocalCache } from '$lib/utils/db';
 import { logout as logoutRequest } from '$lib/requests/auth/logout';
@@ -25,6 +26,7 @@ export async function clearSession(): Promise<void> {
 	serversState.selectedChannel = null;
 
 	messagesState.clearAll();
+	conversationsState.reset();
 
 	try {
 		await clearLocalCache();

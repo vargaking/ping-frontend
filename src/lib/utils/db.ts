@@ -105,6 +105,11 @@ function createDb(): AppDb {
 				messages: 'id, server_id, channel_id, user_id, content, timestamp',
 				users: '++id, username, public_key, profile'
 			});
+			// v2 indexes conversation_id so DM messages can be read back per
+			// conversation. Channel messages keep their server/channel indexes.
+			dexieDb.version(2).stores({
+				messages: 'id, server_id, channel_id, conversation_id, user_id, content, timestamp'
+			});
 			return dexieDb;
 		} catch (e) {
 			console.warn('IndexedDB unavailable — falling back to in-memory store.', e);
