@@ -28,6 +28,14 @@ class UsersState {
 		}
 	}
 
+	/** Store a fresh copy of a user without touching presence. */
+	applyUser(user: User) {
+		this.users[user.id] = user;
+		if (this.loggedInUser?.id === user.id) {
+			this.loggedInUser = user;
+		}
+	}
+
 	async fetchUser(userId: number): Promise<User | null> {
 		const fetchedUser = await getUser(userId);
 

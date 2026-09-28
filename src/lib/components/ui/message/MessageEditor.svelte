@@ -8,6 +8,7 @@
 	import MentionList from '$lib/components/ui/MentionList.svelte';
 	import type { User } from '$lib/types/auth.types';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
 
 	let {
 		content = '',
@@ -107,6 +108,7 @@
 					suggestion: {
 						items: ({ query }) => {
 							return (serversState.selectedServer?.members || [])
+								.map((m) => usersState.users[m.id] ?? m)
 								.filter((item) => item.username.toLowerCase().startsWith(query.toLowerCase()))
 								.slice(0, 5);
 						},

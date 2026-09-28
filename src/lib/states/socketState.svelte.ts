@@ -15,6 +15,7 @@ import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound'
 import { notifyChannelMessage, notifyDirectMessage } from '$lib/utils/desktopNotification';
 import { messageMentionsUser } from '$lib/utils/messageContent';
 import { db } from '$lib/utils/db';
+import { getUser } from '$lib/requests/users/getUser';
 import { v4 as uuidv4 } from 'uuid';
 import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
@@ -305,20 +306,17 @@ class SocketState {
 		await db.messages.delete(message.id);
 	}
 
-	async handleUserUpdate(user: User) {
-		console.log('Received user update:', user);
+	handleUserUpdate(user: User) {
+		usersState.applyUser(user);
+	}
 
-		// Update users state
-		usersState.users[user.id] = user;
-
-		// Update loggedInUser if it's me
-		const currentUser = usersState.loggedInUser;
-		if (currentUser && currentUser.id === user.id) {
-			usersState.setLoggedInUser(user);
+	async handleUserInvalidate(userId: number) {
+		try {
+			const user = await getUser(userId);
+			usersState.applyUser(user);
+		} catch (error) {
+			console.warn('Failed to refresh user after user_invalidate:', userId, error);
 		}
-
-		// Update IndexedDB
-		//await db.users.put(user);
 	}
 
 	/** Our read marker moved (from this tab's own PUT, or another one of our tabs). */
@@ -361,6 +359,9 @@ class SocketState {
 				break;
 			case 'user_updated':
 				this.handleUserUpdate(message.user);
+				break;
+			case 'user_invalidate':
+				this.handleUserInvalidate(message.user_id);
 				break;
 			case 'presence_update':
 				if (message.online && message.user_id) {
