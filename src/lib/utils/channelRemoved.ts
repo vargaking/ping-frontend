@@ -1,0 +1,23 @@
+import { goto } from '$app/navigation';
+import { toast } from 'svelte-sonner';
+import { serversState } from '$lib/states/serversState.svelte';
+import { voiceState } from '$lib/states/voiceState.svelte';
+
+/**
+ * Drop a deleted channel from local state and move the user off it if they were
+ * reading it or connected to it. `byMe` suppresses the notice for our own delete.
+ */
+export async function channelRemoved(serverId: number, channelId: number, byMe = false) {
+	const wasViewing =
+		serversState.selectedServer?.id === serverId && serversState.selectedChannel?.id === channelId;
+	const wasInVoice = voiceState.channelId === channelId;
+	const name = serversState.selectedServerChannels[channelId]?.name;
+
+	serversState.removeChannel(serverId, channelId);
+
+	if (wasInVoice) await voiceState.leaveVoice();
+	if (wasViewing) await goto(`/app/server/${serverId}/`);
+	if (!byMe && (wasViewing || wasInVoice)) {
+		toast(name ? `#${name} was deleted` : 'This channel was deleted');
+	}
+}

@@ -3,7 +3,7 @@
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import { Hash, Volume2, Users, UserPlus } from 'lucide-svelte';
+	import { Hash, Volume2, Users, UserPlus, Settings } from 'lucide-svelte';
 
 	type Props = {
 		membersOpen?: boolean;
@@ -13,7 +13,7 @@
 	let { membersOpen = true, onToggleMembers }: Props = $props();
 
 	const channel = $derived(serversState.selectedChannel);
-	const topic = $derived((channel?.channel_settings as { topic?: string })?.topic ?? '');
+	const topic = $derived(channel?.topic ?? '');
 </script>
 
 <header class="flex h-14 shrink-0 items-center gap-3 border-b border-border pr-4 pl-6">
@@ -32,10 +32,22 @@
 	{/if}
 
 	<div class="ml-auto flex items-center gap-2">
+		{#if channel && serversState.isSelectedServerOwner}
+			<button
+				type="button"
+				aria-label="Channel settings"
+				onclick={() =>
+					overlayState.open(SettingsModal, { category: 'channel', channelId: channel.id })}
+				class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				<Settings size={18} strokeWidth={1.75} />
+			</button>
+		{/if}
 		<Button
 			variant="secondary"
 			size="sm"
-			onclick={() => overlayState.open(SettingsModal, { category: 'server' })}
+			onclick={() =>
+				overlayState.open(SettingsModal, { category: 'server', tab: 'server-invites' })}
 		>
 			<UserPlus size={16} strokeWidth={1.75} />
 			Invite

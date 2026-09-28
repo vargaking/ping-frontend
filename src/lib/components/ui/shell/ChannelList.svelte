@@ -13,11 +13,15 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
+	import { toast } from 'svelte-sonner';
+	import { goto } from '$app/navigation';
+	import { getErrorMessage } from '$lib/requests/errors';
 	import { Hash, Volume2, ChevronDown, Plus, Settings } from 'lucide-svelte';
 
 	let channelName = $state('');
 	let channelType: 'text' | 'voice' = $state('text');
 	let createOpen = $state(false);
+	let creating = $state(false);
 
 	const activeChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
@@ -78,18 +82,44 @@
 
 	async function submitCreateChannel() {
 		const serverId = serversState.selectedServer?.id;
-		if (!serverId || !channelName.trim()) return;
-		await createChannel(serverId, channelName.trim(), channelType);
-		await serversState.fetchServerChannels(serverId);
-		channelName = '';
-		channelType = 'text';
-		createOpen = false;
+		if (!serverId || !channelName.trim() || creating) return;
+		creating = true;
+		try {
+			const channel = await createChannel(serverId, channelName.trim(), channelType);
+			serversState.addChannel(serverId, channel);
+			channelName = '';
+			channelType = 'text';
+			createOpen = false;
+			if (channel.type === 'text') await goto(channelHref(channel));
+		} catch (e) {
+			toast.error(`Couldn't create channel: ${getErrorMessage(e)}`);
+		} finally {
+			creating = false;
+		}
+	}
+
+	function openChannelSettings(channel: Channel) {
+		overlayState.open(SettingsModal, { category: 'channel', channelId: channel.id });
 	}
 
 	function channelHref(channel: Channel) {
 		return `/app/server/${serversState.selectedServer?.id}/channel/${channel.id}/`;
 	}
 </script>
+
+{#snippet settingsButton(channel: Channel)}
+	{#if serversState.isSelectedServerOwner}
+		<!-- A sibling of the row, not a child: the row is itself a link or button. -->
+		<button
+			type="button"
+			aria-label="Settings for {channel.name}"
+			onclick={() => openChannelSettings(channel)}
+			class="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-text-subtle opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		>
+			<Settings size={14} strokeWidth={1.75} />
+		</button>
+	{/if}
+{/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
 	<!-- server header -->
@@ -124,7 +154,7 @@
 					<Dialog.Content>
 						<Dialog.Header><Dialog.Title>Create a channel</Dialog.Title></Dialog.Header>
 						<div class="flex flex-col gap-4 py-2">
-							<Input placeholder="Channel name" bind:value={channelName} />
+							<Input placeholder="Channel name" maxlength={100} bind:value={channelName} />
 							<div class="flex gap-4">
 								<label class="flex cursor-pointer items-center gap-2 text-sm">
 									<input
@@ -151,7 +181,9 @@
 							</div>
 						</div>
 						<Dialog.Footer>
-							<Button onclick={submitCreateChannel} disabled={!channelName.trim()}>Create</Button>
+							<Button onclick={submitCreateChannel} disabled={!channelName.trim() || creating}>
+								{creating ? 'Creating…' : 'Create'}
+							</Button>
 						</Dialog.Footer>
 					</Dialog.Content>
 				</Dialog.Root>
@@ -159,24 +191,27 @@
 
 			<div class="mt-1 flex flex-col gap-0.5">
 				{#each textChannels as channel, i (channel.id)}
-					<SidebarRow
-						label={channel.name}
-						href={channelHref(channel)}
-						active={channel.id === activeChannelId}
-						unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
-						mentions={unreadState.channelMentions(channel.id)}
-						dragging={dragType === 'text' && dragIndex === i}
-						draggable="true"
-						ondragstart={() => handleDragStart('text', i)}
-						ondragover={(e) => handleDragOver(e, 'text', i)}
-						ondrop={() => handleDrop('text')}
-						ondragend={resetDrag}
-						onclick={() => serversState.setSelectedChannel(channel)}
-					>
-						{#snippet icon()}
-							<Hash size={16} strokeWidth={1.75} />
-						{/snippet}
-					</SidebarRow>
+					<div class="group/row relative">
+						<SidebarRow
+							label={channel.name}
+							href={channelHref(channel)}
+							active={channel.id === activeChannelId}
+							unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
+							mentions={unreadState.channelMentions(channel.id)}
+							dragging={dragType === 'text' && dragIndex === i}
+							draggable="true"
+							ondragstart={() => handleDragStart('text', i)}
+							ondragover={(e) => handleDragOver(e, 'text', i)}
+							ondrop={() => handleDrop('text')}
+							ondragend={resetDrag}
+							onclick={() => serversState.setSelectedChannel(channel)}
+						>
+							{#snippet icon()}
+								<Hash size={16} strokeWidth={1.75} />
+							{/snippet}
+						</SidebarRow>
+						{@render settingsButton(channel)}
+					</div>
 				{/each}
 				{#if textChannels.length === 0}
 					<p class="px-2 py-1 text-xs text-text-subtle">No text channels yet.</p>
@@ -192,21 +227,24 @@
 				</div>
 				<div class="mt-1 flex flex-col gap-0.5">
 					{#each voiceChannels as channel, i (channel.id)}
-						<SidebarRow
-							label={channel.name}
-							active={voiceState.channelId === channel.id}
-							dragging={dragType === 'voice' && dragIndex === i}
-							draggable="true"
-							ondragstart={() => handleDragStart('voice', i)}
-							ondragover={(e) => handleDragOver(e, 'voice', i)}
-							ondrop={() => handleDrop('voice')}
-							ondragend={resetDrag}
-							onclick={() => voiceState.joinVoice(channel.id)}
-						>
-							{#snippet icon()}
-								<Volume2 size={16} strokeWidth={1.75} />
-							{/snippet}
-						</SidebarRow>
+						<div class="group/row relative">
+							<SidebarRow
+								label={channel.name}
+								active={voiceState.channelId === channel.id}
+								dragging={dragType === 'voice' && dragIndex === i}
+								draggable="true"
+								ondragstart={() => handleDragStart('voice', i)}
+								ondragover={(e) => handleDragOver(e, 'voice', i)}
+								ondrop={() => handleDrop('voice')}
+								ondragend={resetDrag}
+								onclick={() => voiceState.joinVoice(channel.id)}
+							>
+								{#snippet icon()}
+									<Volume2 size={16} strokeWidth={1.75} />
+								{/snippet}
+							</SidebarRow>
+							{@render settingsButton(channel)}
+						</div>
 						{#if voiceState.channelId === channel.id}
 							<div class="mt-0.5 flex flex-col gap-0.5">
 								{#each Array.from(voiceState.peers.values()) as peer (peer.id)}

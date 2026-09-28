@@ -5,6 +5,7 @@ import type { Channel } from '$lib/types/channel.types';
 import type { Server } from '$lib/types/server.types';
 import type { User } from '$lib/types/auth.types';
 import { unreadState } from './unreadState.svelte';
+import { usersState } from './usersState.svelte';
 
 export class ServersState {
 	servers: Record<number, Server> = $state({});
@@ -27,6 +28,12 @@ export class ServersState {
 		const rest = all.filter((ch) => !orderedIds.has(ch.id));
 		return [...ordered, ...rest];
 	});
+
+	/** Whether the logged-in user owns the selected server; gates settings UI. */
+	readonly isSelectedServerOwner: boolean = $derived(
+		this.selectedServer?.owner_id != null &&
+			this.selectedServer.owner_id === usersState.loggedInUser?.id
+	);
 
 	setSelectedServer(server: Server | null) {
 		this.selectedServer = server;
@@ -84,6 +91,65 @@ export class ServersState {
 		if (this.selectedServer?.id !== serverId) return;
 		if (this.selectedServerChannels[channel.id]) return;
 		this.selectedServerChannels[channel.id] = channel;
+	}
+
+	/** Merge fields of a changed server (own save or server_updated). */
+	patchServer(serverId: number, changes: Partial<Server>) {
+		const server = this.servers[serverId];
+		if (!server) return;
+		const updated = { ...server, ...changes };
+		this.servers[serverId] = updated;
+		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+	}
+
+	/** Forget a deleted server (own delete or server_deleted). */
+	removeServer(serverId: number) {
+		delete this.servers[serverId];
+		unreadState.forgetServer(serverId);
+		if (this.selectedServer?.id !== serverId) return;
+		this.selectedServer = null;
+		this.selectedServerChannels = {};
+		this.selectedChannel = null;
+	}
+
+	/** Merge a changed channel (own save or channel_updated) into local state.
+	 *  Read-state fields are per user, so the local ones are kept. */
+	updateChannel(serverId: number, channel: Channel) {
+		unreadState.renameChannel(channel.id, channel.name);
+
+		const existing = this.selectedServerChannels[channel.id];
+		if (this.selectedServer?.id !== serverId || !existing) return;
+		const merged: Channel = {
+			...existing,
+			name: channel.name,
+			topic: channel.topic ?? null,
+			channel_settings: channel.channel_settings
+		};
+		this.selectedServerChannels[channel.id] = merged;
+		if (this.selectedChannel?.id === channel.id) this.selectedChannel = merged;
+	}
+
+	/** Drop a deleted channel (own delete or channel_deleted). */
+	removeChannel(serverId: number, channelId: number) {
+		unreadState.forgetChannel(channelId);
+
+		const server = this.servers[serverId];
+		const order = server?.server_settings?.channel_order;
+		if (server && order?.includes(channelId)) {
+			const updated: Server = {
+				...server,
+				server_settings: {
+					...server.server_settings,
+					channel_order: order.filter((id) => id !== channelId)
+				}
+			};
+			this.servers[serverId] = updated;
+			if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+		}
+
+		if (this.selectedServer?.id !== serverId) return;
+		delete this.selectedServerChannels[channelId];
+		if (this.selectedChannel?.id === channelId) this.selectedChannel = null;
 	}
 
 	/** Patch in a member who joined over the socket (member_joined). */

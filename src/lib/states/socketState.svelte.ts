@@ -15,6 +15,8 @@ import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound'
 import { notifyChannelMessage, notifyDirectMessage } from '$lib/utils/desktopNotification';
 import { messageMentionsUser } from '$lib/utils/messageContent';
 import { db } from '$lib/utils/db';
+import { channelRemoved } from '$lib/utils/channelRemoved';
+import { serverRemoved } from '$lib/utils/serverRemoved';
 import { getUser } from '$lib/requests/users/getUser';
 import { v4 as uuidv4 } from 'uuid';
 import type { MessageTarget, MessageType } from '$lib/types/messages.types';
@@ -377,6 +379,21 @@ class SocketState {
 				break;
 			case 'channel_created':
 				serversState.addChannel(message.server_id, message.channel);
+				break;
+			case 'channel_updated':
+				serversState.updateChannel(message.server_id, message.channel);
+				break;
+			case 'channel_deleted':
+				channelRemoved(message.server_id, message.channel_id);
+				break;
+			case 'server_updated':
+				serversState.patchServer(message.server.id, {
+					name: message.server.name,
+					server_profile: message.server.server_profile
+				});
+				break;
+			case 'server_deleted':
+				serverRemoved(message.server_id);
 				break;
 			case 'member_joined':
 				usersState.users[message.member.id] = message.member;

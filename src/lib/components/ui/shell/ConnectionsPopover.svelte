@@ -75,7 +75,7 @@
 			server.name,
 			serverHost,
 			server.name.charAt(0).toUpperCase(),
-			server.server_profile?.iconUrl ?? null
+			server.server_profile?.icon ?? null
 		)}
 	{/each}
 	{#if serversState.serversList.length === 0}

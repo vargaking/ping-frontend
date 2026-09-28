@@ -3,6 +3,7 @@ export type Channel = {
 	name: string;
 	channel_settings: object;
 	type: 'text' | 'voice';
+	topic?: string | null;
 	/** Message uuids, null when nothing has been read/sent yet. */
 	last_read_message_id?: string | null;
 	last_message_id?: string | null;

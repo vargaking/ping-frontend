@@ -137,6 +137,21 @@ class UnreadState {
 		};
 	}
 
+	renameChannel(channelId: number, name: string) {
+		const existing = this.channels[channelId];
+		if (existing) this.channels[channelId] = { ...existing, name };
+	}
+
+	forgetChannel(channelId: number) {
+		delete this.channels[channelId];
+	}
+
+	forgetServer(serverId: number) {
+		for (const [id, c] of Object.entries(this.channels)) {
+			if (c.serverId === serverId) delete this.channels[Number(id)];
+		}
+	}
+
 	/**
 	 * A `message` frame landed for this channel. `mine` means it arrived from one
 	 * of our own other tabs (the server already advanced our marker); `mentionsMe`
