@@ -365,12 +365,14 @@ class VoiceState {
 
 		// 2. Connect to LiveKit.
 		const room = new Room({ adaptiveStream: true, dynacast: true });
-		this.room = room;
 		this.wireRoom(room);
 
 		try {
 			await room.connect(url, token);
 			if (gen !== this.generation) return await this.dropRoom(room);
+			// Only a connected room is current. A failed attempt emits Disconnected
+			// before connect() rejects, and that must not count as a lost connection.
+			this.room = room;
 
 			// 3. Publish the mic unless the user left muted or deafened last time.
 			// A mic that can't start leaves the user in the call, listen-only.
