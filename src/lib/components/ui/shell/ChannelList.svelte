@@ -237,7 +237,9 @@
 								ondragover={(e) => handleDragOver(e, 'voice', i)}
 								ondrop={() => handleDrop('voice')}
 								ondragend={resetDrag}
-								onclick={() => voiceState.joinVoice(channel.id)}
+								onclick={() => {
+									if (voiceState.channelId !== channel.id) voiceState.joinVoice(channel.id);
+								}}
 							>
 								{#snippet icon()}
 									<Volume2 size={16} strokeWidth={1.75} />
