@@ -4,6 +4,7 @@ import { updateServer } from '$lib/requests/servers/updateServer';
 import type { Channel } from '$lib/types/channel.types';
 import type { Server } from '$lib/types/server.types';
 import type { User } from '$lib/types/auth.types';
+import { unreadState } from './unreadState.svelte';
 
 export class ServersState {
 	servers: Record<number, Server> = $state({});
@@ -70,11 +71,14 @@ export class ServersState {
 		fetchedChannels.forEach((channel) => {
 			this.selectedServerChannels[channel.id] = channel;
 		});
+		unreadState.noteFetchedChannels(serverId, fetchedChannels);
 		return fetchedChannels;
 	}
 
 	/** Patch in a channel we learned about over the socket (channel_created). */
 	addChannel(serverId: number, channel: Channel) {
+		unreadState.noteNewChannel(serverId, channel);
+
 		// Only the selected server's channels live in this record; other servers
 		// re-fetch their channels when opened, so there's nothing to patch there.
 		if (this.selectedServer?.id !== serverId) return;

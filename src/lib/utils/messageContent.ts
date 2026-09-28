@@ -39,6 +39,26 @@ export function messagePlainText(raw: unknown): string {
 	return parts.join('').replace(/\s+/g, ' ').trim();
 }
 
+/** Whether a message's content mentions the given user (client-side only — the
+ *  server doesn't count mentions since stored content isn't normalised yet). */
+export function messageMentionsUser(raw: unknown, userId: number): boolean {
+	const parsed = parseMessageContent(raw);
+	if (typeof parsed !== 'object' || parsed === null) return false;
+
+	const target = String(userId);
+	let found = false;
+	const walk = (node: JSONContent) => {
+		if (found) return;
+		if (node.type === 'mention' && String(node.attrs?.id) === target) {
+			found = true;
+			return;
+		}
+		node.content?.forEach(walk);
+	};
+	walk(parsed);
+	return found;
+}
+
 /** Parse an API timestamp to ms. Offset-less strings are UTC. */
 export function timestampMs(ts: string): number {
 	return Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : `${ts}Z`);

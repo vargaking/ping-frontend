@@ -1,5 +1,6 @@
 import { getConversations } from '$lib/requests/conversations/getConversations';
 import { openConversation } from '$lib/requests/conversations/openConversation';
+import { markConversationRead } from '$lib/requests/conversations/markConversationRead';
 import type { Conversation } from '$lib/types/conversation.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { timestampMs } from '$lib/utils/messageContent';
@@ -17,6 +18,22 @@ class ConversationsState {
 		Object.values(this.conversations).sort(
 			(a, b) => timestampMs(b.last_activity) - timestampMs(a.last_activity)
 		)
+	);
+
+	/** A conversation is unread when the marker hasn't caught up to the newest message. */
+	isUnread(conversation: Conversation): boolean {
+		return (
+			conversation.last_message_id != null &&
+			conversation.last_message_id !== conversation.last_read_message_id
+		);
+	}
+
+	/** DM badge total: sum of counts over unread conversations, at least 1 each. */
+	readonly unreadTotal: number = $derived(
+		this.list.reduce((sum, c) => {
+			if (!this.isUnread(c)) return sum;
+			return sum + Math.max(1, c.unread_count ?? 1);
+		}, 0)
 	);
 
 	// Seed the user cache so message rows don't refetch the other person.
@@ -49,8 +66,13 @@ class ConversationsState {
 		return conversation;
 	}
 
-	/** Move a conversation to the top with this message as its preview. */
-	noteMessage(message: MessageType) {
+	/**
+	 * Move a conversation to the top with this message as its preview, and update
+	 * its read markers. `mine` is a message that arrived from one of our own other
+	 * tabs (the server already advanced our marker); `read` means the thread is
+	 * currently being looked at, so it's treated as read locally right away.
+	 */
+	noteMessage(message: MessageType, opts: { mine?: boolean; read?: boolean } = {}) {
 		const id = message.conversation_id;
 		if (id == null) return;
 
@@ -61,6 +83,8 @@ class ConversationsState {
 			return;
 		}
 
+		const becomesRead = opts.mine || opts.read;
+
 		this.conversations[id] = {
 			...conversation,
 			last_message: {
@@ -70,8 +94,47 @@ class ConversationsState {
 				timestamp: message.timestamp,
 				edited_at: message.edited_at
 			},
-			last_activity: message.timestamp
+			last_activity: message.timestamp,
+			last_message_id: message.id,
+			last_read_message_id: becomesRead ? message.id : conversation.last_read_message_id,
+			unread_count: becomesRead ? 0 : (conversation.unread_count ?? 0) + 1
 		};
+	}
+
+	/** Apply a `read_state` frame for a DM conversation. */
+	applyReadState(conversationId: number, lastReadMessageId: string) {
+		const conversation = this.conversations[conversationId];
+		if (!conversation) return;
+
+		const caughtUp =
+			conversation.last_message_id == null || lastReadMessageId === conversation.last_message_id;
+
+		this.conversations[conversationId] = {
+			...conversation,
+			last_read_message_id: lastReadMessageId,
+			unread_count: caughtUp ? 0 : conversation.unread_count
+		};
+	}
+
+	/** Mark local read state right up to a message, without a server round trip. */
+	markReadLocally(conversationId: number, messageId: string) {
+		const conversation = this.conversations[conversationId];
+		if (!conversation) return;
+		this.conversations[conversationId] = {
+			...conversation,
+			last_read_message_id: messageId,
+			unread_count: 0
+		};
+	}
+
+	/** Persist the read marker for a conversation. Never throws — a failed PUT
+	 *  is a console.warn, the local state already moved on optimistically. */
+	async persistRead(conversationId: number, messageId: string) {
+		try {
+			await markConversationRead(conversationId, messageId);
+		} catch (e) {
+			console.warn('Failed to persist conversation read state', e);
+		}
 	}
 
 	/** Keep a preview in step when the message it shows is edited. */

@@ -48,6 +48,7 @@
 		{@const id = conversationId}
 		<MessageList
 			threadKey={directThreadKey(id)}
+			{target}
 			fetchPage={(before) => getConversationMessages(id, before)}
 			readCache={() => db.messages.where({ conversation_id: id }).sortBy('timestamp')}
 			emptyDescription="Send the first message."

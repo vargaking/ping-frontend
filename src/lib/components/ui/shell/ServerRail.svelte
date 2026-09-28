@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { unreadState } from '$lib/states/unreadState.svelte';
+	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import ServerRailItem from './ServerRailItem.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import { MessagesSquare } from 'lucide-svelte';
 
 	const activeServerId = $derived(page.params.serverId ? parseInt(page.params.serverId) : null);
 	const directActive = $derived(page.route.id?.startsWith('/app/direct') ?? false);
+
+	const dmUnreadTotal = $derived(conversationsState.unreadTotal);
+	const directLabel = $derived(
+		`Direct messages${dmUnreadTotal > 0 ? `, ${dmUnreadTotal} unread` : ''}`
+	);
 </script>
 
 <nav
@@ -19,7 +26,7 @@
 				{#snippet child({ props })}
 					<a
 						href="/app/direct/"
-						aria-label="Direct messages"
+						aria-label={directLabel}
 						aria-current={directActive ? 'page' : undefined}
 						class="relative flex h-10 w-10 items-center justify-center rounded-xl border border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-rail focus-visible:outline-none {directActive
 							? 'bg-primary/15 text-primary'
@@ -32,6 +39,14 @@
 							></span>
 						{/if}
 						<MessagesSquare size={18} strokeWidth={1.75} />
+						{#if dmUnreadTotal > 0}
+							<span
+								class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-lg bg-primary px-1 font-mono text-[10px] leading-none font-semibold text-primary-foreground ring-2 ring-rail"
+								aria-hidden="true"
+							>
+								{dmUnreadTotal > 99 ? '99+' : dmUnreadTotal}
+							</span>
+						{/if}
 					</a>
 				{/snippet}
 			</Tooltip.Trigger>
@@ -44,11 +59,14 @@
 
 		<div class="flex flex-col items-center gap-2">
 			{#each serversState.serversList as server (server.id)}
+				{@const serverUnread = server.id != null ? unreadState.serverUnread(server.id) : null}
 				<ServerRailItem
 					name={server.name}
 					href={`/app/server/${server.id}/`}
 					iconUrl={server.server_profile?.iconUrl ?? null}
 					active={server.id === activeServerId}
+					unread={serverUnread?.unread ?? false}
+					mentions={serverUnread?.mentions ?? 0}
 				/>
 			{/each}
 		</div>

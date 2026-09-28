@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AccountSettings from './AccountSettings.svelte';
+	import NotificationSettings from './NotificationSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerInvites from './ServerInvites.svelte';
 	import ServerMembers from './ServerMembers.svelte';
@@ -14,6 +15,12 @@
 				id: 'account-general',
 				label: 'My Account',
 				component: AccountSettings,
+				condition: () => true
+			},
+			{
+				id: 'account-notifications',
+				label: 'Notifications',
+				component: NotificationSettings,
 				condition: () => true
 			}
 		],

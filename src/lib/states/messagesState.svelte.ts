@@ -5,8 +5,8 @@ type ThreadMessages = {
 	hasMore: boolean;
 };
 
-/** Key for a message thread. Channels keep their bare id so existing
- *  `read:<channelId>` markers carry over; DMs are prefixed to avoid clashes. */
+/** Key for a message thread. Channels keep their bare id; DMs are prefixed to
+ *  avoid clashes with channel ids. */
 export function channelThreadKey(channelId: number): string {
 	return String(channelId);
 }

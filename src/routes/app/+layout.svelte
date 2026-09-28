@@ -6,12 +6,20 @@
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { unreadState } from '$lib/states/unreadState.svelte';
 
 	let { children } = $props();
+
+	const badgeTotal = $derived(unreadState.badgeTotal);
+	const title = $derived(
+		badgeTotal > 0 ? `(${badgeTotal > 99 ? '99+' : badgeTotal}) zeta` : 'zeta'
+	);
 
 	// The selected server lingers after leaving it, so pick the column by route.
 	const inDirect = $derived(page.route.id?.startsWith('/app/direct') ?? false);
 </script>
+
+<svelte:head><title>{title}</title></svelte:head>
 
 <div class="flex h-screen w-screen flex-col overflow-hidden">
 	<TopBar />
