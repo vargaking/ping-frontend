@@ -126,6 +126,8 @@
 {#snippet voiceRow(channel: Channel, i: number, triggerProps: Record<string, unknown> = {})}
 	<SidebarRow
 		{...mergeProps(triggerProps, {
+			// Screen readers get the topic even though the tooltip is visual.
+			'aria-description': channel.topic?.trim() || undefined,
 			onclick: () => {
 				if (voiceState.channelId !== channel.id) voiceState.joinVoice(channel.id);
 			}
