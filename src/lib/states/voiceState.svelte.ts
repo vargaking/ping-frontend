@@ -1,4 +1,5 @@
 import {
+	DisconnectReason,
 	Room,
 	RoomEvent,
 	Track,
@@ -8,9 +9,11 @@ import {
 	type TrackPublication
 } from 'livekit-client';
 import { SvelteMap } from 'svelte/reactivity';
+import { toast } from 'svelte-sonner';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { axiosClient } from '$lib/requests/axiosClient';
+import { InsecureContextError, describeMicError, describeVoiceError } from '$lib/utils/voiceErrors';
 
 export interface VoicePeer {
 	id: string;
@@ -25,6 +28,7 @@ export interface VoicePeer {
 /** Participant attribute other clients read to show someone as deafened. */
 const DEAFENED_ATTR = 'deafened';
 const STORAGE_KEY = 'voice.selfState';
+const REJOIN_DELAYS_MS = [1000, 3000, 10000];
 
 function loadSelfState(): { muted: boolean; deafened: boolean } {
 	try {
@@ -43,6 +47,8 @@ class VoiceState {
 	channelId: number | null = $state(null);
 	connected: boolean = $state(false);
 	connecting: boolean = $state(false);
+	/** LiveKit is recovering the connection, or a rejoin is in progress. */
+	reconnecting: boolean = $state(false);
 	/** The user's own mute choice. It survives deafening and leaving voice. */
 	muted: boolean = $state(false);
 	deafened: boolean = $state(false);
@@ -54,6 +60,9 @@ class VoiceState {
 	private room: Room | null = null;
 	// One <audio> element per remote track, attached to the DOM so it plays.
 	private audioEls = new Map<string, HTMLAudioElement>();
+	private leaving = false;
+	// Bumped by every join, rejoin and leave so superseded async work can tell.
+	private generation = 0;
 
 	private parseProfile(p: Participant): any {
 		// We stash the user's profile JSON in participant metadata when we can;
@@ -71,6 +80,14 @@ class VoiceState {
 			const saved = loadSelfState();
 			this.muted = saved.muted;
 			this.deafened = saved.deafened;
+
+			// Fire-and-forget: just enough for others' voice lists to update quickly.
+			window.addEventListener('pagehide', () => {
+				if (this.room) {
+					this.leaving = true;
+					this.room.disconnect();
+				}
+			});
 		}
 	}
 
@@ -182,12 +199,47 @@ class VoiceState {
 					if (peer.isSpeaking !== isSpeaking) this.peers.set(id, { ...peer, isSpeaking });
 				}
 			})
-			.on(RoomEvent.Disconnected, () => {
-				this.cleanup();
+			.on(RoomEvent.Reconnecting, () => {
+				this.reconnecting = true;
+			})
+			.on(RoomEvent.SignalReconnecting, () => {
+				this.reconnecting = true;
+			})
+			.on(RoomEvent.Reconnected, () => {
+				this.reconnecting = false;
+			})
+			.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+				this.handleDisconnected(r, reason);
 			});
 	}
 
-	private cleanup() {
+	private handleDisconnected(r: Room, reason?: DisconnectReason) {
+		if (r !== this.room) return;
+		const channelId = this.channelId;
+
+		if (this.leaving || reason === DisconnectReason.CLIENT_INITIATED) {
+			this.cleanup();
+		} else if (reason === DisconnectReason.DUPLICATE_IDENTITY) {
+			this.cleanup();
+			toast('You joined voice from another tab or device.');
+		} else if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
+			this.cleanup();
+			toast.error('You were removed from the voice channel.');
+		} else if (
+			reason === DisconnectReason.ROOM_DELETED ||
+			reason === DisconnectReason.ROOM_CLOSED
+		) {
+			this.cleanup();
+			toast('The voice channel was closed.');
+		} else if (channelId == null) {
+			this.cleanup();
+		} else {
+			this.rejoin(channelId);
+		}
+	}
+
+	/** Audio and peers of the current room; keeps the channel and the user's mute choice. */
+	private resetRoom() {
 		this.audioEls.forEach((el) => {
 			el.pause();
 			el.srcObject = null;
@@ -195,12 +247,50 @@ class VoiceState {
 		});
 		this.audioEls.clear();
 		this.room = null;
+		this.sharedDeafened = null;
+		this.peers = new SvelteMap();
+	}
+
+	private cleanup() {
+		this.resetRoom();
 		this.channelId = null;
 		this.connected = false;
 		this.connecting = false;
-		// muted/deafened are the user's preference and carry over to the next join.
-		this.sharedDeafened = null;
-		this.peers = new SvelteMap();
+		this.reconnecting = false;
+		this.leaving = false;
+	}
+
+	private async dropRoom(room: Room) {
+		// Detached first, so its Disconnected event is seen as stale.
+		if (this.room === room) this.room = null;
+		try {
+			await room.disconnect();
+		} catch {
+			/* ignore */
+		}
+	}
+
+	private async rejoin(channelId: number) {
+		const gen = ++this.generation;
+		this.resetRoom();
+		this.connected = false;
+		this.connecting = false;
+		this.reconnecting = true;
+
+		for (const delay of REJOIN_DELAYS_MS) {
+			await new Promise((resolve) => setTimeout(resolve, delay));
+			if (gen !== this.generation) return;
+			try {
+				await this.connect(channelId, gen);
+				return;
+			} catch (err) {
+				console.warn('Voice rejoin failed:', err);
+			}
+		}
+
+		if (gen !== this.generation) return;
+		this.cleanup();
+		toast.error("Lost connection to voice. Join again when you're back online.");
 	}
 
 	private async setSelfState(next: { muted: boolean; deafened: boolean }) {
@@ -217,6 +307,7 @@ class VoiceState {
 			this.muted = prev.muted;
 			this.deafened = prev.deafened;
 			this.persistSelfState();
+			if (!next.muted && !next.deafened) toast.error(describeMicError(err));
 			await this.applySelfState().catch(() => {});
 		}
 	}
@@ -242,53 +333,78 @@ class VoiceState {
 		const serverId = serversState.selectedServer?.id;
 		if (!user || !serverId) return;
 
-		// Already connected somewhere: leave first.
+		// Already connected somewhere: leave first. Leaving bumps the generation,
+		// so this attempt's own is taken afterwards.
 		if (this.room) await this.leaveVoice();
+		const gen = ++this.generation;
 
 		this.connecting = true;
+		this.reconnecting = false;
 		this.channelId = channelId;
 
 		try {
-			// 1. Get a LiveKit token from ping-server (membership checked there).
-			const { token, url } = await axiosClient
-				.post('/api/voice/token', { channel_id: channelId })
-				.then((r) => r.data);
+			await this.connect(channelId, gen);
+		} catch (err) {
+			console.warn('Error joining voice:', err);
+			toast.error(describeVoiceError(err));
+			this.cleanup();
+		}
+	}
 
-			// 2. Connect to LiveKit.
-			this.room = new Room({ adaptiveStream: true, dynacast: true });
-			this.wireRoom(this.room);
-			await this.room.connect(url, token);
+	/** A stale attempt (gen no longer current) bails out quietly without touching state. */
+	private async connect(channelId: number, gen: number) {
+		if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+			throw new InsecureContextError();
+		}
+
+		// 1. Get a LiveKit token from ping-server (membership checked there).
+		const { token, url } = await axiosClient
+			.post('/api/voice/token', { channel_id: channelId })
+			.then((r) => r.data);
+		if (gen !== this.generation) return;
+
+		// 2. Connect to LiveKit.
+		const room = new Room({ adaptiveStream: true, dynacast: true });
+		this.room = room;
+		this.wireRoom(room);
+
+		try {
+			await room.connect(url, token);
+			if (gen !== this.generation) return await this.dropRoom(room);
 
 			// 3. Publish the mic unless the user left muted or deafened last time.
-			if (!navigator.mediaDevices?.getUserMedia) {
-				throw new Error('Voice chat requires a secure context (HTTPS or localhost).');
+			// A mic that can't start leaves the user in the call, listen-only.
+			try {
+				await this.applySelfState();
+			} catch (err) {
+				if (gen !== this.generation) return await this.dropRoom(room);
+				this.muted = true;
+				this.persistSelfState();
+				toast.error(describeMicError(err));
+				await this.applySelfState().catch(() => {});
 			}
-			await this.applySelfState();
+			if (gen !== this.generation) return await this.dropRoom(room);
 
 			// 4. Seed the peers map: self + everyone already in the room.
-			this.upsertPeer(this.room.localParticipant);
-			this.room.remoteParticipants.forEach((p) => {
+			this.upsertPeer(room.localParticipant);
+			room.remoteParticipants.forEach((p) => {
 				this.upsertPeer(p);
 				// Existing tracks fire TrackSubscribed automatically on connect.
 			});
 
 			this.connected = true;
 			this.connecting = false;
-			this.channelId = channelId;
+			this.reconnecting = false;
 		} catch (err) {
-			console.error('Error joining voice:', err);
-			if (this.room) {
-				try {
-					await this.room.disconnect();
-				} catch {
-					/* ignore */
-				}
-			}
-			this.cleanup();
+			await this.dropRoom(room);
+			if (gen !== this.generation) return;
+			throw err;
 		}
 	}
 
 	async leaveVoice() {
+		this.leaving = true;
+		this.generation++;
 		if (this.room) {
 			try {
 				await this.room.disconnect();
