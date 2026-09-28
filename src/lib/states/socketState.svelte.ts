@@ -16,6 +16,7 @@ import { notifyChannelMessage, notifyDirectMessage } from '$lib/utils/desktopNot
 import { messageMentionsUser } from '$lib/utils/messageContent';
 import { db } from '$lib/utils/db';
 import { channelRemoved } from '$lib/utils/channelRemoved';
+import { serverRemoved } from '$lib/utils/serverRemoved';
 import { v4 as uuidv4 } from 'uuid';
 import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
@@ -383,6 +384,15 @@ class SocketState {
 				break;
 			case 'channel_deleted':
 				channelRemoved(message.server_id, message.channel_id);
+				break;
+			case 'server_updated':
+				serversState.patchServer(message.server.id, {
+					name: message.server.name,
+					server_profile: message.server.server_profile
+				});
+				break;
+			case 'server_deleted':
+				serverRemoved(message.server_id);
 				break;
 			case 'member_joined':
 				usersState.users[message.member.id] = message.member;

@@ -38,8 +38,6 @@
 </script>
 
 <div class="flex flex-col gap-6">
-	<h2 class="text-xl font-bold">Notifications</h2>
-
 	<div class="flex max-w-md flex-col gap-5">
 		<div class="flex items-start justify-between gap-4">
 			<div class="flex flex-col gap-1">

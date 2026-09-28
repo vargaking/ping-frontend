@@ -18,6 +18,7 @@ export default defineConfig({
 			'/conversations': `http://${process.env.LOCAL_IP}:8000`,
 			'/messages': `http://${process.env.LOCAL_IP}:8000`,
 			'/invites': `http://${process.env.LOCAL_IP}:8000`,
+			'/media': `http://${process.env.LOCAL_IP}:8000`,
 			'/ws': { target: `ws://${process.env.LOCAL_IP}:8000`, ws: true }
 		}
 	}

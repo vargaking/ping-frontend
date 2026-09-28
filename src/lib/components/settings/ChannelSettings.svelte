@@ -108,6 +108,7 @@
 			label="Channel name"
 			bind:value={name}
 			error={errors.name}
+			oninput={() => (errors.name = undefined)}
 			maxlength={100}
 		/>
 
@@ -116,6 +117,7 @@
 			label="Topic"
 			bind:value={topic}
 			error={errors.topic}
+			oninput={() => (errors.topic = undefined)}
 			hint="Shown in the channel header. Leave empty for none."
 			maxlength={1024}
 			placeholder="What's this channel about?"

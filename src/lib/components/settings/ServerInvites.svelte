@@ -94,10 +94,7 @@
 </script>
 
 <div class="flex flex-col gap-6" in:fade={{ duration: 150 }}>
-	<div>
-		<h2 class="mb-1 text-xl font-bold">Server Invites</h2>
-		<p class="text-sm text-muted-foreground">Manage invitations to this server.</p>
-	</div>
+	<p class="text-sm text-muted-foreground">Invite people to this server.</p>
 
 	<!-- Create Invite Section -->
 	<div class="flex flex-col gap-4 rounded-md bg-card p-4">

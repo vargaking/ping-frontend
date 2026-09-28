@@ -93,6 +93,25 @@ export class ServersState {
 		this.selectedServerChannels[channel.id] = channel;
 	}
 
+	/** Merge fields of a changed server (own save or server_updated). */
+	patchServer(serverId: number, changes: Partial<Server>) {
+		const server = this.servers[serverId];
+		if (!server) return;
+		const updated = { ...server, ...changes };
+		this.servers[serverId] = updated;
+		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+	}
+
+	/** Forget a deleted server (own delete or server_deleted). */
+	removeServer(serverId: number) {
+		delete this.servers[serverId];
+		unreadState.forgetServer(serverId);
+		if (this.selectedServer?.id !== serverId) return;
+		this.selectedServer = null;
+		this.selectedServerChannels = {};
+		this.selectedChannel = null;
+	}
+
 	/** Merge a changed channel (own save or channel_updated) into local state.
 	 *  Read-state fields are per user, so the local ones are kept. */
 	updateChannel(serverId: number, channel: Channel) {

@@ -63,7 +63,7 @@
 				<ServerRailItem
 					name={server.name}
 					href={`/app/server/${server.id}/`}
-					iconUrl={server.server_profile?.iconUrl ?? null}
+					iconUrl={server.server_profile?.icon ?? null}
 					active={server.id === activeServerId}
 					unread={serverUnread?.unread ?? false}
 					mentions={serverUnread?.mentions ?? 0}

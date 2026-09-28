@@ -8,6 +8,7 @@
 		maxlength?: number;
 		placeholder?: string;
 		multiline?: boolean;
+		oninput?: () => void;
 	};
 
 	let {
@@ -18,7 +19,8 @@
 		hint = '',
 		maxlength,
 		placeholder,
-		multiline = false
+		multiline = false,
+		oninput
 	}: Props = $props();
 
 	const describedBy = $derived(
@@ -38,6 +40,7 @@
 			{maxlength}
 			{placeholder}
 			rows="3"
+			{oninput}
 			aria-invalid={error ? true : undefined}
 			aria-describedby={describedBy}
 			class="{fieldClass} resize-none py-2.5"
@@ -47,6 +50,7 @@
 			{id}
 			type="text"
 			bind:value
+			{oninput}
 			{maxlength}
 			{placeholder}
 			aria-invalid={error ? true : undefined}
