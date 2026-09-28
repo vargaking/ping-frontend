@@ -4,7 +4,9 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import MemberRow from '$lib/components/ui/message/MemberRow.svelte';
 
-	const serverMembers = $derived(serversState.selectedServer?.members ?? []);
+	const serverMembers = $derived(
+		(serversState.selectedServer?.members ?? []).map((m) => usersState.users[m.id] ?? m)
+	);
 
 	const onlineUsers: User[] = $derived(
 		serverMembers.filter((u) => usersState.onlineUsers.has(u.id))
