@@ -214,6 +214,8 @@
 										name={peer.username}
 										avatar={peer.profile?.avatar}
 										speaking={peer.isSpeaking}
+										muted={peer.muted}
+										deafened={peer.deafened}
 									/>
 								{/each}
 							</div>

@@ -1,14 +1,17 @@
 <script lang="ts">
-	import { MicOff } from 'lucide-svelte';
+	import { MicOff, HeadphoneOff } from 'lucide-svelte';
 
 	type Props = {
 		name: string;
 		avatar?: string | null;
 		speaking?: boolean;
 		muted?: boolean;
+		deafened?: boolean;
 	};
 
-	let { name, avatar = null, speaking = false, muted = false }: Props = $props();
+	let { name, avatar = null, speaking = false, muted = false, deafened = false }: Props = $props();
+
+	const stateLabel = $derived(deafened ? ', deafened' : muted ? ', muted' : '');
 </script>
 
 <div class="flex h-7 items-center gap-2 pl-[34px]">
@@ -23,8 +26,18 @@
 			{name.charAt(0).toUpperCase()}
 		{/if}
 	</span>
-	<span class="min-w-0 flex-1 truncate text-[13px] text-foreground">{name}</span>
-	{#if muted}
-		<MicOff size={14} strokeWidth={1.75} class="shrink-0 text-text-subtle" />
+	<span class="min-w-0 flex-1 truncate text-[13px] text-foreground">
+		{name}{#if stateLabel}<span class="sr-only">{stateLabel}</span>{/if}
+	</span>
+	{#if muted || deafened}
+		<MicOff size={14} strokeWidth={1.75} class="shrink-0 text-text-subtle" aria-hidden="true" />
+	{/if}
+	{#if deafened}
+		<HeadphoneOff
+			size={14}
+			strokeWidth={1.75}
+			class="shrink-0 text-text-subtle"
+			aria-hidden="true"
+		/>
 	{/if}
 </div>

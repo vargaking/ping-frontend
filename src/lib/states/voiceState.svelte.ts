@@ -4,7 +4,8 @@ import {
 	Track,
 	type RemoteTrack,
 	type RemoteParticipant,
-	type Participant
+	type Participant,
+	type TrackPublication
 } from 'livekit-client';
 import { SvelteMap } from 'svelte/reactivity';
 import { usersState } from './usersState.svelte';
@@ -16,14 +17,37 @@ export interface VoicePeer {
 	username: string;
 	profile: any;
 	isSpeaking: boolean;
+	/** No live mic: muted, deafened, or never published one. */
+	muted: boolean;
+	deafened: boolean;
+}
+
+/** Participant attribute other clients read to show someone as deafened. */
+const DEAFENED_ATTR = 'deafened';
+const STORAGE_KEY = 'voice.selfState';
+
+function loadSelfState(): { muted: boolean; deafened: boolean } {
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			return { muted: parsed.muted === true, deafened: parsed.deafened === true };
+		}
+	} catch {
+		/* unavailable or malformed: fall back to defaults */
+	}
+	return { muted: false, deafened: false };
 }
 
 class VoiceState {
 	channelId: number | null = $state(null);
 	connected: boolean = $state(false);
 	connecting: boolean = $state(false);
+	/** The user's own mute choice. It survives deafening and leaving voice. */
 	muted: boolean = $state(false);
 	deafened: boolean = $state(false);
+	/** What the mic button shows: deafening always silences the mic too. */
+	readonly micOff: boolean = $derived(this.muted || this.deafened);
 	// participant identity (user id) -> VoicePeer
 	peers: SvelteMap<string, VoicePeer> = $state(new SvelteMap());
 
@@ -42,13 +66,73 @@ class VoiceState {
 		}
 	}
 
-	private upsertPeer(p: Participant, isSelf = false) {
+	constructor() {
+		if (typeof window !== 'undefined') {
+			const saved = loadSelfState();
+			this.muted = saved.muted;
+			this.deafened = saved.deafened;
+		}
+	}
+
+	private persistSelfState() {
+		try {
+			localStorage.setItem(
+				STORAGE_KEY,
+				JSON.stringify({ muted: this.muted, deafened: this.deafened })
+			);
+		} catch {
+			/* storage blocked: the choice just won't survive a reload */
+		}
+	}
+
+	private upsertPeer(p: Participant) {
+		const isSelf = this.room?.localParticipant.identity === p.identity;
 		this.peers.set(p.identity, {
 			id: p.identity,
 			username: (p.name || 'Unknown') + (isSelf ? ' (You)' : ''),
 			profile: this.parseProfile(p),
-			isSpeaking: p.isSpeaking
+			isSpeaking: p.isSpeaking,
+			muted: !p.isMicrophoneEnabled,
+			deafened: p.attributes?.[DEAFENED_ATTR] === 'true'
 		});
+	}
+
+	private applyQueue: Promise<void> = Promise.resolve();
+	/** Last deafen value sent to the room. The participant's own attributes
+	 *  only change once the server echoes them, so they can't be compared. */
+	private sharedDeafened: boolean | null = null;
+
+	/** Bring the room in line with muted/deafened. Calls run one at a time and
+	 *  each applies the latest state, so fast toggles can't interleave. */
+	private applySelfState(): Promise<void> {
+		const run = this.applyQueue.then(() => this.applySelfStateNow());
+		this.applyQueue = run.catch(() => {});
+		return run;
+	}
+
+	private async applySelfStateNow() {
+		const room = this.room;
+		if (!room) return;
+
+		this.audioEls.forEach((el) => (el.muted = this.deafened));
+
+		// Only publishes a mic when it should be live, so joining muted never opens one.
+		const micOn = !this.micOff;
+		if (micOn !== room.localParticipant.isMicrophoneEnabled) {
+			await room.localParticipant.setMicrophoneEnabled(micOn);
+		}
+
+		const deafened = this.deafened;
+		if (this.sharedDeafened !== deafened) {
+			try {
+				await room.localParticipant.setAttributes({ [DEAFENED_ATTR]: String(deafened) });
+				this.sharedDeafened = deafened;
+			} catch (err) {
+				// Only affects what others see; local deafen still works.
+				console.warn('Could not share deafen state:', err);
+			}
+		}
+		this.upsertPeer(room.localParticipant);
 	}
 
 	private removePeer(identity: string) {
@@ -70,6 +154,15 @@ class VoiceState {
 	}
 
 	private wireRoom(r: Room) {
+		const refresh = (_pub: TrackPublication, p: Participant) => this.upsertPeer(p);
+		r.on(RoomEvent.TrackMuted, refresh)
+			.on(RoomEvent.TrackUnmuted, refresh)
+			.on(RoomEvent.TrackPublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.TrackUnpublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.LocalTrackPublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.LocalTrackUnpublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => this.upsertPeer(p));
+
 		r.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
 			this.attachTrack(track);
 		})
@@ -105,38 +198,43 @@ class VoiceState {
 		this.channelId = null;
 		this.connected = false;
 		this.connecting = false;
-		this.muted = false;
-		this.deafened = false;
+		// muted/deafened are the user's preference and carry over to the next join.
+		this.sharedDeafened = null;
 		this.peers = new SvelteMap();
 	}
 
-	/** Toggle the local microphone. */
-	async toggleMute() {
-		if (!this.room) return;
-		const next = !this.muted;
-		this.muted = next;
+	private async setSelfState(next: { muted: boolean; deafened: boolean }) {
+		const prev = { muted: this.muted, deafened: this.deafened };
+		this.muted = next.muted;
+		this.deafened = next.deafened;
+		// Saved before the room round-trip, so closing the tab right after a
+		// toggle still keeps it.
+		this.persistSelfState();
 		try {
-			await this.room.localParticipant.setMicrophoneEnabled(!next);
+			await this.applySelfState();
 		} catch (err) {
-			console.error('Failed to toggle mic:', err);
-			this.muted = !next; // revert on failure
+			console.error('Failed to update microphone:', err);
+			this.muted = prev.muted;
+			this.deafened = prev.deafened;
+			this.persistSelfState();
+			await this.applySelfState().catch(() => {});
 		}
 	}
 
-	/** Toggle deafen: silence everyone else's audio (and mute your own mic). */
-	async toggleDeafen() {
-		if (!this.room) return;
-		const next = !this.deafened;
-		this.deafened = next;
-		this.audioEls.forEach((el) => (el.muted = next));
-
-		// Deafening also mutes your mic; undeafening restores it.
-		this.muted = next;
-		try {
-			await this.room.localParticipant.setMicrophoneEnabled(!next);
-		} catch (err) {
-			console.error('Failed to toggle mic while deafening:', err);
+	/** Toggle the mic. Unmuting while deafened also undeafens, since a live mic
+	 *  you can't hear back through is never what was meant. */
+	async toggleMute() {
+		if (this.deafened) {
+			await this.setSelfState({ muted: false, deafened: false });
+		} else {
+			await this.setSelfState({ muted: !this.muted, deafened: false });
 		}
+	}
+
+	/** Toggle deafen. The mic goes quiet while deafened; undeafening returns it
+	 *  to the user's own mute choice. */
+	async toggleDeafen() {
+		await this.setSelfState({ muted: this.muted, deafened: !this.deafened });
 	}
 
 	async joinVoice(channelId: number) {
@@ -161,14 +259,14 @@ class VoiceState {
 			this.wireRoom(this.room);
 			await this.room.connect(url, token);
 
-			// 3. Publish the mic (audio-only).
+			// 3. Publish the mic unless the user left muted or deafened last time.
 			if (!navigator.mediaDevices?.getUserMedia) {
 				throw new Error('Voice chat requires a secure context (HTTPS or localhost).');
 			}
-			await this.room.localParticipant.setMicrophoneEnabled(true);
+			await this.applySelfState();
 
 			// 4. Seed the peers map: self + everyone already in the room.
-			this.upsertPeer(this.room.localParticipant, true);
+			this.upsertPeer(this.room.localParticipant);
 			this.room.remoteParticipants.forEach((p) => {
 				this.upsertPeer(p);
 				// Existing tracks fire TrackSubscribed automatically on connect.
