@@ -5,18 +5,29 @@
 	import NotificationSettings from './NotificationSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerInvites from './ServerInvites.svelte';
-	import ServerMembers from './ServerMembers.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { X } from 'lucide-svelte';
+	import { deleteServer } from '$lib/requests/servers/deleteServer';
+	import { getErrorMessage } from '$lib/requests/errors';
+	import { serverRemoved } from '$lib/utils/serverRemoved';
+	import * as Dialog from '$lib/components/ui/dialog/index';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { toast } from 'svelte-sonner';
+	import { Trash2, X } from 'lucide-svelte';
 
 	type Category = 'account' | 'server' | 'channel';
 
 	let {
 		category = 'account',
-		channelId = null
-	}: { category?: Category; channelId?: number | null } = $props();
+		channelId = null,
+		tab: initialTab = null
+	}: {
+		category?: Category;
+		channelId?: number | null;
+		/** Open on a specific tab id instead of the scope's first tab. */
+		tab?: string | null;
+	} = $props();
 
 	type Tab = {
 		id: string;
@@ -54,27 +65,31 @@
 		}
 
 		if (server) {
-			out.push({
-				scope: 'server',
-				label: server.name,
-				tabs: [
-					{
-						id: 'server-general',
-						label: 'Overview',
-						scope: 'server',
-						render: serverOverview
-					},
-					{ id: 'server-invites', label: 'Invites', scope: 'server', render: serverInvites },
-					{ id: 'server-members', label: 'Members', scope: 'server', render: serverMembers }
-				]
-			});
+			const tabs: Tab[] = [];
+			if (serversState.isSelectedServerOwner) {
+				tabs.push({
+					id: 'server-general',
+					label: 'Overview',
+					scope: 'server',
+					form: true,
+					render: serverOverview
+				});
+			}
+			tabs.push({ id: 'server-invites', label: 'Invites', scope: 'server', render: serverInvites });
+			out.push({ scope: 'server', label: server.name, tabs });
 		}
 
 		out.push({
 			scope: 'account',
 			label: 'Account',
 			tabs: [
-				{ id: 'account-general', label: 'My account', scope: 'account', render: account },
+				{
+					id: 'account-general',
+					label: 'My account',
+					scope: 'account',
+					form: true,
+					render: account
+				},
 				{
 					id: 'account-notifications',
 					label: 'Notifications',
@@ -95,10 +110,32 @@
 	// active tab disappears (e.g. the channel was deleted).
 	$effect(() => {
 		if (tabs.some((t) => t.id === activeTabId)) return;
-		activeTabId = (tabs.find((t) => t.scope === category) ?? tabs[0])?.id ?? '';
+		const target =
+			tabs.find((t) => t.id === initialTab) ?? tabs.find((t) => t.scope === category) ?? tabs[0];
+		activeTabId = target?.id ?? '';
 	});
 
 	const currentTab = $derived(tabs.find((t) => t.id === activeTabId) ?? tabs[0]);
+
+	let deleteOpen = $state(false);
+	let deleting = $state(false);
+
+	async function handleDeleteServer() {
+		const target = server;
+		if (target?.id == null || deleting) return;
+		deleting = true;
+		try {
+			await deleteServer(target.id);
+		} catch (e) {
+			toast.error(`Couldn't delete the server: ${getErrorMessage(e)}`);
+			deleting = false;
+			return;
+		}
+		deleteOpen = false;
+		overlayState.close();
+		await serverRemoved(target.id, true);
+		toast.success(`Deleted ${target.name}`);
+	}
 </script>
 
 {#snippet channelOverview()}
@@ -111,9 +148,6 @@
 {/snippet}
 {#snippet serverInvites()}
 	<ServerInvites />
-{/snippet}
-{#snippet serverMembers()}
-	<ServerMembers />
 {/snippet}
 {#snippet account()}
 	<AccountSettings />
@@ -129,8 +163,17 @@
 		<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-4">
 			{#each sections as section (section.scope)}
 				<div class="flex flex-col gap-0.5">
-					<h2 class="truncate px-2 pb-1 text-xs font-medium tracking-[0.02em] text-text-subtle">
-						{section.label}
+					<h2
+						class="flex items-center gap-2 px-2 pb-1 text-xs font-medium tracking-[0.02em] text-text-subtle"
+					>
+						{#if section.scope === 'server' && server?.server_profile?.icon}
+							<img
+								src={server.server_profile.icon}
+								alt=""
+								class="h-4 w-4 shrink-0 rounded object-cover"
+							/>
+						{/if}
+						<span class="truncate">{section.label}</span>
 					</h2>
 					{#each section.tabs as tab (tab.id)}
 						<button
@@ -148,6 +191,38 @@
 				</div>
 			{/each}
 		</div>
+
+		{#if server && serversState.isSelectedServerOwner}
+			<div class="border-t border-border p-2">
+				<Dialog.Root bind:open={deleteOpen}>
+					<Dialog.Trigger
+						class="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					>
+						<Trash2 size={16} strokeWidth={1.75} />
+						Delete server
+					</Dialog.Trigger>
+					<Dialog.Content>
+						<Dialog.Header>
+							<Dialog.Title>Delete {server.name}?</Dialog.Title>
+							<Dialog.Description>
+								This permanently deletes the server with all of its channels and messages for every
+								member. It can't be undone.
+							</Dialog.Description>
+						</Dialog.Header>
+						<Dialog.Footer>
+							<Button variant="secondary" onclick={() => (deleteOpen = false)}>Cancel</Button>
+							<Button
+								class="border border-destructive-border bg-transparent text-destructive hover:bg-destructive/10"
+								disabled={deleting}
+								onclick={handleDeleteServer}
+							>
+								{deleting ? 'Deleting…' : 'Delete server'}
+							</Button>
+						</Dialog.Footer>
+					</Dialog.Content>
+				</Dialog.Root>
+			</div>
+		{/if}
 	</nav>
 
 	<div class="flex min-w-0 flex-1 flex-col">

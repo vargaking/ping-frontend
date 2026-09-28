@@ -46,7 +46,8 @@
 		<Button
 			variant="secondary"
 			size="sm"
-			onclick={() => overlayState.open(SettingsModal, { category: 'server' })}
+			onclick={() =>
+				overlayState.open(SettingsModal, { category: 'server', tab: 'server-invites' })}
 		>
 			<UserPlus size={16} strokeWidth={1.75} />
 			Invite
