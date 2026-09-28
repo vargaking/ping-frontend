@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
 import { serversState } from '$lib/states/serversState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
+import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
 
 /**
  * Drop a deleted channel from local state and move the user off it if they were
@@ -14,6 +15,7 @@ export async function channelRemoved(serverId: number, channelId: number, byMe =
 	const name = serversState.selectedServerChannels[channelId]?.name;
 
 	serversState.removeChannel(serverId, channelId);
+	voicePresenceState.forgetChannel(channelId);
 
 	if (wasInVoice) await voiceState.leaveVoice();
 	if (wasViewing) await goto(`/app/server/${serverId}/`);
