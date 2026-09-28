@@ -1,6 +1,9 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
+	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import { Mic, MicOff, Headphones, HeadphoneOff, PhoneOff } from 'lucide-svelte';
 
 	const channelName = $derived(
@@ -8,7 +11,70 @@
 			? (serversState.selectedServerChannels[voiceState.channelId]?.name ?? 'Voice')
 			: 'Voice'
 	);
+
+	// Capture phase, so the shortcuts still work while the composer has focus.
+	function handleKeydown(e: KeyboardEvent) {
+		const shortcut = matchVoiceShortcut(e);
+		if (!shortcut) return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (e.repeat) return;
+		if (shortcut === 'mute') voiceState.toggleMute();
+		else voiceState.toggleDeafen();
+	}
+
+	const iconButton =
+		'flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 </script>
+
+<svelte:window onkeydowncapture={handleKeydown} />
+
+{#snippet control(
+	label: string,
+	keys: string,
+	pressed: boolean,
+	onclick: () => void,
+	icon: Snippet
+)}
+	<Tooltip.Root delayDuration={300}>
+		<Tooltip.Trigger>
+			{#snippet child({ props })}
+				<button
+					{...props}
+					type="button"
+					aria-label={label}
+					aria-pressed={pressed}
+					aria-keyshortcuts={keys}
+					{onclick}
+					class="{iconButton} {pressed
+						? 'text-destructive hover:bg-destructive/10'
+						: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+				>
+					{@render icon()}
+				</button>
+			{/snippet}
+		</Tooltip.Trigger>
+		<Tooltip.Content>
+			{label} <span class="ml-1 font-mono opacity-70">{keys}</span>
+		</Tooltip.Content>
+	</Tooltip.Root>
+{/snippet}
+
+{#snippet micIcon()}
+	{#if voiceState.micOff}
+		<MicOff size={18} strokeWidth={1.75} />
+	{:else}
+		<Mic size={18} strokeWidth={1.75} />
+	{/if}
+{/snippet}
+
+{#snippet deafenIcon()}
+	{#if voiceState.deafened}
+		<HeadphoneOff size={18} strokeWidth={1.75} />
+	{:else}
+		<Headphones size={18} strokeWidth={1.75} />
+	{/if}
+{/snippet}
 
 {#if voiceState.connecting || voiceState.connected}
 	<div class="mx-2 mb-2 rounded-[10px] border border-input bg-card p-2.5">
@@ -19,45 +85,31 @@
 			<span class="truncate text-[13px] text-muted-foreground">{channelName}</span>
 		</div>
 
-		<div class="flex items-center gap-2">
-			<button
-				type="button"
-				aria-label={voiceState.muted ? 'Unmute microphone' : 'Mute microphone'}
-				aria-pressed={voiceState.muted}
-				onclick={() => voiceState.toggleMute()}
-				class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {voiceState.muted
-					? 'text-destructive'
-					: ''}"
-			>
-				{#if voiceState.muted}
-					<MicOff size={18} strokeWidth={1.75} />
-				{:else}
-					<Mic size={18} strokeWidth={1.75} />
-				{/if}
-			</button>
-			<button
-				type="button"
-				aria-label={voiceState.deafened ? 'Undeafen' : 'Deafen'}
-				aria-pressed={voiceState.deafened}
-				onclick={() => voiceState.toggleDeafen()}
-				class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {voiceState.deafened
-					? 'text-destructive'
-					: ''}"
-			>
-				{#if voiceState.deafened}
-					<HeadphoneOff size={18} strokeWidth={1.75} />
-				{:else}
-					<Headphones size={18} strokeWidth={1.75} />
-				{/if}
-			</button>
-			<button
-				type="button"
-				aria-label="Leave voice"
-				onclick={() => voiceState.leaveVoice()}
-				class="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-			>
-				<PhoneOff size={18} strokeWidth={1.75} />
-			</button>
-		</div>
+		<Tooltip.Provider>
+			<div class="flex items-center gap-2">
+				{@render control(
+					voiceState.micOff ? 'Unmute' : 'Mute',
+					VOICE_SHORTCUTS.mute.keys,
+					voiceState.micOff,
+					() => voiceState.toggleMute(),
+					micIcon
+				)}
+				{@render control(
+					voiceState.deafened ? 'Undeafen' : 'Deafen',
+					VOICE_SHORTCUTS.deafen.keys,
+					voiceState.deafened,
+					() => voiceState.toggleDeafen(),
+					deafenIcon
+				)}
+				<button
+					type="button"
+					aria-label="Leave voice"
+					onclick={() => voiceState.leaveVoice()}
+					class="{iconButton} ml-auto text-destructive hover:bg-destructive/10"
+				>
+					<PhoneOff size={18} strokeWidth={1.75} />
+				</button>
+			</div>
+		</Tooltip.Provider>
 	</div>
 {/if}
