@@ -11,6 +11,7 @@ import {
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
 import { notificationsState } from './notificationsState.svelte';
+import { voicePresenceState } from './voicePresenceState.svelte';
 import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound';
 import { notifyChannelMessage, notifyDirectMessage } from '$lib/utils/desktopNotification';
 import { messageMentionsUser } from '$lib/utils/messageContent';
@@ -30,6 +31,7 @@ class SocketState {
 	private socket: WebSocket | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	connected: boolean = $state(false);
+	private hasConnected = false;
 
 	/**
 	 * Open the socket. The server identifies us from the session cookie during
@@ -50,6 +52,11 @@ class SocketState {
 		socket.onopen = () => {
 			console.log('WebSocket connection established');
 			this.connected = true;
+
+			// Voice frames sent while we were offline are gone, so refetch.
+			const serverId = serversState.selectedServer?.id;
+			if (this.hasConnected && serverId) voicePresenceState.load(serverId);
+			this.hasConnected = true;
 		};
 
 		socket.onclose = (event) => {
@@ -398,6 +405,9 @@ class SocketState {
 			case 'member_joined':
 				usersState.users[message.member.id] = message.member;
 				serversState.addMember(message.server_id, message.member);
+				break;
+			case 'voice_state':
+				voicePresenceState.apply(message.server_id, message.channel_id, message.participants);
 				break;
 			case 'read_state':
 				this.handleReadState(message);

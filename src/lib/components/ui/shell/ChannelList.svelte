@@ -2,11 +2,13 @@
 	import { page } from '$app/state';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
+	import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import type { Channel } from '$lib/types/channel.types';
 	import SidebarRow from './SidebarRow.svelte';
 	import VoiceParticipant from './VoiceParticipant.svelte';
+	import PresenceParticipant from './PresenceParticipant.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import Input from '$lib/components/ui/input/input.svelte';
@@ -254,6 +256,16 @@
 										speaking={peer.isSpeaking}
 										muted={peer.muted}
 										deafened={peer.deafened}
+									/>
+								{/each}
+							</div>
+						{:else if voicePresenceState.participants(channel.id).length > 0}
+							<div class="mt-0.5 flex flex-col gap-0.5">
+								{#each voicePresenceState.participants(channel.id) as participant (participant.user_id)}
+									<PresenceParticipant
+										userId={participant.user_id}
+										muted={participant.muted}
+										deafened={participant.deafened}
 									/>
 								{/each}
 							</div>
