@@ -28,7 +28,7 @@
 			? new Date(messages[0].timestamp).toLocaleString([], {
 					month: 'short',
 					day: 'numeric',
-					hour: '2-digit',
+					hour: 'numeric',
 					minute: '2-digit'
 				})
 			: ''
@@ -39,10 +39,12 @@
 	<Avatar {user} size="md" rounded="rounded-[10px]" className="mt-0.5 h-9 w-9" />
 	<div class="flex min-w-0 flex-1 flex-col">
 		<div class="flex max-w-[760px] items-baseline gap-2">
-			<span class="text-sm font-semibold text-foreground">
+			<span class="min-w-0 truncate text-sm font-semibold text-foreground">
 				{user?.username ?? '…'}
 			</span>
-			<span class="font-mono text-[11px] text-text-subtle">{headerTime}</span>
+			<span class="shrink-0 font-mono text-[11px] whitespace-nowrap text-text-subtle">
+				{headerTime}
+			</span>
 		</div>
 		<div class="mt-0.5 flex flex-col gap-0.5">
 			{#each messages as message, i (message.id)}
