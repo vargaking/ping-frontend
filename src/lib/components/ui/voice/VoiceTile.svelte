@@ -8,6 +8,7 @@
 		speaking?: boolean;
 		muted?: boolean;
 		deafened?: boolean;
+		streaming?: boolean;
 		/** A video or screen-share stream. Replaces the avatar and fills the tile. */
 		media?: Snippet;
 	};
@@ -18,6 +19,7 @@
 		speaking = false,
 		muted = false,
 		deafened = false,
+		streaming = false,
 		media
 	}: Props = $props();
 
@@ -48,10 +50,19 @@
 		class="absolute right-2 bottom-2 left-2 flex items-center justify-between gap-2"
 		aria-hidden="true"
 	>
-		<span
-			class="min-w-0 truncate rounded-md bg-background/80 px-2 py-0.5 text-[13px] text-foreground"
-		>
-			{name}
+		<span class="flex min-w-0 items-center gap-1.5">
+			<span
+				class="min-w-0 truncate rounded-md bg-background/80 px-2 py-0.5 text-[13px] text-foreground"
+			>
+				{name}
+			</span>
+			{#if streaming}
+				<span
+					class="shrink-0 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-semibold text-white"
+				>
+					LIVE
+				</span>
+			{/if}
 		</span>
 		{#if muted || deafened}
 			<span
