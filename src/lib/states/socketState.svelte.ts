@@ -417,11 +417,18 @@ class SocketState {
 				});
 				break;
 			case 'server_deleted':
-				serverRemoved(message.server_id);
+				serverRemoved(message.server_id, 'deleted');
 				break;
 			case 'member_joined':
 				usersState.users[message.member.id] = message.member;
 				serversState.addMember(message.server_id, message.member);
+				break;
+			case 'member_left':
+				if (message.user_id === usersState.loggedInUser?.id) {
+					serverRemoved(message.server_id, message.reason === 'kicked' ? 'kicked' : undefined);
+				} else {
+					serversState.removeMember(message.server_id, message.user_id);
+				}
 				break;
 			case 'voice_state':
 				voicePresenceState.apply(message.server_id, message.channel_id, message.participants);

@@ -14,3 +14,9 @@ export type Server = {
 	owner_id?: number | null;
 	members?: User[];
 };
+
+export type ServerMember = {
+	user: User;
+	joined_at: string;
+	is_owner: boolean;
+};

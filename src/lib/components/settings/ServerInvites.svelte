@@ -206,25 +206,27 @@
 									></path></svg
 								>
 							</button>
-							<button
-								class="flex h-8 w-8 items-center justify-center rounded bg-destructive transition-colors hover:bg-destructive/90"
-								onclick={() => handleRevoke(invite.id)}
-								title="Revoke Invite"
-							>
-								<svg
-									class="h-4 w-4 text-foreground"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-									xmlns="http://www.w3.org/2000/svg"
-									><path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M6 18L18 6M6 6l12 12"
-									></path></svg
+							{#if serversState.isSelectedServerOwner}
+								<button
+									class="flex h-8 w-8 items-center justify-center rounded bg-destructive transition-colors hover:bg-destructive/90"
+									onclick={() => handleRevoke(invite.id)}
+									title="Revoke Invite"
 								>
-							</button>
+									<svg
+										class="h-4 w-4 text-foreground"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+										xmlns="http://www.w3.org/2000/svg"
+										><path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M6 18L18 6M6 6l12 12"
+										></path></svg
+									>
+								</button>
+							{/if}
 						</div>
 					</div>
 				{/each}

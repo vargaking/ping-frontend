@@ -6,6 +6,7 @@
 	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerInvites from './ServerInvites.svelte';
+	import ServerMembers from './ServerMembers.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
@@ -36,6 +37,7 @@
 		scope: Category;
 		/** Form panels bring their own padding and sticky save footer. */
 		form?: boolean;
+		count?: number;
 		render: Snippet;
 	};
 	type Section = { scope: Category; label: string; tabs: Tab[] };
@@ -77,6 +79,13 @@
 				});
 			}
 			tabs.push({ id: 'server-invites', label: 'Invites', scope: 'server', render: serverInvites });
+			tabs.push({
+				id: 'server-members',
+				label: 'Members',
+				scope: 'server',
+				count: server.members?.length,
+				render: serverMembers
+			});
 			out.push({ scope: 'server', label: server.name, tabs });
 		}
 
@@ -140,7 +149,7 @@
 		}
 		deleteOpen = false;
 		overlayState.close();
-		await serverRemoved(target.id, true);
+		await serverRemoved(target.id);
 		toast.success(`Deleted ${target.name}`);
 	}
 </script>
@@ -155,6 +164,9 @@
 {/snippet}
 {#snippet serverInvites()}
 	<ServerInvites />
+{/snippet}
+{#snippet serverMembers()}
+	<ServerMembers onInvite={() => (activeTabId = 'server-invites')} />
 {/snippet}
 {#snippet account()}
 	<AccountSettings />
@@ -195,7 +207,10 @@
 								? 'bg-accent font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-card hover:text-foreground'}"
 						>
-							{tab.label}
+							<span class="flex-1">{tab.label}</span>
+							{#if tab.count != null}
+								<span class="font-mono text-[11px] text-text-subtle">{tab.count}</span>
+							{/if}
 						</button>
 					{/each}
 				</div>

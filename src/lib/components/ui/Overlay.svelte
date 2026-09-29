@@ -3,7 +3,8 @@
 	import { fade, scale } from 'svelte/transition';
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
+		// A menu or dialog inside the overlay handles its own Escape first.
+		if (event.key === 'Escape' && !event.defaultPrevented) {
 			overlayState.close();
 		}
 	}

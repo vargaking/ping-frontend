@@ -163,6 +163,16 @@ export class ServersState {
 		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
 	}
 
+	/** Drop a member who left or was kicked (member_left). */
+	removeMember(serverId: number, userId: number) {
+		const server = this.servers[serverId];
+		if (!server?.members?.some((m) => m.id === userId)) return;
+
+		const updated = { ...server, members: server.members.filter((m) => m.id !== userId) };
+		this.servers[serverId] = updated;
+		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+	}
+
 	private reorderTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	reorderChannels(serverId: number, channelIds: number[]) {
