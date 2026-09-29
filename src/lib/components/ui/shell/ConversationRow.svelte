@@ -3,7 +3,7 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import type { Conversation } from '$lib/types/conversation.types';
-	import { messagePlainText } from '$lib/utils/messageContent';
+	import { messagePreviewText } from '$lib/utils/messageContent';
 
 	type Props = {
 		conversation: Conversation;
@@ -19,7 +19,7 @@
 	const preview = $derived.by(() => {
 		const last = conversation.last_message;
 		if (!last) return '';
-		const text = messagePlainText(last.content);
+		const text = messagePreviewText(last.content, last.attachments);
 		return last.user_id === meId ? `You: ${text}` : text;
 	});
 

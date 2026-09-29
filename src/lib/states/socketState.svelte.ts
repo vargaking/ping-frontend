@@ -229,6 +229,7 @@ class SocketState {
 			serverId,
 			senderId: message.user_id,
 			content: message.content,
+			attachments: message.attachments,
 			mentionsMe
 		});
 	}
@@ -257,6 +258,7 @@ class SocketState {
 			conversationId,
 			senderId: message.user_id,
 			content: message.content,
+			attachments: message.attachments,
 			mentionsMe: false
 		});
 	}
@@ -271,6 +273,7 @@ class SocketState {
 					serverId: number;
 					senderId: number;
 					content: unknown;
+					attachments?: Attachment[];
 					mentionsMe: boolean;
 			  }
 			| {
@@ -278,6 +281,7 @@ class SocketState {
 					conversationId: number;
 					senderId: number;
 					content: unknown;
+					attachments?: Attachment[];
 					mentionsMe: boolean;
 			  }
 	) {
@@ -299,6 +303,7 @@ class SocketState {
 				tag: directThreadKey(args.conversationId),
 				senderUsername,
 				content: args.content,
+				attachments: args.attachments,
 				href: `/app/direct/${args.conversationId}/`
 			});
 			return;
@@ -311,6 +316,7 @@ class SocketState {
 			serverName: server?.name ?? '',
 			senderUsername,
 			content: args.content,
+			attachments: args.attachments,
 			href: `/app/server/${args.serverId}/channel/${args.channelId}/`
 		});
 	}
