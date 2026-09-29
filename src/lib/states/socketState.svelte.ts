@@ -105,6 +105,8 @@ class SocketState {
 
 	async sendMessage(target: MessageTarget, message: JSONContent, attachments: Attachment[] = []) {
 		if (!message) return;
+		// Callers pass reactive state; IndexedDB can't store Svelte's proxies.
+		attachments = $state.snapshot(attachments);
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 			console.warn('WebSocket is not connected. Message not sent:', message);
 			return;
