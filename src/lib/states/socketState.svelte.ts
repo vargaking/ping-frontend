@@ -2,6 +2,7 @@ import { PUBLIC_WS_URL } from '$env/static/public';
 import type { JSONContent } from '@tiptap/core';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
+import { voiceState } from './voiceState.svelte';
 import {
 	messagesState,
 	messageThreadKey,
@@ -406,6 +407,7 @@ class SocketState {
 				break;
 			case 'channel_updated':
 				serversState.updateChannel(message.server_id, message.channel);
+				voiceState.renameChannel(message.channel.id, message.channel.name);
 				break;
 			case 'channel_deleted':
 				channelRemoved(message.server_id, message.channel_id);
