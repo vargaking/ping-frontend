@@ -180,7 +180,10 @@
 
 	function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
-		socketState.sendMessage(target, message, doneAttachments);
+		if (!socketState.sendMessage(target, message, doneAttachments)) {
+			toast.error("You're offline. Your message wasn't sent.");
+			return;
+		}
 		editor?.clear();
 		clearPending();
 		editor?.focus();
@@ -202,6 +205,12 @@
 </script>
 
 <div class="px-8 pb-6">
+	<p
+		aria-live="polite"
+		class="px-1 pb-1.5 text-xs text-text-subtle {socketState.reconnecting ? '' : 'sr-only'}"
+	>
+		{#if socketState.reconnecting}Reconnecting — you can keep typing.{/if}
+	</p>
 	<div
 		role="group"
 		aria-label="Message composer"
