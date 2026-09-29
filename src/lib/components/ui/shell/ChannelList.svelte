@@ -16,11 +16,38 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import { removeServerMember } from '$lib/requests/servers/removeServerMember';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { serverRemoved } from '$lib/utils/serverRemoved';
 	import { toast } from 'svelte-sonner';
 	import { mergeProps } from 'bits-ui';
 	import { goto } from '$app/navigation';
 	import { getErrorMessage } from '$lib/requests/errors';
-	import { Hash, Volume2, ChevronDown, Plus, Settings } from 'lucide-svelte';
+	import { Hash, Volume2, ChevronDown, Plus, Settings, LogOut } from 'lucide-svelte';
+
+	function confirmLeave() {
+		const server = serversState.selectedServer;
+		const me = usersState.loggedInUser;
+		if (server?.id == null || !me) return;
+		const serverId = server.id;
+		overlayState.open(ConfirmDialog, {
+			title: `Leave ${server.name}?`,
+			description: "You won't be able to rejoin unless someone invites you again.",
+			confirmLabel: 'Leave server',
+			destructive: true,
+			onConfirm: async () => {
+				try {
+					await removeServerMember(serverId, me.id);
+				} catch (e) {
+					toast.error(`Couldn't leave the server: ${getErrorMessage(e)}`);
+					return;
+				}
+				await serverRemoved(serverId);
+				toast.success(`Left ${server.name}`);
+			}
+		});
+	}
 
 	let channelName = $state('');
 	let channelType: 'text' | 'voice' = $state('text');
@@ -175,6 +202,13 @@
 				<Settings size={16} strokeWidth={1.75} />
 				Server settings
 			</DropdownMenu.Item>
+			{#if !serversState.isSelectedServerOwner}
+				<DropdownMenu.Separator />
+				<DropdownMenu.Item variant="destructive" onclick={confirmLeave}>
+					<LogOut size={16} strokeWidth={1.75} />
+					Leave server
+				</DropdownMenu.Item>
+			{/if}
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 
