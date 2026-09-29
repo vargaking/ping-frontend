@@ -143,7 +143,7 @@
 				type="search"
 				bind:value={query}
 				placeholder="Search members"
-				class="h-full min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-text-subtle"
+				class="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-foreground outline-none placeholder:text-text-subtle focus:ring-0"
 			/>
 		</label>
 		{#if onInvite}
