@@ -12,6 +12,8 @@ import { usersState } from './usersState.svelte';
 
 export class ServersState {
 	servers: Record<number, Server> = $state({});
+	/** Set once the first server fetch succeeds, so "no servers" isn't shown while loading. */
+	loaded = $state(false);
 	selectedServer: Server | null = $state(null);
 	selectedServerChannels: Record<number, Channel> = $state({});
 	selectedChannel: Channel | null = $state(null);
@@ -111,7 +113,15 @@ export class ServersState {
 			this.servers[server.id] = server;
 			this.notePermissions(server);
 		});
+		this.loaded = true;
 		return fetchedServers;
+	}
+
+	/** Add a server the user just created. */
+	addServer(server: Server) {
+		if (server.id == null) return;
+		this.servers[server.id] = server;
+		this.notePermissions(server);
 	}
 
 	/** Load a server's members and roles, keeping role assignments for the sidebar. */

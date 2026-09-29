@@ -5,13 +5,10 @@
 	import { updateServer } from '$lib/requests/servers/updateServer';
 	import { uploadServerIcon } from '$lib/requests/servers/uploadServerIcon';
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
+	import { ICON_TYPES, iconProblem } from '$lib/utils/serverIcon';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import SettingsForm from './SettingsForm.svelte';
 	import SettingsTextField from './SettingsTextField.svelte';
-
-	// Mirrors the backend's upload checks so an obviously bad file never leaves the browser.
-	const ICON_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-	const ICON_MAX_BYTES = 5 * 1024 * 1024;
 
 	const server = $derived(serversState.selectedServer);
 	const savedName = $derived(server?.name ?? '');
@@ -54,12 +51,9 @@
 		input.value = '';
 		if (!file) return;
 
-		if (!ICON_TYPES.includes(file.type)) {
-			errors = { ...errors, icon: 'Use a PNG, JPG, WebP or GIF image.' };
-			return;
-		}
-		if (file.size > ICON_MAX_BYTES) {
-			errors = { ...errors, icon: 'That image is over 5 MB.' };
+		const problem = iconProblem(file);
+		if (problem) {
+			errors = { ...errors, icon: problem };
 			return;
 		}
 		errors = { ...errors, icon: undefined };
