@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import AccountSettings from './AccountSettings.svelte';
 	import NotificationSettings from './NotificationSettings.svelte';
+	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerInvites from './ServerInvites.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
@@ -91,6 +92,12 @@
 					render: account
 				},
 				{
+					id: 'account-voice',
+					label: 'Voice',
+					scope: 'account',
+					render: voice
+				},
+				{
 					id: 'account-notifications',
 					label: 'Notifications',
 					scope: 'account',
@@ -151,6 +158,9 @@
 {/snippet}
 {#snippet account()}
 	<AccountSettings />
+{/snippet}
+{#snippet voice()}
+	<VoiceSettings />
 {/snippet}
 {#snippet notifications()}
 	<NotificationSettings />
