@@ -401,6 +401,15 @@ class SocketState {
 			case 'presence_init':
 				usersState.setOnlineUsers(message.user_ids);
 				break;
+			case 'permissions_init':
+				serversState.setPermissions(message.servers);
+				break;
+			case 'permissions_updated':
+				serversState.setPermission(message.server_id, message.permissions);
+				break;
+			case 'member_roles_updated':
+				serversState.setMemberRoles(message.server_id, message.user_id, message.role_ids);
+				break;
 			case 'channel_created':
 				serversState.addChannel(message.server_id, message.channel);
 				break;

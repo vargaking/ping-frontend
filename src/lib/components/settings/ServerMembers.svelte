@@ -6,8 +6,9 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { getServerMembers } from '$lib/requests/servers/getServerMembers';
 	import { removeServerMember } from '$lib/requests/servers/removeServerMember';
+	import { updateMemberRoles } from '$lib/requests/servers/updateMemberRoles';
+	import { has, Permission, rolesMask } from '$lib/permissions';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import type { ServerMember } from '$lib/types/server.types';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
@@ -16,12 +17,14 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
-	import { EllipsisVertical, LogOut, MessageSquare, Search } from 'lucide-svelte';
+	import { EllipsisVertical, LogOut, MessageSquare, Search, Shield } from 'lucide-svelte';
 
 	let { onInvite }: { onInvite?: () => void } = $props();
 
 	const serverId = $derived(serversState.selectedServer?.id);
 	const isOwner = $derived(serversState.isSelectedServerOwner);
+	const roles = $derived(serverId != null ? (serversState.roles[serverId] ?? []) : []);
+	const assignableRoles = $derived(roles.filter((r) => !r.is_default));
 	const myId = $derived(usersState.loggedInUser?.id);
 	// Changes when someone joins or leaves over the socket, which refetches.
 	const memberCount = $derived(serversState.selectedServer?.members?.length ?? 0);
@@ -31,7 +34,7 @@
 	let loadError = $state(false);
 	let query = $state('');
 
-	let kickTarget = $state<ServerMember | null>(null);
+	let kickTarget = $state<Row | null>(null);
 	let kicking = $state(false);
 
 	const joinedFormat = new Intl.DateTimeFormat('en-GB', {
@@ -43,7 +46,11 @@
 	const rows = $derived.by(() => {
 		const needle = query.trim().toLowerCase();
 		return members
-			.map((m) => ({ ...m, user: usersState.users[m.user.id] ?? m.user }))
+			.map((m) => ({
+				...m,
+				user: usersState.users[m.user.id] ?? m.user,
+				roleIds: serverId != null ? (serversState.memberRoles[serverId]?.[m.user.id] ?? []) : []
+			}))
 			.filter((m) => !needle || m.user.username.toLowerCase().includes(needle));
 	});
 
@@ -55,7 +62,7 @@
 	async function fetchMembers(id: number) {
 		loadError = false;
 		try {
-			const fetched = await getServerMembers(id);
+			const fetched = await serversState.loadRoster(id);
 			if (id === serverId) members = fetched;
 		} catch (e) {
 			console.error('Failed to fetch members', e);
@@ -65,7 +72,39 @@
 		}
 	}
 
-	async function message(member: ServerMember) {
+	type Row = (typeof rows)[number];
+
+	function canKick(member: Row) {
+		if (!serversState.can(Permission.KICK_MEMBERS) || member.user.id === myId || member.is_owner) {
+			return false;
+		}
+		return isOwner || !has(rolesMask(roles, member.roleIds), Permission.KICK_MEMBERS);
+	}
+
+	function canChangeRole(member: Row) {
+		return (
+			serversState.can(Permission.MANAGE_ROLES) &&
+			member.user.id !== myId &&
+			!member.is_owner &&
+			assignableRoles.length > 0
+		);
+	}
+
+	async function changeRole(member: Row, value: string) {
+		if (serverId == null) return;
+		const role = assignableRoles.find((r) => String(r.id) === value);
+		const roleName = role?.name ?? 'Member';
+		try {
+			const updated = await updateMemberRoles(serverId, member.user.id, role ? [role.id] : []);
+			serversState.setMemberRoles(serverId, member.user.id, updated.role_ids);
+			const article = /^[aeiou]/i.test(roleName) ? 'an' : 'a';
+			toast.success(`${member.user.username} is now ${article} ${roleName}`);
+		} catch (e) {
+			toast.error(`Couldn't change ${member.user.username}'s role: ${getErrorMessage(e)}`);
+		}
+	}
+
+	async function message(member: Row) {
 		try {
 			const conversation = await conversationsState.openWith(member.user.id);
 			overlayState.close();
@@ -165,15 +204,28 @@
 							<span class="rounded-md bg-primary/15 px-2 py-[3px] text-xs font-medium text-primary">
 								Owner
 							</span>
-						{:else}
+						{:else if member.roleIds.length === 0}
 							<span class="text-[13px] text-muted-foreground">Member</span>
+						{:else}
+							{@const names = serversState.roleNames(serverId ?? -1, member.user.id)}
+							{#each names as name (name)}
+								{#if name === 'Admin'}
+									<span
+										class="rounded-md border border-input px-2 py-[3px] text-xs font-medium text-foreground"
+									>
+										{name}
+									</span>
+								{:else}
+									<span class="text-[13px] text-muted-foreground">{name}</span>
+								{/if}
+							{/each}
 						{/if}
 					</span>
 					<span role="cell" class="font-mono text-xs text-muted-foreground">
 						{joinedFormat.format(new Date(member.joined_at))}
 					</span>
 					<span role="cell">
-						{#if isOwner && !isMe && !member.is_owner}
+						{#if canKick(member) || canChangeRole(member)}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger
 									aria-label="Actions for {member.user.username}"
@@ -187,10 +239,33 @@
 										Message
 									</DropdownMenu.Item>
 									<DropdownMenu.Separator />
-									<DropdownMenu.Item variant="destructive" onclick={() => (kickTarget = member)}>
-										<LogOut size={16} strokeWidth={1.75} />
-										Kick from server
-									</DropdownMenu.Item>
+									{#if canChangeRole(member)}
+										<DropdownMenu.Sub>
+											<DropdownMenu.SubTrigger>
+												<Shield size={16} strokeWidth={1.75} />
+												Change role
+											</DropdownMenu.SubTrigger>
+											<DropdownMenu.SubContent class="w-40">
+												<DropdownMenu.RadioGroup
+													value={String(member.roleIds[0] ?? 'member')}
+													onValueChange={(value) => changeRole(member, value)}
+												>
+													<DropdownMenu.RadioItem value="member">Member</DropdownMenu.RadioItem>
+													{#each assignableRoles as role (role.id)}
+														<DropdownMenu.RadioItem value={String(role.id)}>
+															{role.name}
+														</DropdownMenu.RadioItem>
+													{/each}
+												</DropdownMenu.RadioGroup>
+											</DropdownMenu.SubContent>
+										</DropdownMenu.Sub>
+									{/if}
+									{#if canKick(member)}
+										<DropdownMenu.Item variant="destructive" onclick={() => (kickTarget = member)}>
+											<LogOut size={16} strokeWidth={1.75} />
+											Kick from server
+										</DropdownMenu.Item>
+									{/if}
 								</DropdownMenu.Content>
 							</DropdownMenu.Root>
 						{/if}

@@ -1,9 +1,12 @@
 import { getServerChannels } from '$lib/requests/channels/getServerChannels';
+import { getServerMembers } from '$lib/requests/servers/getServerMembers';
+import { getServerRoles } from '$lib/requests/servers/getServerRoles';
 import { getUserServers } from '$lib/requests/servers/getUserServers';
 import { updateServer } from '$lib/requests/servers/updateServer';
 import type { Channel } from '$lib/types/channel.types';
-import type { Server } from '$lib/types/server.types';
+import type { Role, Server, ServerMember } from '$lib/types/server.types';
 import type { User } from '$lib/types/auth.types';
+import { has, parseMask, Permission } from '$lib/permissions';
 import { unreadState } from './unreadState.svelte';
 import { usersState } from './usersState.svelte';
 
@@ -12,6 +15,10 @@ export class ServersState {
 	selectedServer: Server | null = $state(null);
 	selectedServerChannels: Record<number, Channel> = $state({});
 	selectedChannel: Channel | null = $state(null);
+	permissions: Record<number, bigint> = $state({});
+	roles: Record<number, Role[]> = $state({});
+	/** Assigned role ids per server and user; the default role is never listed. */
+	memberRoles: Record<number, Record<number, number[]>> = $state({});
 
 	serversList: Server[] = $derived(Object.values(this.servers));
 	selectedServerChannelsList: Channel[] = $derived.by(() => {
@@ -29,17 +36,49 @@ export class ServersState {
 		return [...ordered, ...rest];
 	});
 
-	/** Whether the logged-in user owns the selected server; gates settings UI. */
+	readonly selectedPermissions: bigint | undefined = $derived(
+		this.selectedServer?.id != null ? this.permissions[this.selectedServer.id] : undefined
+	);
+
+	/** Whether the logged-in user owns the selected server; gates owner-only UI. */
 	readonly isSelectedServerOwner: boolean = $derived(
 		this.selectedServer?.owner_id != null &&
 			this.selectedServer.owner_id === usersState.loggedInUser?.id
 	);
+
+	/** Whether they can create their own invites or manage everyone's. */
+	readonly canInvite: boolean = $derived(
+		has(this.selectedPermissions, Permission.CREATE_INVITE) ||
+			has(this.selectedPermissions, Permission.MANAGE_INVITES)
+	);
+
+	can(perm: bigint, serverId: number | null | undefined = this.selectedServer?.id): boolean {
+		return serverId != null && has(this.permissions[serverId], perm);
+	}
+
+	/** Replace every server's mask (permissions_init). */
+	setPermissions(masks: Record<string, string>) {
+		const next: Record<number, bigint> = {};
+		for (const [serverId, mask] of Object.entries(masks)) next[Number(serverId)] = parseMask(mask);
+		this.permissions = next;
+	}
+
+	setPermission(serverId: number, mask: string) {
+		this.permissions[serverId] = parseMask(mask);
+	}
+
+	private notePermissions(server: Server) {
+		if (server.id != null && server.permissions != null) {
+			this.setPermission(server.id, server.permissions);
+		}
+	}
 
 	setSelectedServer(server: Server | null) {
 		this.selectedServer = server;
 
 		if (server && server.id != null) {
 			this.servers[server.id] = server;
+			this.notePermissions(server);
 		}
 	}
 
@@ -68,9 +107,34 @@ export class ServersState {
 	async fetchUserServers(): Promise<Server[]> {
 		const fetchedServers = await getUserServers();
 		fetchedServers.forEach((server) => {
-			if (server.id != null) this.servers[server.id] = server;
+			if (server.id == null) return;
+			this.servers[server.id] = server;
+			this.notePermissions(server);
 		});
 		return fetchedServers;
+	}
+
+	/** Load a server's members and roles, keeping role assignments for the sidebar. */
+	async loadRoster(serverId: number): Promise<ServerMember[]> {
+		const [members, roles] = await Promise.all([
+			getServerMembers(serverId),
+			getServerRoles(serverId)
+		]);
+		this.roles[serverId] = roles;
+		this.memberRoles[serverId] = Object.fromEntries(members.map((m) => [m.user.id, m.role_ids]));
+		return members;
+	}
+
+	setMemberRoles(serverId: number, userId: number, roleIds: number[]) {
+		this.memberRoles[serverId] = { ...this.memberRoles[serverId], [userId]: roleIds };
+	}
+
+	/** Names of a member's assigned roles, the owner shown as "Owner". */
+	roleNames(serverId: number, userId: number): string[] {
+		if (this.servers[serverId]?.owner_id === userId) return ['Owner'];
+		const roles = this.roles[serverId] ?? [];
+		const ids = this.memberRoles[serverId]?.[userId] ?? [];
+		return roles.filter((r) => ids.includes(r.id)).map((r) => r.name);
 	}
 
 	async fetchServerChannels(serverId: number): Promise<Channel[]> {
@@ -105,6 +169,9 @@ export class ServersState {
 	/** Forget a deleted server (own delete or server_deleted). */
 	removeServer(serverId: number) {
 		delete this.servers[serverId];
+		delete this.permissions[serverId];
+		delete this.roles[serverId];
+		delete this.memberRoles[serverId];
 		unreadState.forgetServer(serverId);
 		if (this.selectedServer?.id !== serverId) return;
 		this.selectedServer = null;
