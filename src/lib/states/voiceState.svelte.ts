@@ -13,6 +13,10 @@ import { toast } from 'svelte-sonner';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { axiosClient } from '$lib/requests/axiosClient';
+import {
+	refreshVoicePresence,
+	refreshVoicePresenceOnUnload
+} from '$lib/requests/voice/refreshVoicePresence';
 import { InsecureContextError, describeMicError, describeVoiceError } from '$lib/utils/voiceErrors';
 
 export interface VoicePeer {
@@ -86,6 +90,7 @@ class VoiceState {
 				if (this.room) {
 					this.leaving = true;
 					this.room.disconnect();
+					if (this.channelId != null) refreshVoicePresenceOnUnload(this.channelId);
 				}
 			});
 		}
@@ -134,9 +139,11 @@ class VoiceState {
 		this.audioEls.forEach((el) => (el.muted = this.deafened));
 
 		// Only publishes a mic when it should be live, so joining muted never opens one.
+		let changed = false;
 		const micOn = !this.micOff;
 		if (micOn !== room.localParticipant.isMicrophoneEnabled) {
 			await room.localParticipant.setMicrophoneEnabled(micOn);
+			changed = true;
 		}
 
 		const deafened = this.deafened;
@@ -144,12 +151,19 @@ class VoiceState {
 			try {
 				await room.localParticipant.setAttributes({ [DEAFENED_ATTR]: String(deafened) });
 				this.sharedDeafened = deafened;
+				changed = true;
 			} catch (err) {
 				// Only affects what others see; local deafen still works.
 				console.warn('Could not share deafen state:', err);
 			}
 		}
+		if (changed) this.announce(room);
 		this.upsertPeer(room.localParticipant);
+	}
+
+	/** Let members outside the call see a change to this room now. */
+	private announce(room: Room) {
+		if (room === this.room && this.channelId != null) refreshVoicePresence(this.channelId);
 	}
 
 	private removePeer(identity: string) {
@@ -260,7 +274,7 @@ class VoiceState {
 		this.leaving = false;
 	}
 
-	private async dropRoom(room: Room) {
+	private async dropRoom(room: Room, channelId: number) {
 		// Detached first, so its Disconnected event is seen as stale.
 		if (this.room === room) this.room = null;
 		try {
@@ -268,6 +282,7 @@ class VoiceState {
 		} catch {
 			/* ignore */
 		}
+		refreshVoicePresence(channelId);
 	}
 
 	private async rejoin(channelId: number) {
@@ -366,10 +381,14 @@ class VoiceState {
 		// 2. Connect to LiveKit.
 		const room = new Room({ adaptiveStream: true, dynacast: true });
 		this.wireRoom(room);
+		// The server knows about us from here on, well before media is up.
+		room.once(RoomEvent.SignalConnected, () => {
+			if (gen === this.generation) refreshVoicePresence(channelId);
+		});
 
 		try {
 			await room.connect(url, token);
-			if (gen !== this.generation) return await this.dropRoom(room);
+			if (gen !== this.generation) return await this.dropRoom(room, channelId);
 			// Only a connected room is current. A failed attempt emits Disconnected
 			// before connect() rejects, and that must not count as a lost connection.
 			this.room = room;
@@ -379,13 +398,13 @@ class VoiceState {
 			try {
 				await this.applySelfState();
 			} catch (err) {
-				if (gen !== this.generation) return await this.dropRoom(room);
+				if (gen !== this.generation) return await this.dropRoom(room, channelId);
 				this.muted = true;
 				this.persistSelfState();
 				toast.error(describeMicError(err));
 				await this.applySelfState().catch(() => {});
 			}
-			if (gen !== this.generation) return await this.dropRoom(room);
+			if (gen !== this.generation) return await this.dropRoom(room, channelId);
 
 			// 4. Seed the peers map: self + everyone already in the room.
 			this.upsertPeer(room.localParticipant);
@@ -398,7 +417,7 @@ class VoiceState {
 			this.connecting = false;
 			this.reconnecting = false;
 		} catch (err) {
-			await this.dropRoom(room);
+			await this.dropRoom(room, channelId);
 			if (gen !== this.generation) return;
 			throw err;
 		}
@@ -407,12 +426,14 @@ class VoiceState {
 	async leaveVoice() {
 		this.leaving = true;
 		this.generation++;
+		const channelId = this.channelId;
 		if (this.room) {
 			try {
 				await this.room.disconnect();
 			} catch {
 				/* ignore */
 			}
+			if (channelId != null) refreshVoicePresence(channelId);
 		}
 		this.cleanup();
 	}
