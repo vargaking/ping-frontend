@@ -3,6 +3,7 @@
 	import type { MessageType } from '$lib/types/messages.types';
 	import MessageNode from './MessageNode.svelte';
 	import MessageEditor from './MessageEditor.svelte';
+	import MessageAttachments from './MessageAttachments.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
@@ -13,7 +14,7 @@
 	import { editMessage } from '$lib/requests/messages/editMessage';
 	import { deleteMessage } from '$lib/requests/messages/deleteMessage';
 	import { db } from '$lib/utils/db';
-	import { parseMessageContent } from '$lib/utils/messageContent';
+	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
 	import { Pencil, Trash2 } from 'lucide-svelte';
 
 	// The first row in a group already shows the timestamp in the group header,
@@ -22,6 +23,9 @@
 		$props();
 
 	const parsedContent = $derived(parseMessageContent(message.content));
+
+	const attachments = $derived(message.attachments ?? []);
+	const hasText = $derived(messagePlainText(message.content) !== '');
 
 	const hoverTime = $derived(
 		new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -76,6 +80,7 @@
 			<MessageEditor
 				content={parsedContent}
 				autofocus
+				allowEmpty={attachments.length > 0}
 				onSubmit={saveEdit}
 				onCancel={() => messageEditState.stop()}
 				editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
@@ -127,13 +132,23 @@
 			</div>
 		{/if}
 
-		<div
-			class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
-		>
-			<MessageNode node={parsedContent} />
-			{#if message.edited_at}
-				<span class="align-baseline text-[11px] text-text-subtle select-none">(edited)</span>
+		{#if hasText || attachments.length === 0}
+			<div
+				class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
+			>
+				<MessageNode node={parsedContent} />
+				{#if message.edited_at}
+					<span class="align-baseline text-[11px] text-text-subtle select-none">(edited)</span>
+				{/if}
+			</div>
+		{/if}
+		{#if attachments.length > 0}
+			<div class={hasText ? 'mt-1.5' : ''}>
+				<MessageAttachments {attachments} />
+			</div>
+			{#if !hasText && message.edited_at}
+				<span class="text-[11px] text-text-subtle select-none">(edited)</span>
 			{/if}
-		</div>
+		{/if}
 	{/if}
 </div>

@@ -15,6 +15,7 @@
 		placeholder = 'Type a message…',
 		isEmpty = $bindable(true),
 		autofocus = false,
+		allowEmpty = false,
 		editorClass = '',
 		onSubmit,
 		onCancel,
@@ -24,6 +25,8 @@
 		placeholder?: string;
 		isEmpty?: boolean;
 		autofocus?: boolean;
+		/** Submit even when the editor has no text (e.g. attachments carry the message). */
+		allowEmpty?: boolean;
 		editorClass?: string;
 		onSubmit: (json: JSONContent) => void;
 		onCancel?: () => void;
@@ -34,7 +37,7 @@
 	let editor: Editor | null = $state(null);
 
 	export function submit() {
-		if (!editor || editor.isEmpty) return;
+		if (!editor || (editor.isEmpty && !allowEmpty)) return;
 		onSubmit(editor.getJSON());
 	}
 

@@ -21,6 +21,8 @@ import { getUser } from '$lib/requests/users/getUser';
 import { v4 as uuidv4 } from 'uuid';
 import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
+import type { Attachment } from '$lib/types/attachment.types';
+import { toast } from 'svelte-sonner';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -101,8 +103,10 @@ class SocketState {
 		socket?.close();
 	}
 
-	async sendMessage(target: MessageTarget, message: JSONContent) {
+	async sendMessage(target: MessageTarget, message: JSONContent, attachments: Attachment[] = []) {
 		if (!message) return;
+		// Callers pass reactive state; IndexedDB can't store Svelte's proxies.
+		attachments = $state.snapshot(attachments);
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
 			console.warn('WebSocket is not connected. Message not sent:', message);
 			return;
@@ -116,6 +120,7 @@ class SocketState {
 
 		const id = uuidv4();
 		const timestamp = new Date().toISOString();
+		const attachmentIds = attachments.map((a) => a.id);
 
 		const local: MessageType =
 			target.kind === 'channel'
@@ -125,14 +130,16 @@ class SocketState {
 						channel_id: target.channelId,
 						user_id: user.id,
 						content: message,
-						timestamp
+						timestamp,
+						attachments
 					}
 				: {
 						id,
 						conversation_id: target.conversationId,
 						user_id: user.id,
 						content: message,
-						timestamp
+						timestamp,
+						attachments
 					};
 
 		const frame =
@@ -143,14 +150,16 @@ class SocketState {
 						server_id: target.serverId,
 						channel_id: target.channelId,
 						content: message,
-						timestamp
+						timestamp,
+						attachment_ids: attachmentIds
 					}
 				: {
 						type: 'direct_message',
 						id,
 						conversation_id: target.conversationId,
 						content: message,
-						timestamp
+						timestamp,
+						attachment_ids: attachmentIds
 					};
 
 		this.socket.send(JSON.stringify(frame));
@@ -293,12 +302,12 @@ class SocketState {
 
 	async handleMessageUpdated(message: MessageType) {
 		const changes = { content: message.content, edited_at: message.edited_at };
-		messagesState.updateMessage(message.id, changes);
+		const withAttachments = message.attachments
+			? { ...changes, attachments: message.attachments }
+			: changes;
+		messagesState.updateMessage(message.id, withAttachments);
 		conversationsState.messageEdited(message.id, changes);
-		await db.messages.update(message.id, {
-			content: message.content,
-			edited_at: message.edited_at
-		});
+		await db.messages.update(message.id, withAttachments);
 	}
 
 	async handleMessageDeleted(message: { id: string }) {
@@ -403,6 +412,12 @@ class SocketState {
 				this.handleReadState(message);
 				break;
 			case 'error':
+				if (message.code === 'invalid_attachments' && message.ref) {
+					// Nothing was stored server-side, so drop the optimistic copy.
+					this.handleMessageDeleted({ id: message.ref });
+					toast.error("Couldn't send the attachment. Try uploading it again.");
+					break;
+				}
 				// e.g. { code: 'forbidden', ref: <message id> } when posting to a
 				// server/channel we have no access to. Surfacing this in the UI
 				// (failed-message state) is tracked separately.
