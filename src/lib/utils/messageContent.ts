@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import type { Attachment } from '$lib/types/attachment.types';
 
 /** `content` is typed as JSONContent, but stored rows and DM previews can still
  *  carry it as a JSON string (or a legacy plain string). */
@@ -37,6 +38,15 @@ export function messagePlainText(raw: unknown): string {
 	};
 	walk(parsed);
 	return parts.join('').replace(/\s+/g, ' ').trim();
+}
+
+/** A one-line preview: the text, or a description of the attachments when
+ *  the message has none. */
+export function messagePreviewText(content: unknown, attachments: Attachment[] = []): string {
+	const text = messagePlainText(content);
+	if (text || attachments.length === 0) return text;
+	if (attachments.length > 1) return `Sent ${attachments.length} attachments`;
+	return attachments[0].kind === 'image' ? 'Sent an image' : 'Sent a file';
 }
 
 /** Whether a message's content mentions the given user (client-side only — the

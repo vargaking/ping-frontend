@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import type { Attachment } from './attachment.types';
 import type { User } from './auth.types';
 
 export type ConversationPreview = {
@@ -8,6 +9,7 @@ export type ConversationPreview = {
 	user_id: number;
 	timestamp: string;
 	edited_at?: string | null;
+	attachments?: Attachment[];
 };
 
 export type Conversation = {

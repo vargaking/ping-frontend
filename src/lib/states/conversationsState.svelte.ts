@@ -92,7 +92,8 @@ class ConversationsState {
 				content: message.content,
 				user_id: message.user_id,
 				timestamp: message.timestamp,
-				edited_at: message.edited_at
+				edited_at: message.edited_at,
+				attachments: message.attachments
 			},
 			last_activity: message.timestamp,
 			last_message_id: message.id,

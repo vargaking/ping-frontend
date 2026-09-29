@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
-import { messagePlainText } from './messageContent';
+import type { Attachment } from '$lib/types/attachment.types';
+import { messagePreviewText } from './messageContent';
 
 const BODY_LIMIT = 140;
 
@@ -40,12 +41,13 @@ export function notifyChannelMessage(opts: {
 	serverName: string;
 	senderUsername: string;
 	content: unknown;
+	attachments?: Attachment[];
 	href: string;
 }) {
 	notify({
 		tag: opts.tag,
 		title: `#${opts.channelName} · ${opts.serverName}`,
-		body: `${opts.senderUsername}: ${messagePlainText(opts.content)}`,
+		body: `${opts.senderUsername}: ${messagePreviewText(opts.content, opts.attachments)}`,
 		href: opts.href
 	});
 }
@@ -55,12 +57,13 @@ export function notifyDirectMessage(opts: {
 	tag: string;
 	senderUsername: string;
 	content: unknown;
+	attachments?: Attachment[];
 	href: string;
 }) {
 	notify({
 		tag: opts.tag,
 		title: opts.senderUsername,
-		body: messagePlainText(opts.content),
+		body: messagePreviewText(opts.content, opts.attachments),
 		href: opts.href
 	});
 }
