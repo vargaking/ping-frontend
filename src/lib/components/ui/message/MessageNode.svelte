@@ -1,33 +1,65 @@
 <script lang="ts">
 	import type { JSONContent } from '@tiptap/core';
 	import MessageNode from './MessageNode.svelte';
+	import { linkify, safeHref } from '$lib/utils/linkify';
 
-	let { node }: { node: JSONContent | string } = $props();
+	// plain: render text as-is, without turning URLs into links (code blocks).
+	let { node, plain = false }: { node: JSONContent | string; plain?: boolean } = $props();
+
+	const linkClass =
+		'text-primary underline decoration-primary/40 underline-offset-2 [overflow-wrap:anywhere] hover:decoration-primary';
 </script>
 
-{#snippet renderMarks(marksRemaining: any[], currentIndex: number, text: string)}
+{#snippet anchor(href: string, label: string)}
+	<a {href} target="_blank" rel="noopener noreferrer nofollow" class={linkClass}>{label}</a>
+{/snippet}
+
+{#snippet linked(text: string)}
+	{#each linkify(text) as segment, i (i)}
+		{#if segment.kind === 'link'}
+			{@render anchor(segment.href, segment.text)}
+		{:else}
+			{segment.text}
+		{/if}
+	{/each}
+{/snippet}
+
+{#snippet renderMarks(marksRemaining: any[], currentIndex: number, text: string, autolink: boolean)}
 	{#if currentIndex >= marksRemaining.length}
-		{text}
+		{#if autolink}
+			{@render linked(text)}
+		{:else}
+			{text}
+		{/if}
 	{:else}
 		{@const mark = marksRemaining[currentIndex]}
 		{#if mark.type === 'bold'}
-			<strong>{@render renderMarks(marksRemaining, currentIndex + 1, text)}</strong>
+			<strong>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</strong>
 		{:else if mark.type === 'italic'}
-			<em>{@render renderMarks(marksRemaining, currentIndex + 1, text)}</em>
+			<em>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</em>
 		{:else if mark.type === 'strike'}
-			<s>{@render renderMarks(marksRemaining, currentIndex + 1, text)}</s>
+			<s>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</s>
 		{:else if mark.type === 'code'}
 			<code class="rounded bg-accent px-1 py-0.5 font-mono text-sm text-foreground"
-				>{@render renderMarks(marksRemaining, currentIndex + 1, text)}</code
+				>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</code
 			>
+		{:else if mark.type === 'link'}
+			{@const href = safeHref(mark.attrs?.href)}
+			{#if href}
+				<a {href} target="_blank" rel="noopener noreferrer nofollow" class={linkClass}
+					>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</a
+				>
+			{:else}
+				{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}
+			{/if}
 		{:else}
-			{@render renderMarks(marksRemaining, currentIndex + 1, text)}
+			{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}
 		{/if}
 	{/if}
 {/snippet}
 
 {#if typeof node === 'string'}
-	{node}
+	{@render linked(node)}
 {:else if typeof node !== 'object' || node === null}
 	{node ?? ''}
 {:else if node.type === 'doc'}
@@ -45,7 +77,13 @@
 		{/if}
 	</p>
 {:else if node.type === 'text'}
-	{@render renderMarks(node.marks || [], 0, node.text || '')}
+	{@const marks = node.marks || []}
+	{@render renderMarks(
+		marks,
+		0,
+		node.text || '',
+		!plain && !marks.some((mark) => mark.type === 'code' || mark.type === 'link')
+	)}
 {:else if node.type === 'mention'}
 	<span
 		class="rounded-md bg-primary/15 px-1.5 py-0.5 font-semibold text-primary"
@@ -73,7 +111,7 @@
 	</li>
 {:else if node.type === 'codeBlock'}
 	<pre class="my-2 overflow-x-auto rounded-md bg-accent p-3 font-mono text-sm text-foreground"><code
-			>{#each node.content || [] as child}<MessageNode node={child} />{/each}</code
+			>{#each node.content || [] as child}<MessageNode node={child} plain />{/each}</code
 		></pre>
 {:else if node.type === 'blockquote'}
 	<blockquote class="my-2 border-l-4 border-border py-1 pl-4 text-muted-foreground">
