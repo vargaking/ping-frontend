@@ -51,6 +51,9 @@ function loadSelfState(): { muted: boolean; deafened: boolean } {
 
 class VoiceState {
 	channelId: number | null = $state(null);
+	/** The call's server and channel name, kept for when another server is open. */
+	serverId: number | null = $state(null);
+	channelName: string | null = $state(null);
 	connected: boolean = $state(false);
 	connecting: boolean = $state(false);
 	/** LiveKit is recovering the connection, or a rejoin is in progress. */
@@ -335,6 +338,8 @@ class VoiceState {
 	private cleanup() {
 		this.resetRoom();
 		this.channelId = null;
+		this.serverId = null;
+		this.channelName = null;
 		this.connected = false;
 		this.connecting = false;
 		this.reconnecting = false;
@@ -423,6 +428,8 @@ class VoiceState {
 		this.connecting = true;
 		this.reconnecting = false;
 		this.channelId = channelId;
+		this.serverId = serverId;
+		this.channelName = serversState.selectedServerChannels[channelId]?.name ?? null;
 
 		try {
 			await this.connect(channelId, gen);
@@ -492,6 +499,11 @@ class VoiceState {
 			if (gen !== this.generation) return;
 			throw err;
 		}
+	}
+
+	/** Keep the call's channel name current, even while another server is open. */
+	renameChannel(channelId: number, name: string) {
+		if (channelId === this.channelId) this.channelName = name;
 	}
 
 	async leaveVoice() {

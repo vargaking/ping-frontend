@@ -6,10 +6,19 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import { Mic, MicOff, Headphones, HeadphoneOff, PhoneOff } from 'lucide-svelte';
 
-	const channelName = $derived(
-		voiceState.channelId != null
-			? (serversState.selectedServerChannels[voiceState.channelId]?.name ?? 'Voice')
-			: 'Voice'
+	const channelName = $derived.by(() => {
+		const { channelId, serverId } = voiceState;
+		if (channelId == null) return 'Voice';
+		const live =
+			serverId === serversState.selectedServer?.id
+				? serversState.selectedServerChannels[channelId]?.name
+				: undefined;
+		return live ?? voiceState.channelName ?? 'Voice';
+	});
+	const channelHref = $derived(
+		voiceState.serverId != null && voiceState.channelId != null
+			? `/app/server/${voiceState.serverId}/voice/${voiceState.channelId}/`
+			: null
 	);
 
 	// Capture phase, so the shortcuts still work while the composer has focus.
@@ -86,7 +95,16 @@
 						? 'Connecting…'
 						: 'Voice connected'}
 			</span>
-			<span class="truncate text-[13px] text-muted-foreground">{channelName}</span>
+			{#if channelHref}
+				<a
+					href={channelHref}
+					class="truncate rounded-sm text-[13px] text-muted-foreground hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					{channelName}
+				</a>
+			{:else}
+				<span class="truncate text-[13px] text-muted-foreground">{channelName}</span>
+			{/if}
 		</div>
 
 		<Tooltip.Provider>
