@@ -33,6 +33,8 @@ class SocketState {
 	private socket: WebSocket | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	connected: boolean = $state(false);
+	/** The connection dropped and a reconnect is pending. */
+	reconnecting: boolean = $state(false);
 	private hasConnected = false;
 
 	/**
@@ -54,6 +56,7 @@ class SocketState {
 		socket.onopen = () => {
 			console.log('WebSocket connection established');
 			this.connected = true;
+			this.reconnecting = false;
 
 			// Voice frames sent while we were offline are gone, so refetch.
 			const serverId = serversState.selectedServer?.id;
@@ -81,6 +84,7 @@ class SocketState {
 				return;
 			}
 
+			this.reconnecting = true;
 			this.reconnectTimer = setTimeout(() => {
 				this.reconnectTimer = null;
 				this.connect();
@@ -107,23 +111,26 @@ class SocketState {
 		const socket = this.socket;
 		this.socket = null;
 		this.connected = false;
+		this.reconnecting = false;
 		socket?.close();
 	}
 
-	async sendMessage(target: MessageTarget, message: JSONContent, attachments: Attachment[] = []) {
-		if (!message) return;
+	/** Returns false when the message could not go out, so the caller keeps it. */
+	sendMessage(
+		target: MessageTarget,
+		message: JSONContent,
+		attachments: Attachment[] = []
+	): boolean {
+		if (!message) return false;
 		// Callers pass reactive state; IndexedDB can't store Svelte's proxies.
 		attachments = $state.snapshot(attachments);
-		if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-			console.warn('WebSocket is not connected. Message not sent:', message);
-			return;
+		// A socket can still report OPEN for a while after the network is gone.
+		if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !navigator.onLine) {
+			return false;
 		}
 
 		const user = usersState.loggedInUser;
-		if (!user) {
-			console.warn('Cannot send message without a logged-in user.');
-			return;
-		}
+		if (!user) return false;
 
 		const id = uuidv4();
 		const timestamp = new Date().toISOString();
@@ -177,7 +184,8 @@ class SocketState {
 
 		// put, not add: the server can echo this same message to our other tabs
 		// (or a retry could replay it), and a second add() would throw ConstraintError.
-		await db.messages.put(local);
+		db.messages.put(local).catch((err) => console.warn('Could not cache sent message:', err));
+		return true;
 	}
 
 	async handleIncomingMessage(message: MessageType) {
