@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
@@ -53,6 +54,8 @@
 	let channelType: 'text' | 'voice' = $state('text');
 	let createOpen = $state(false);
 	let creating = $state(false);
+
+	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 
 	const activeChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
@@ -143,7 +146,7 @@
 </script>
 
 {#snippet settingsButton(channel: Channel)}
-	{#if serversState.isSelectedServerOwner}
+	{#if canManageChannels}
 		<!-- A sibling of the row, not a child: the row is itself a link or button. -->
 		<button
 			type="button"
@@ -172,7 +175,7 @@
 		href={voiceHref(channel)}
 		active={channel.id === activeChannelId}
 		dragging={dragType === 'voice' && dragIndex === i}
-		draggable="true"
+		draggable={canManageChannels}
 		ondragstart={() => handleDragStart('voice', i)}
 		ondragover={(e) => handleDragOver(e, 'voice', i)}
 		ondrop={() => handleDrop('voice')}
@@ -218,49 +221,51 @@
 		<section>
 			<div class="flex h-6 items-center justify-between px-2">
 				<span class="text-xs font-medium tracking-[0.02em] text-text-subtle">Channels</span>
-				<Dialog.Root bind:open={createOpen}>
-					<Dialog.Trigger
-						aria-label="Create channel"
-						class="flex h-5 w-5 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>
-						<Plus size={16} strokeWidth={1.75} />
-					</Dialog.Trigger>
-					<Dialog.Content>
-						<Dialog.Header><Dialog.Title>Create a channel</Dialog.Title></Dialog.Header>
-						<div class="flex flex-col gap-4 py-2">
-							<Input placeholder="Channel name" maxlength={100} bind:value={channelName} />
-							<div class="flex gap-4">
-								<label class="flex cursor-pointer items-center gap-2 text-sm">
-									<input
-										type="radio"
-										name="channelType"
-										value="text"
-										checked={channelType === 'text'}
-										onchange={() => (channelType = 'text')}
-										class="accent-primary"
-									/>
-									Text
-								</label>
-								<label class="flex cursor-pointer items-center gap-2 text-sm">
-									<input
-										type="radio"
-										name="channelType"
-										value="voice"
-										checked={channelType === 'voice'}
-										onchange={() => (channelType = 'voice')}
-										class="accent-primary"
-									/>
-									Voice
-								</label>
+				{#if canManageChannels}
+					<Dialog.Root bind:open={createOpen}>
+						<Dialog.Trigger
+							aria-label="Create channel"
+							class="flex h-5 w-5 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						>
+							<Plus size={16} strokeWidth={1.75} />
+						</Dialog.Trigger>
+						<Dialog.Content>
+							<Dialog.Header><Dialog.Title>Create a channel</Dialog.Title></Dialog.Header>
+							<div class="flex flex-col gap-4 py-2">
+								<Input placeholder="Channel name" maxlength={100} bind:value={channelName} />
+								<div class="flex gap-4">
+									<label class="flex cursor-pointer items-center gap-2 text-sm">
+										<input
+											type="radio"
+											name="channelType"
+											value="text"
+											checked={channelType === 'text'}
+											onchange={() => (channelType = 'text')}
+											class="accent-primary"
+										/>
+										Text
+									</label>
+									<label class="flex cursor-pointer items-center gap-2 text-sm">
+										<input
+											type="radio"
+											name="channelType"
+											value="voice"
+											checked={channelType === 'voice'}
+											onchange={() => (channelType = 'voice')}
+											class="accent-primary"
+										/>
+										Voice
+									</label>
+								</div>
 							</div>
-						</div>
-						<Dialog.Footer>
-							<Button onclick={submitCreateChannel} disabled={!channelName.trim() || creating}>
-								{creating ? 'Creating…' : 'Create'}
-							</Button>
-						</Dialog.Footer>
-					</Dialog.Content>
-				</Dialog.Root>
+							<Dialog.Footer>
+								<Button onclick={submitCreateChannel} disabled={!channelName.trim() || creating}>
+									{creating ? 'Creating…' : 'Create'}
+								</Button>
+							</Dialog.Footer>
+						</Dialog.Content>
+					</Dialog.Root>
+				{/if}
 			</div>
 
 			<div class="mt-1 flex flex-col gap-0.5">
@@ -273,7 +278,7 @@
 							unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
 							mentions={unreadState.channelMentions(channel.id)}
 							dragging={dragType === 'text' && dragIndex === i}
-							draggable="true"
+							draggable={canManageChannels}
 							ondragstart={() => handleDragStart('text', i)}
 							ondragover={(e) => handleDragOver(e, 'text', i)}
 							ondrop={() => handleDrop('text')}

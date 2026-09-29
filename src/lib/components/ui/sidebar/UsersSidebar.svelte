@@ -8,6 +8,21 @@
 		(serversState.selectedServer?.members ?? []).map((m) => usersState.users[m.id] ?? m)
 	);
 
+	const serverId = $derived(serversState.selectedServer?.id);
+	// Refetch when someone joins or leaves so new members get their roles.
+	const memberCount = $derived(serversState.selectedServer?.members?.length ?? 0);
+
+	$effect(() => {
+		void memberCount;
+		if (serverId != null) {
+			serversState.loadRoster(serverId).catch((e) => console.error('Failed to load roles', e));
+		}
+	});
+
+	function roleLabel(user: User) {
+		return serverId != null ? serversState.roleNames(serverId, user.id)[0] : undefined;
+	}
+
 	const onlineUsers: User[] = $derived(
 		serverMembers.filter((u) => usersState.onlineUsers.has(u.id))
 	);
@@ -24,7 +39,7 @@
 					Online — {onlineUsers.length}
 				</h2>
 				{#each onlineUsers as user (user.id)}
-					<MemberRow {user} online />
+					<MemberRow {user} online role={roleLabel(user)} />
 				{/each}
 			</section>
 		{/if}
@@ -35,7 +50,7 @@
 					Offline — {offlineUsers.length}
 				</h2>
 				{#each offlineUsers as user (user.id)}
-					<MemberRow {user} />
+					<MemberRow {user} role={roleLabel(user)} />
 				{/each}
 			</section>
 		{/if}

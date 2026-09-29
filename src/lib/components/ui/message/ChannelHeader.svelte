@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
@@ -32,7 +33,7 @@
 	{/if}
 
 	<div class="ml-auto flex items-center gap-2">
-		{#if channel && serversState.isSelectedServerOwner}
+		{#if channel && serversState.can(Permission.MANAGE_CHANNELS)}
 			<button
 				type="button"
 				aria-label="Channel settings"
@@ -43,15 +44,17 @@
 				<Settings size={18} strokeWidth={1.75} />
 			</button>
 		{/if}
-		<Button
-			variant="secondary"
-			size="sm"
-			onclick={() =>
-				overlayState.open(SettingsModal, { category: 'server', tab: 'server-invites' })}
-		>
-			<UserPlus size={16} strokeWidth={1.75} />
-			Invite
-		</Button>
+		{#if serversState.canInvite}
+			<Button
+				variant="secondary"
+				size="sm"
+				onclick={() =>
+					overlayState.open(SettingsModal, { category: 'server', tab: 'server-invites' })}
+			>
+				<UserPlus size={16} strokeWidth={1.75} />
+				Invite
+			</Button>
+		{/if}
 		<button
 			type="button"
 			aria-label="Toggle member list"

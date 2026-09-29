@@ -9,6 +9,7 @@
 	import ServerMembers from './ServerMembers.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { deleteServer } from '$lib/requests/servers/deleteServer';
 	import { getErrorMessage } from '$lib/requests/errors';
@@ -51,7 +52,7 @@
 	const sections = $derived.by<Section[]>(() => {
 		const out: Section[] = [];
 
-		if (channel && serversState.isSelectedServerOwner) {
+		if (channel && serversState.can(Permission.MANAGE_CHANNELS)) {
 			out.push({
 				scope: 'channel',
 				label: `#${channel.name}`,
@@ -69,7 +70,7 @@
 
 		if (server) {
 			const tabs: Tab[] = [];
-			if (serversState.isSelectedServerOwner) {
+			if (serversState.can(Permission.MANAGE_SERVER)) {
 				tabs.push({
 					id: 'server-general',
 					label: 'Overview',
@@ -78,7 +79,14 @@
 					render: serverOverview
 				});
 			}
-			tabs.push({ id: 'server-invites', label: 'Invites', scope: 'server', render: serverInvites });
+			if (serversState.canInvite) {
+				tabs.push({
+					id: 'server-invites',
+					label: 'Invites',
+					scope: 'server',
+					render: serverInvites
+				});
+			}
 			tabs.push({
 				id: 'server-members',
 				label: 'Members',
@@ -166,7 +174,9 @@
 	<ServerInvites />
 {/snippet}
 {#snippet serverMembers()}
-	<ServerMembers onInvite={() => (activeTabId = 'server-invites')} />
+	<ServerMembers
+		onInvite={serversState.canInvite ? () => (activeTabId = 'server-invites') : undefined}
+	/>
 {/snippet}
 {#snippet account()}
 	<AccountSettings />

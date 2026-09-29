@@ -7,6 +7,7 @@
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { messagesState } from '$lib/states/messagesState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
@@ -33,11 +34,11 @@
 
 	const me = $derived(usersState.loggedInUser);
 	const isAuthor = $derived(me != null && me.id === message.user_id);
-	const isOwner = $derived(me != null && serversState.selectedServer?.owner_id === me.id);
-	// A DM has no owner, so only the author can delete there.
+	// A DM has no moderators, so only the author can delete there.
 	const isDirect = $derived(message.conversation_id != null);
+	const isModerator = $derived(serversState.can(Permission.MANAGE_MESSAGES, message.server_id));
 	const canEdit = $derived(isAuthor);
-	const canDelete = $derived(isAuthor || (isOwner && !isDirect));
+	const canDelete = $derived(isAuthor || (isModerator && !isDirect));
 	const editing = $derived(messageEditState.isEditing(message.id));
 
 	async function saveEdit(content: JSONContent) {
