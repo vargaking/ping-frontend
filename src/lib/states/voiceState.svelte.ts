@@ -49,6 +49,8 @@ export interface ScreenStream {
 	username: string;
 	local: boolean;
 	track: RemoteVideoTrack | LocalVideoTrack;
+	/** What the browser is capturing. Only known for your own share. */
+	surface?: 'monitor' | 'window' | 'browser';
 }
 
 /** Participant attribute other clients read to show someone as deafened. */
@@ -91,6 +93,8 @@ class VoiceState {
 	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
 	/** Identities LiveKit reported gone since they last connected to this room. */
 	departed: SvelteSet<string> = $state(new SvelteSet());
+	/** The user chose to see their own whole-screen share, which mirrors into itself. */
+	selfPreview: boolean = $state(false);
 
 	private room: Room | null = null;
 	// One <audio> element per remote track, attached to the DOM so it plays.
@@ -160,8 +164,21 @@ class VoiceState {
 			identity: p.identity,
 			username: p.name || 'Unknown',
 			local,
-			track
+			track,
+			surface: local ? this.captureSurface(track) : undefined
 		});
+	}
+
+	private captureSurface(track: RemoteVideoTrack | LocalVideoTrack): ScreenStream['surface'] {
+		const surface = track.mediaStreamTrack.getSettings().displaySurface;
+		return surface === 'monitor' || surface === 'window' || surface === 'browser'
+			? surface
+			: undefined;
+	}
+
+	/** A whole-screen capture would show its own preview inside itself. */
+	previewHidden(stream: ScreenStream): boolean {
+		return stream.local && stream.surface === 'monitor' && !this.selfPreview;
 	}
 
 	private applyQueue: Promise<void> = Promise.resolve();
@@ -240,6 +257,7 @@ class VoiceState {
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
 				if (pub.track?.kind === Track.Kind.Video) {
 					this.sharing = true;
+					this.selfPreview = false;
 					this.setScreen(p, pub.track as LocalVideoTrack);
 				}
 			})
@@ -485,6 +503,7 @@ class VoiceState {
 		this.screens = new SvelteMap();
 		this.departed = new SvelteSet();
 		this.sharing = false;
+		this.selfPreview = false;
 	}
 
 	private cleanup() {

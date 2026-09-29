@@ -12,7 +12,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
-	import { Volume2, Maximize2, Minimize2 } from 'lucide-svelte';
+	import { Volume2, Maximize2, Minimize2, EyeOff } from 'lucide-svelte';
 
 	let membersOpen = $state(true);
 
@@ -31,6 +31,10 @@
 	// If the focused stream ends, the stage just goes away.
 	const focused = $derived(screens.find((s) => s.id === focusedId) ?? null);
 	const tiles = $derived(screens.filter((s) => s.id !== focusedId));
+
+	$effect(() => {
+		if (focused && voiceState.previewHidden(focused)) focusedId = null;
+	});
 	const empty = $derived(roster.length === 0);
 
 	// A lone remote stream is focused when it first appears; your own preview never is.
@@ -104,7 +108,7 @@
 				</div>
 			{:else}
 				<!-- Keyed each rather than #if: focused turns null before the block is torn down. -->
-				{#each focused ? [focused] : [] as stream (stream.id)}
+				{#each focused && !voiceState.previewHidden(focused) ? [focused] : [] as stream (stream.id)}
 					<section
 						aria-label="{stream.local ? 'Your' : `${stream.username}'s`} screen"
 						class="relative mb-3 flex min-h-0 shrink-0 justify-center rounded-xl bg-black"
@@ -115,6 +119,16 @@
 							class="max-h-[70vh] rounded-xl"
 						/>
 						<div class="absolute top-2 right-2 flex gap-2">
+							{#if stream.local && stream.surface === 'monitor'}
+								<Button
+									variant="secondary"
+									size="sm"
+									onclick={() => (voiceState.selfPreview = false)}
+								>
+									<EyeOff size={14} strokeWidth={1.75} />
+									Hide preview
+								</Button>
+							{/if}
 							<Button variant="secondary" size="sm" onclick={() => stageVideo?.requestFullscreen()}>
 								<Maximize2 size={14} strokeWidth={1.75} />
 								Fullscreen
