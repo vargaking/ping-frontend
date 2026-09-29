@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import type { Attachment } from './attachment.types';
 
 export type MessageType = {
 	id: string;
@@ -11,6 +12,7 @@ export type MessageType = {
 	channel_id?: number | null;
 	conversation_id?: number | null;
 	edited_at?: string | null;
+	attachments?: Attachment[];
 };
 
 /** Where a composed message goes: a server channel or a DM conversation. */
