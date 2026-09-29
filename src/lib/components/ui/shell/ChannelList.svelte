@@ -108,6 +108,13 @@
 		resetDrag();
 	}
 
+	function dropEdge(type: 'text' | 'voice', index: number): 'before' | 'after' | null {
+		if (dragType !== type || dragIndex === null || hoverIndex !== index || dragIndex === index) {
+			return null;
+		}
+		return dragIndex > index ? 'before' : 'after';
+	}
+
 	function resetDrag() {
 		dragType = null;
 		dragIndex = null;
@@ -156,6 +163,18 @@
 		>
 			<Settings size={14} strokeWidth={1.75} />
 		</button>
+	{/if}
+{/snippet}
+
+{#snippet dropIndicator(edge: 'before' | 'after' | null)}
+	{#if edge}
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-primary {edge ===
+			'before'
+				? '-top-px'
+				: '-bottom-px'}"
+		></span>
 	{/if}
 {/snippet}
 
@@ -290,6 +309,7 @@
 							{/snippet}
 						</SidebarRow>
 						{@render settingsButton(channel)}
+						{@render dropIndicator(dropEdge('text', i))}
 					</div>
 				{/each}
 				{#if textChannels.length === 0}
@@ -321,6 +341,7 @@
 								{@render voiceRow(channel, i)}
 							{/if}
 							{@render settingsButton(channel)}
+							{@render dropIndicator(dropEdge('voice', i))}
 						</div>
 						{#if voiceState.channelId === channel.id}
 							<div class="mt-0.5 flex flex-col gap-0.5">

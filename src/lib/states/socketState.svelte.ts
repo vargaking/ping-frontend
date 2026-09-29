@@ -430,7 +430,10 @@ class SocketState {
 			case 'server_updated':
 				serversState.patchServer(message.server.id, {
 					name: message.server.name,
-					server_profile: message.server.server_profile
+					server_profile: message.server.server_profile,
+					...(message.server.server_settings && {
+						server_settings: message.server.server_settings
+					})
 				});
 				break;
 			case 'server_deleted':
