@@ -94,7 +94,7 @@
 			channelName = '';
 			channelType = 'text';
 			createOpen = false;
-			if (channel.type === 'text') await goto(channelHref(channel));
+			await goto(channel.type === 'text' ? channelHref(channel) : voiceHref(channel));
 		} catch (e) {
 			toast.error(`Couldn't create channel: ${getErrorMessage(e)}`);
 		} finally {
@@ -108,6 +108,10 @@
 
 	function channelHref(channel: Channel) {
 		return `/app/server/${serversState.selectedServer?.id}/channel/${channel.id}/`;
+	}
+
+	function voiceHref(channel: Channel) {
+		return `/app/server/${serversState.selectedServer?.id}/voice/${channel.id}/`;
 	}
 </script>
 
@@ -130,12 +134,16 @@
 		{...mergeProps(triggerProps, {
 			// Screen readers get the topic even though the tooltip is visual.
 			'aria-description': channel.topic?.trim() || undefined,
-			onclick: () => {
+			onclick: (e: MouseEvent) => {
+				// Opening the link in a new tab shouldn't join from this one.
+				if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+				serversState.setSelectedChannel(channel);
 				if (voiceState.channelId !== channel.id) voiceState.joinVoice(channel.id);
 			}
 		})}
 		label={channel.name}
-		active={voiceState.channelId === channel.id}
+		href={voiceHref(channel)}
+		active={channel.id === activeChannelId}
 		dragging={dragType === 'voice' && dragIndex === i}
 		draggable="true"
 		ondragstart={() => handleDragStart('voice', i)}
@@ -144,7 +152,11 @@
 		ondragend={resetDrag}
 	>
 		{#snippet icon()}
-			<Volume2 size={16} strokeWidth={1.75} />
+			<Volume2
+				size={16}
+				strokeWidth={1.75}
+				class={voiceState.channelId === channel.id ? 'text-online' : undefined}
+			/>
 		{/snippet}
 	</SidebarRow>
 {/snippet}
