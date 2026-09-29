@@ -170,7 +170,7 @@
 	class="flex h-[min(680px,90vh)] w-[min(960px,90vw)] overflow-hidden rounded-xl border border-input bg-background text-foreground"
 >
 	<nav aria-label="Settings" class="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar">
-		<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-4">
+		<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-4 scrollbar-stable">
 			{#each sections as section (section.scope)}
 				<div class="flex flex-col gap-0.5">
 					<h2
@@ -253,7 +253,7 @@
 				{#if currentTab.form}
 					{@render currentTab.render()}
 				{:else}
-					<div class="min-h-0 flex-1 overflow-y-auto p-7">
+					<div class="min-h-0 flex-1 overflow-y-auto p-7 scrollbar-stable">
 						{@render currentTab.render()}
 					</div>
 				{/if}

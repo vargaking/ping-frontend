@@ -179,7 +179,7 @@
 	</DropdownMenu.Root>
 
 	<!-- body -->
-	<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-3">
+	<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-3 scrollbar-stable">
 		<!-- Channels -->
 		<section>
 			<div class="flex h-6 items-center justify-between px-2">

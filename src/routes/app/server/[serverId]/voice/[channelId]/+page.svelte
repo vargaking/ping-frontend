@@ -56,7 +56,7 @@
 	<div class="flex min-w-0 flex-1 flex-col">
 		<ChannelHeader {membersOpen} onToggleMembers={() => (membersOpen = !membersOpen)} />
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6 scrollbar-stable">
 			{#if !channel}
 				{#if channelsLoaded}
 					<div class="m-auto">
