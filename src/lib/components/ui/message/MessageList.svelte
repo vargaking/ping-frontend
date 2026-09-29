@@ -404,7 +404,11 @@
 	});
 </script>
 
-<div bind:this={messageWrapper} onscroll={handleScroll} class="min-h-0 flex-1 overflow-y-auto">
+<div
+	bind:this={messageWrapper}
+	onscroll={handleScroll}
+	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable"
+>
 	{#if loadState === 'loading'}
 		<div class="px-8 pt-6">
 			<LoadingList rows={6} avatar />

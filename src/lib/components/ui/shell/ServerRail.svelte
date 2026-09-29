@@ -18,7 +18,7 @@
 
 <nav
 	aria-label="Servers"
-	class="flex w-[60px] shrink-0 flex-col items-center gap-2 border-r border-border bg-rail py-2.5"
+	class="flex min-h-0 w-[60px] shrink-0 flex-col items-center gap-2 border-r border-border bg-rail py-2.5"
 >
 	<Tooltip.Provider>
 		<Tooltip.Root delayDuration={0}>
@@ -57,7 +57,9 @@
 	{#if serversState.serversList.length > 0}
 		<hr class="my-0.5 w-6 border-t border-border" />
 
-		<div class="flex flex-col items-center gap-2">
+		<div
+			class="-mt-1 scrollbar-none flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pt-1 pb-1"
+		>
 			{#each serversState.serversList as server (server.id)}
 				{@const serverUnread = server.id != null ? unreadState.serverUnread(server.id) : null}
 				<ServerRailItem

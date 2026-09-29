@@ -36,7 +36,7 @@
 					{href}
 					aria-label={label}
 					aria-current={active ? 'page' : undefined}
-					class="relative flex h-10 w-10 items-center justify-center rounded-xl border border-transparent text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-rail focus-visible:outline-none {active
+					class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-rail focus-visible:outline-none {active
 						? 'bg-primary/15 text-primary'
 						: muted
 							? 'bg-card text-text-subtle hover:bg-accent'

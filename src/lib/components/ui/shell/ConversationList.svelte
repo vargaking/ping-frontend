@@ -15,7 +15,7 @@
 		<h2 class="truncate text-[15px] font-semibold">Direct messages</h2>
 	</div>
 
-	<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
+	<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3 scrollbar-stable">
 		{#if !conversationsState.loaded}
 			<div class="px-2">
 				<LoadingList rows={4} avatar />

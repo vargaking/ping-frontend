@@ -20,7 +20,7 @@
 
 <!-- Nothing here auto-saves: the footer stays disabled until the form is dirty. -->
 <form class="flex min-h-0 flex-1 flex-col" onsubmit={submit} novalidate>
-	<div class="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto p-7">
+	<div class="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto p-7 scrollbar-stable">
 		{@render children()}
 	</div>
 

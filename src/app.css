@@ -127,4 +127,48 @@
 	[role='button']:not(:disabled) {
 		cursor: pointer;
 	}
+
+	/* Thin scrollbars whose thumb only shows while the pointer or focus is in
+	   the scroller. scrollbar-color isn't inherited per scroller, so each
+	   element resets it and the hovered chain turns it on. */
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: transparent transparent;
+	}
+	*:hover,
+	*:focus-within {
+		scrollbar-color: var(--border-strong) transparent;
+	}
+}
+
+/* Safari has no scrollbar-color. */
+@supports not (scrollbar-color: auto) {
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-track,
+	::-webkit-scrollbar-corner {
+		background: transparent;
+	}
+	::-webkit-scrollbar-thumb {
+		border-radius: 9999px;
+		background: transparent;
+	}
+	*:hover::-webkit-scrollbar-thumb,
+	*:focus-within::-webkit-scrollbar-thumb {
+		background: var(--border-strong);
+	}
+}
+
+/* Reserve the scrollbar's width so content doesn't shift when it appears. */
+@utility scrollbar-stable {
+	scrollbar-gutter: stable;
+}
+
+@utility scrollbar-none {
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+	}
 }
