@@ -11,13 +11,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { deleteServer } from '$lib/requests/servers/deleteServer';
-	import { getErrorMessage } from '$lib/requests/errors';
-	import { serverRemoved } from '$lib/utils/serverRemoved';
-	import * as Dialog from '$lib/components/ui/dialog/index';
-	import Button from '$lib/components/ui/button/button.svelte';
-	import { toast } from 'svelte-sonner';
-	import { Trash2, X } from 'lucide-svelte';
+	import { X } from 'lucide-svelte';
 
 	type Category = 'account' | 'server' | 'channel';
 
@@ -140,26 +134,6 @@
 	});
 
 	const currentTab = $derived(tabs.find((t) => t.id === activeTabId) ?? tabs[0]);
-
-	let deleteOpen = $state(false);
-	let deleting = $state(false);
-
-	async function handleDeleteServer() {
-		const target = server;
-		if (target?.id == null || deleting) return;
-		deleting = true;
-		try {
-			await deleteServer(target.id);
-		} catch (e) {
-			toast.error(`Couldn't delete the server: ${getErrorMessage(e)}`);
-			deleting = false;
-			return;
-		}
-		deleteOpen = false;
-		overlayState.close();
-		await serverRemoved(target.id);
-		toast.success(`Deleted ${target.name}`);
-	}
 </script>
 
 {#snippet channelOverview()}
@@ -226,38 +200,6 @@
 				</div>
 			{/each}
 		</div>
-
-		{#if server && serversState.isSelectedServerOwner}
-			<div class="border-t border-border p-2">
-				<Dialog.Root bind:open={deleteOpen}>
-					<Dialog.Trigger
-						class="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>
-						<Trash2 size={16} strokeWidth={1.75} />
-						Delete server
-					</Dialog.Trigger>
-					<Dialog.Content>
-						<Dialog.Header>
-							<Dialog.Title>Delete {server.name}?</Dialog.Title>
-							<Dialog.Description>
-								This permanently deletes the server with all of its channels and messages for every
-								member. It can't be undone.
-							</Dialog.Description>
-						</Dialog.Header>
-						<Dialog.Footer>
-							<Button variant="secondary" onclick={() => (deleteOpen = false)}>Cancel</Button>
-							<Button
-								class="border border-destructive-border bg-transparent text-destructive hover:bg-destructive/10"
-								disabled={deleting}
-								onclick={handleDeleteServer}
-							>
-								{deleting ? 'Deleting…' : 'Delete server'}
-							</Button>
-						</Dialog.Footer>
-					</Dialog.Content>
-				</Dialog.Root>
-			</div>
-		{/if}
 	</nav>
 
 	<div class="flex min-w-0 flex-1 flex-col">

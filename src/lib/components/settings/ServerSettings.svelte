@@ -8,6 +8,7 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import SettingsForm from './SettingsForm.svelte';
 	import SettingsTextField from './SettingsTextField.svelte';
+	import DeleteServerZone from './DeleteServerZone.svelte';
 
 	// Mirrors the backend's upload checks so an obviously bad file never leaves the browser.
 	const ICON_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
@@ -173,5 +174,9 @@
 			oninput={() => (errors.name = undefined)}
 			maxlength={100}
 		/>
+
+		{#if serversState.isSelectedServerOwner}
+			<DeleteServerZone />
+		{/if}
 	</SettingsForm>
 {/if}
