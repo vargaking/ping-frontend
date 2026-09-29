@@ -28,7 +28,7 @@
 	const hasText = $derived(messagePlainText(message.content) !== '');
 
 	const hoverTime = $derived(
-		new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+		new Date(message.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 	);
 
 	const me = $derived(usersState.loggedInUser);
@@ -98,7 +98,7 @@
 	{:else}
 		{#if showHoverTime}
 			<span
-				class="pointer-events-none absolute top-0.5 -left-12 hidden w-11 pr-2 text-right font-mono text-[11px] text-text-subtle select-none group-hover/row:block"
+				class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block"
 				aria-hidden="true"
 			>
 				{hoverTime}
@@ -133,13 +133,15 @@
 		{/if}
 
 		{#if hasText || attachments.length === 0}
+			<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
 			<div
-				class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert"
+				class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert {message.edited_at
+					? '[&>p:nth-last-child(2)]:inline'
+					: ''}"
 			>
-				<MessageNode node={parsedContent} />
-				{#if message.edited_at}
-					<span class="align-baseline text-[11px] text-text-subtle select-none">(edited)</span>
-				{/if}
+				<MessageNode node={parsedContent} />{#if message.edited_at}<span
+						class="ml-1 align-baseline text-[11px] text-text-subtle select-none">(edited)</span
+					>{/if}
 			</div>
 		{/if}
 		{#if attachments.length > 0}
