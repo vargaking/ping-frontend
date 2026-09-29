@@ -76,11 +76,15 @@
 	{/if}
 {/snippet}
 
-{#if voiceState.connecting || voiceState.connected}
+{#if voiceState.connecting || voiceState.connected || voiceState.reconnecting}
 	<div class="mx-2 mb-2 rounded-[10px] border border-input bg-card p-2.5">
 		<div class="mb-2 flex flex-col gap-0.5">
-			<span class="text-xs font-medium text-online">
-				{voiceState.connecting ? 'Connecting…' : 'Voice connected'}
+			<span class="text-xs font-medium {voiceState.reconnecting ? 'text-idle' : 'text-online'}">
+				{voiceState.reconnecting
+					? 'Reconnecting…'
+					: voiceState.connecting
+						? 'Connecting…'
+						: 'Voice connected'}
 			</span>
 			<span class="truncate text-[13px] text-muted-foreground">{channelName}</span>
 		</div>
