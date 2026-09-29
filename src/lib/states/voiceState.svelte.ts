@@ -7,6 +7,9 @@ import {
 	type RemoteTrack,
 	type RemoteParticipant,
 	type Participant,
+	type RemoteVideoTrack,
+	type VideoPreset,
+	type LocalVideoTrack,
 	type TrackPublication
 } from 'livekit-client';
 import { SvelteMap } from 'svelte/reactivity';
@@ -20,6 +23,13 @@ import {
 	refreshVoicePresenceOnUnload
 } from '$lib/requests/voice/refreshVoicePresence';
 import { InsecureContextError, describeMicError, describeVoiceError } from '$lib/utils/voiceErrors';
+import {
+	SCREEN_PRESETS,
+	SCREEN_PUBLISH,
+	isPickerCancel,
+	type ScreenContent,
+	type ScreenPresetId
+} from '$lib/utils/screenShare';
 
 export interface VoicePeer {
 	id: string;
@@ -29,6 +39,16 @@ export interface VoicePeer {
 	/** No live mic: muted, deafened, or never published one. */
 	muted: boolean;
 	deafened: boolean;
+	streaming: boolean;
+}
+
+export interface ScreenStream {
+	/** Participant identity + ':screen'. */
+	id: string;
+	identity: string;
+	username: string;
+	local: boolean;
+	track: RemoteVideoTrack | LocalVideoTrack;
 }
 
 /** Participant attribute other clients read to show someone as deafened. */
@@ -65,6 +85,10 @@ class VoiceState {
 	readonly micOff: boolean = $derived(this.muted || this.deafened);
 	// participant identity (user id) -> VoicePeer
 	peers: SvelteMap<string, VoicePeer> = $state(new SvelteMap());
+	/** The user's own screen share is live. */
+	sharing: boolean = $state(false);
+	// participant identity -> their screen share video
+	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
 
 	private room: Room | null = null;
 	// One <audio> element per remote track, attached to the DOM so it plays.
@@ -122,7 +146,19 @@ class VoiceState {
 			profile: this.parseProfile(p),
 			isSpeaking: p.isSpeaking,
 			muted: !p.isMicrophoneEnabled,
-			deafened: p.attributes?.[DEAFENED_ATTR] === 'true'
+			deafened: p.attributes?.[DEAFENED_ATTR] === 'true',
+			streaming: p.isScreenShareEnabled
+		});
+	}
+
+	private setScreen(p: Participant, track: RemoteVideoTrack | LocalVideoTrack) {
+		const local = p.identity === this.room?.localParticipant.identity;
+		this.screens.set(p.identity, {
+			id: `${p.identity}:screen`,
+			identity: p.identity,
+			username: p.name || 'Unknown',
+			local,
+			track
 		});
 	}
 
@@ -191,20 +227,47 @@ class VoiceState {
 		if (track.sid) this.audioEls.delete(track.sid);
 	}
 
-	private wireRoom(r: Room) {
+	private wireRoom(r: Room, gen: number) {
 		const refresh = (_pub: TrackPublication, p: Participant) => this.upsertPeer(p);
 		r.on(RoomEvent.TrackMuted, refresh)
 			.on(RoomEvent.TrackUnmuted, refresh)
 			.on(RoomEvent.TrackPublished, (pub, p) => this.upsertPeer(p))
 			.on(RoomEvent.TrackUnpublished, (pub, p) => this.upsertPeer(p))
-			.on(RoomEvent.LocalTrackPublished, (pub, p) => this.upsertPeer(p))
-			.on(RoomEvent.LocalTrackUnpublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.LocalTrackPublished, (pub, p) => {
+				this.upsertPeer(p);
+				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
+				if (pub.track?.kind === Track.Kind.Video) {
+					this.sharing = true;
+					this.setScreen(p, pub.track as LocalVideoTrack);
+				}
+			})
+			.on(RoomEvent.LocalTrackUnpublished, (pub, p) => {
+				this.upsertPeer(p);
+				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
+				if (pub.kind === Track.Kind.Video) {
+					this.sharing = false;
+					this.screens.delete(p.identity);
+				}
+			})
 			.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => this.upsertPeer(p));
 
-		r.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
-			this.attachTrack(track);
-		})
-			.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+		// Existing tracks are subscribed during room.connect(), before this.room is set,
+		// so screen handlers gate on the attempt's generation instead.
+		r.on(
+			RoomEvent.TrackSubscribed,
+			(track: RemoteTrack, pub: TrackPublication, p: RemoteParticipant) => {
+				if (track.source === Track.Source.ScreenShare && track.kind === Track.Kind.Video) {
+					if (gen === this.generation) this.setScreen(p, track as RemoteVideoTrack);
+					return;
+				}
+				this.attachTrack(track);
+			}
+		)
+			.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub: TrackPublication, p) => {
+				if (track.source === Track.Source.ScreenShare && track.kind === Track.Kind.Video) {
+					if (this.screens.get(p.identity)?.track === track) this.screens.delete(p.identity);
+					return;
+				}
 				this.detachTrack(track);
 			})
 			.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
@@ -212,6 +275,7 @@ class VoiceState {
 			})
 			.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
 				this.removePeer(p.identity);
+				this.screens.delete(p.identity);
 			})
 			.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
 				const speaking = new Set(speakers.map((p) => p.identity));
@@ -267,6 +331,87 @@ class VoiceState {
 	get micTrack(): MediaStreamTrack | undefined {
 		return this.room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
 			?.mediaStreamTrack;
+	}
+
+	private get localScreenTrack(): LocalVideoTrack | undefined {
+		const track = this.room?.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track;
+		return track as LocalVideoTrack | undefined;
+	}
+
+	async startScreenShare() {
+		const room = this.room;
+		if (!room || this.sharing) return;
+		const { preset } = SCREEN_PRESETS[voiceSettingsState.screenPreset];
+		try {
+			const pub = await room.localParticipant.setScreenShareEnabled(
+				true,
+				{
+					audio: true,
+					resolution: preset.resolution,
+					contentHint: voiceSettingsState.screenContent,
+					selfBrowserSurface: 'exclude',
+					surfaceSwitching: 'include',
+					systemAudio: 'include',
+					suppressLocalAudioPlayback: true
+				},
+				{
+					screenShareEncoding: SCREEN_PUBLISH.encoding,
+					screenShareSimulcastLayers: SCREEN_PUBLISH.layers,
+					simulcast: true
+				}
+			);
+			if (pub?.track) await this.limitTopLayer(pub.track as LocalVideoTrack, preset);
+		} catch (err) {
+			if (isPickerCancel(err)) return;
+			console.warn('Screen share failed:', err);
+			toast.error(`Couldn't start screen share${err instanceof Error ? `: ${err.message}` : '.'}`);
+		}
+	}
+
+	async stopScreenShare() {
+		try {
+			await this.room?.localParticipant.setScreenShareEnabled(false);
+		} catch {
+			/* nothing left to stop */
+		}
+	}
+
+	/** Cap the highest simulcast layer at the preset's bitrate and frame rate. */
+	private async limitTopLayer(track: LocalVideoTrack, preset: VideoPreset) {
+		const sender = track.sender;
+		if (!sender) return;
+		const params = sender.getParameters();
+		// With simulcast the encodings run low to high, so the top layer has the largest bitrate.
+		const top = params.encodings.reduce((a, b) =>
+			(b.maxBitrate ?? 0) > (a.maxBitrate ?? 0) ? b : a
+		);
+		top.maxBitrate = preset.encoding.maxBitrate;
+		top.maxFramerate = preset.encoding.maxFramerate;
+		await sender.setParameters(params);
+	}
+
+	async setScreenQuality(id: ScreenPresetId) {
+		voiceSettingsState.save({ screenPreset: id });
+		const track = this.localScreenTrack;
+		if (!track) return;
+		const { preset } = SCREEN_PRESETS[id];
+		try {
+			await track.mediaStreamTrack.applyConstraints({
+				width: { ideal: preset.width },
+				height: { ideal: preset.height },
+				frameRate: { ideal: preset.encoding.maxFramerate }
+			});
+			await this.limitTopLayer(track, preset);
+		} catch (err) {
+			console.warn('Could not change screen share quality:', err);
+			toast('Quality applies next time you share.');
+		}
+	}
+
+	setScreenContent(content: ScreenContent) {
+		voiceSettingsState.save({ screenContent: content });
+		const track = this.localScreenTrack;
+		if (track) track.mediaStreamTrack.contentHint = content;
 	}
 
 	async setInputDevice(deviceId: string) {
@@ -333,6 +478,8 @@ class VoiceState {
 		this.sharedDeafened = null;
 		this.fallback = { audioinput: false, audiooutput: false };
 		this.peers = new SvelteMap();
+		this.screens = new SvelteMap();
+		this.sharing = false;
 	}
 
 	private cleanup() {
@@ -359,6 +506,7 @@ class VoiceState {
 
 	private async rejoin(channelId: number) {
 		const gen = ++this.generation;
+		if (this.sharing) toast('Screen share stopped when the connection dropped.');
 		this.resetRoom();
 		this.connected = false;
 		this.connecting = false;
@@ -458,7 +606,7 @@ class VoiceState {
 			dynacast: true,
 			...voiceSettingsState.roomOptions()
 		});
-		this.wireRoom(room);
+		this.wireRoom(room, gen);
 		// The server knows about us from here on, well before media is up.
 		room.once(RoomEvent.SignalConnected, () => {
 			if (gen === this.generation) refreshVoicePresence(channelId);

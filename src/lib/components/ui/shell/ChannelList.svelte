@@ -352,6 +352,7 @@
 										speaking={peer.isSpeaking}
 										muted={peer.muted}
 										deafened={peer.deafened}
+										streaming={peer.streaming}
 									/>
 								{/each}
 							</div>

@@ -3,8 +3,27 @@
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
+	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
+	import { Permission } from '$lib/permissions';
+	import {
+		SCREEN_CONTENT_LABELS,
+		SCREEN_PRESETS,
+		screenShareSupported,
+		type ScreenContent,
+		type ScreenPresetId
+	} from '$lib/utils/screenShare';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
-	import { Mic, MicOff, Headphones, HeadphoneOff, PhoneOff } from 'lucide-svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
+	import {
+		Mic,
+		MicOff,
+		Headphones,
+		HeadphoneOff,
+		PhoneOff,
+		ScreenShare,
+		ScreenShareOff,
+		ChevronUp
+	} from 'lucide-svelte';
 
 	const channelName = $derived.by(() => {
 		const { channelId, serverId } = voiceState;
@@ -19,6 +38,11 @@
 		voiceState.serverId != null && voiceState.channelId != null
 			? `/app/server/${voiceState.serverId}/voice/${voiceState.channelId}/`
 			: null
+	);
+
+	// The call's server, which may not be the one being browsed.
+	const canShare = $derived(
+		screenShareSupported() && serversState.can(Permission.STREAM, voiceState.serverId)
 	);
 
 	// Capture phase, so the shortcuts still work while the composer has focus.
@@ -43,7 +67,8 @@
 	keys: string,
 	pressed: boolean,
 	onclick: () => void,
-	icon: Snippet
+	icon: Snippet,
+	tone: 'danger' | 'primary' = 'danger'
 )}
 	<Tooltip.Root delayDuration={300}>
 		<Tooltip.Trigger>
@@ -53,10 +78,12 @@
 					type="button"
 					aria-label={label}
 					aria-pressed={pressed}
-					aria-keyshortcuts={keys}
+					aria-keyshortcuts={keys || undefined}
 					{onclick}
 					class="{iconButton} {pressed
-						? 'text-destructive hover:bg-destructive/10'
+						? tone === 'primary'
+							? 'bg-primary/10 text-primary hover:bg-primary/20'
+							: 'text-destructive hover:bg-destructive/10'
 						: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 				>
 					{@render icon()}
@@ -64,7 +91,8 @@
 			{/snippet}
 		</Tooltip.Trigger>
 		<Tooltip.Content>
-			{label} <span class="ml-1 font-mono opacity-70">{keys}</span>
+			{label}
+			{#if keys}<span class="ml-1 font-mono opacity-70">{keys}</span>{/if}
 		</Tooltip.Content>
 	</Tooltip.Root>
 {/snippet}
@@ -82,6 +110,14 @@
 		<HeadphoneOff size={18} strokeWidth={1.75} />
 	{:else}
 		<Headphones size={18} strokeWidth={1.75} />
+	{/if}
+{/snippet}
+
+{#snippet shareIcon()}
+	{#if voiceState.sharing}
+		<ScreenShareOff size={18} strokeWidth={1.75} />
+	{:else}
+		<ScreenShare size={18} strokeWidth={1.75} />
 	{/if}
 {/snippet}
 
@@ -123,6 +159,52 @@
 					() => voiceState.toggleDeafen(),
 					deafenIcon
 				)}
+				{#if canShare}
+					<div class="flex items-center">
+						{@render control(
+							voiceState.sharing ? 'Stop sharing' : 'Share screen',
+							'',
+							voiceState.sharing,
+							() =>
+								voiceState.sharing ? voiceState.stopScreenShare() : voiceState.startScreenShare(),
+							shareIcon,
+							'primary'
+						)}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger
+								aria-label="Screen share options"
+								class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+							>
+								<ChevronUp size={14} strokeWidth={1.75} />
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content side="top" align="start" class="w-48">
+								<DropdownMenu.Group>
+									<DropdownMenu.Label>Quality</DropdownMenu.Label>
+									<DropdownMenu.RadioGroup
+										value={voiceSettingsState.screenPreset}
+										onValueChange={(value) => voiceState.setScreenQuality(value as ScreenPresetId)}
+									>
+										{#each Object.entries(SCREEN_PRESETS) as [id, { label }] (id)}
+											<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
+										{/each}
+									</DropdownMenu.RadioGroup>
+								</DropdownMenu.Group>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Group>
+									<DropdownMenu.Label>Optimize for</DropdownMenu.Label>
+									<DropdownMenu.RadioGroup
+										value={voiceSettingsState.screenContent}
+										onValueChange={(value) => voiceState.setScreenContent(value as ScreenContent)}
+									>
+										{#each Object.entries(SCREEN_CONTENT_LABELS) as [id, label] (id)}
+											<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
+										{/each}
+									</DropdownMenu.RadioGroup>
+								</DropdownMenu.Group>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					</div>
+				{/if}
 				<button
 					type="button"
 					aria-label="Leave voice"

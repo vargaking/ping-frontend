@@ -1,4 +1,12 @@
 import { Room, type AudioCaptureOptions, type RoomOptions } from 'livekit-client';
+import {
+	DEFAULT_SCREEN_CONTENT,
+	DEFAULT_SCREEN_PRESET,
+	SCREEN_CONTENT_LABELS,
+	SCREEN_PRESETS,
+	type ScreenContent,
+	type ScreenPresetId
+} from '$lib/utils/screenShare';
 
 const STORAGE_KEY = 'voice.devices';
 /** The browser's own default device, as enumerateDevices reports it in Chrome. */
@@ -9,13 +17,17 @@ type Prefs = {
 	outputId: string;
 	noiseSuppression: boolean;
 	echoCancellation: boolean;
+	screenPreset: ScreenPresetId;
+	screenContent: ScreenContent;
 };
 
 const DEFAULTS: Prefs = {
 	inputId: DEFAULT_DEVICE,
 	outputId: DEFAULT_DEVICE,
 	noiseSuppression: true,
-	echoCancellation: true
+	echoCancellation: true,
+	screenPreset: DEFAULT_SCREEN_PRESET,
+	screenContent: DEFAULT_SCREEN_CONTENT
 };
 
 function loadPrefs(): Prefs {
@@ -27,7 +39,13 @@ function loadPrefs(): Prefs {
 				inputId: typeof saved.inputId === 'string' ? saved.inputId : DEFAULTS.inputId,
 				outputId: typeof saved.outputId === 'string' ? saved.outputId : DEFAULTS.outputId,
 				noiseSuppression: saved.noiseSuppression !== false,
-				echoCancellation: saved.echoCancellation !== false
+				echoCancellation: saved.echoCancellation !== false,
+				screenPreset: Object.hasOwn(SCREEN_PRESETS, saved.screenPreset)
+					? saved.screenPreset
+					: DEFAULTS.screenPreset,
+				screenContent: Object.hasOwn(SCREEN_CONTENT_LABELS, saved.screenContent)
+					? saved.screenContent
+					: DEFAULTS.screenContent
 			};
 		}
 	} catch {
@@ -43,6 +61,8 @@ class VoiceSettingsState {
 	outputId = $state(DEFAULTS.outputId);
 	noiseSuppression = $state(DEFAULTS.noiseSuppression);
 	echoCancellation = $state(DEFAULTS.echoCancellation);
+	screenPreset = $state(DEFAULTS.screenPreset);
+	screenContent = $state(DEFAULTS.screenContent);
 
 	inputs = $state<MediaDeviceInfo[]>([]);
 	outputs = $state<MediaDeviceInfo[]>([]);
@@ -66,7 +86,9 @@ class VoiceSettingsState {
 					inputId: this.inputId,
 					outputId: this.outputId,
 					noiseSuppression: this.noiseSuppression,
-					echoCancellation: this.echoCancellation
+					echoCancellation: this.echoCancellation,
+					screenPreset: this.screenPreset,
+					screenContent: this.screenContent
 				})
 			);
 		} catch {
