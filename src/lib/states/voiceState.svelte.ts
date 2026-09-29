@@ -1,5 +1,6 @@
 import {
 	DisconnectReason,
+	LocalAudioTrack,
 	Room,
 	RoomEvent,
 	Track,
@@ -12,6 +13,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
+import { DEFAULT_DEVICE, voiceSettingsState } from './voiceSettingsState.svelte';
 import { axiosClient } from '$lib/requests/axiosClient';
 import { InsecureContextError, describeMicError, describeVoiceError } from '$lib/utils/voiceErrors';
 
@@ -63,6 +65,8 @@ class VoiceState {
 	private leaving = false;
 	// Bumped by every join, rejoin and leave so superseded async work can tell.
 	private generation = 0;
+	// The saved device is unplugged and the call is on the default one instead.
+	private fallback = { audioinput: false, audiooutput: false };
 
 	private parseProfile(p: Participant): any {
 		// We stash the user's profile JSON in participant metadata when we can;
@@ -210,7 +214,69 @@ class VoiceState {
 			})
 			.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
 				this.handleDisconnected(r, reason);
-			});
+			})
+			.on(RoomEvent.MediaDevicesChanged, () => this.checkDevices(r, true))
+			.once(RoomEvent.Connected, () => this.checkDevices(r, false));
+	}
+
+	/** Move off a saved device that was unplugged, and back once it returns. */
+	private async checkDevices(room: Room, announce: boolean) {
+		try {
+			await voiceSettingsState.refreshDevices();
+		} catch {
+			return;
+		}
+		if (room.state !== 'connected') return;
+
+		const kinds = [
+			['audioinput', voiceSettingsState.inputId, 'microphone'],
+			['audiooutput', voiceSettingsState.outputId, 'audio output']
+		] as const;
+		for (const [kind, saved, name] of kinds) {
+			if (kind === 'audiooutput' && !voiceSettingsState.outputSupported) continue;
+			const missing = !voiceSettingsState.isAvailable(kind, saved);
+			if (missing === this.fallback[kind]) continue;
+			this.fallback[kind] = missing;
+			if (missing) {
+				await room.switchActiveDevice(kind, DEFAULT_DEVICE).catch(() => {});
+				if (announce) toast(`Your ${name} was disconnected. Using the default one.`);
+			} else {
+				await room.switchActiveDevice(kind, saved).catch(() => {});
+			}
+		}
+	}
+
+	/** The published mic, for a level meter. Undefined when not in a call. */
+	get micTrack(): MediaStreamTrack | undefined {
+		return this.room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+			?.mediaStreamTrack;
+	}
+
+	async setInputDevice(deviceId: string) {
+		voiceSettingsState.save({ inputId: deviceId });
+		this.fallback.audioinput = false;
+		await this.room?.switchActiveDevice('audioinput', deviceId);
+	}
+
+	async setOutputDevice(deviceId: string) {
+		voiceSettingsState.save({ outputId: deviceId });
+		this.fallback.audiooutput = false;
+		await this.room?.switchActiveDevice('audiooutput', deviceId);
+	}
+
+	async setAudioProcessing(next: { noiseSuppression?: boolean; echoCancellation?: boolean }) {
+		voiceSettingsState.save(next);
+		const room = this.room;
+		if (!room) return;
+		const capture = voiceSettingsState.captureOptions();
+		// Shared with the local participant, so a mic published later uses it too.
+		Object.assign(room.options.audioCaptureDefaults ?? {}, capture, {
+			deviceId: room.getActiveDevice('audioinput') ?? capture.deviceId
+		});
+		const track = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+		if (track instanceof LocalAudioTrack) {
+			await track.restartTrack({ ...room.options.audioCaptureDefaults });
+		}
 	}
 
 	private handleDisconnected(r: Room, reason?: DisconnectReason) {
@@ -248,6 +314,7 @@ class VoiceState {
 		this.audioEls.clear();
 		this.room = null;
 		this.sharedDeafened = null;
+		this.fallback = { audioinput: false, audiooutput: false };
 		this.peers = new SvelteMap();
 	}
 
@@ -364,7 +431,11 @@ class VoiceState {
 		if (gen !== this.generation) return;
 
 		// 2. Connect to LiveKit.
-		const room = new Room({ adaptiveStream: true, dynacast: true });
+		const room = new Room({
+			adaptiveStream: true,
+			dynacast: true,
+			...voiceSettingsState.roomOptions()
+		});
 		this.wireRoom(room);
 
 		try {
