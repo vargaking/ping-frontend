@@ -13,6 +13,10 @@
 	}: TooltipPrimitive.ContentProps & {
 		arrowClasses?: string;
 	} = $props();
+
+	// bits-ui gives its id to the floating wrapper, so the trigger's
+	// aria-describedby points at nothing; the content element needs its own.
+	const contentId = $props.id();
 </script>
 
 <TooltipPrimitive.Portal>
@@ -27,21 +31,27 @@
 		)}
 		{...restProps}
 	>
-		{@render children?.()}
-		<TooltipPrimitive.Arrow>
-			{#snippet child({ props })}
-				<div
-					class={cn(
-						'z-50 size-2.5 rotate-45 rounded-[2px] bg-primary',
-						'data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)]',
-						'data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)]',
-						'data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2',
-						'data-[side=left]:-translate-y-[calc(50%_-_3px)]',
-						arrowClasses
-					)}
-					{...props}
-				></div>
-			{/snippet}
-		</TooltipPrimitive.Arrow>
+		{#snippet child({ props, wrapperProps })}
+			<div {...wrapperProps}>
+				<div {...props} id={contentId}>
+					{@render children?.()}
+					<TooltipPrimitive.Arrow>
+						{#snippet child({ props })}
+							<div
+								class={cn(
+									'z-50 size-2.5 rotate-45 rounded-[2px] bg-primary',
+									'data-[side=top]:translate-x-1/2 data-[side=top]:translate-y-[calc(-50%_+_2px)]',
+									'data-[side=bottom]:-translate-x-1/2 data-[side=bottom]:-translate-y-[calc(-50%_+_1px)]',
+									'data-[side=right]:translate-x-[calc(50%_+_2px)] data-[side=right]:translate-y-1/2',
+									'data-[side=left]:-translate-y-[calc(50%_-_3px)]',
+									arrowClasses
+								)}
+								{...props}
+							></div>
+						{/snippet}
+					</TooltipPrimitive.Arrow>
+				</div>
+			</div>
+		{/snippet}
 	</TooltipPrimitive.Content>
 </TooltipPrimitive.Portal>
