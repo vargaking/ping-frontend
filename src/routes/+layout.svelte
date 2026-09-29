@@ -24,6 +24,18 @@
 		window.addEventListener('keydown', primeNotificationSound, { once: true });
 	});
 
+	// A push notification click asks an already-open tab to move to its thread.
+	onMount(() => {
+		if (!('serviceWorker' in navigator)) return;
+		const onMessage = (event: MessageEvent) => {
+			if (event.data?.type !== 'navigate') return;
+			const url = safeNext(event.data.url);
+			if (url) goto(url);
+		};
+		navigator.serviceWorker.addEventListener('message', onMessage);
+		return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+	});
+
 	// Routes a logged-out user may see. Everything else is protected. `/invite/*`
 	// is public so an invite link renders instead of bouncing to /login, and
 	// `/register` is public so direct navigation there stays put.
