@@ -6,13 +6,12 @@
 	import UsersSidebar from '$lib/components/ui/sidebar/UsersSidebar.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import VoiceTile from '$lib/components/ui/voice/VoiceTile.svelte';
 	import PresenceTile from '$lib/components/ui/voice/PresenceTile.svelte';
 	import StreamTile from '$lib/components/ui/voice/StreamTile.svelte';
 	import StreamVideo from '$lib/components/ui/voice/StreamVideo.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
-	import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
+	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
 	import { Volume2, Maximize2, Minimize2 } from 'lucide-svelte';
 
 	let membersOpen = $state(true);
@@ -25,17 +24,14 @@
 
 	const inThisCall = $derived(channelId != null && voiceState.channelId === channelId);
 	const live = $derived(inThisCall && voiceState.connected);
-	const peers = $derived(live ? Array.from(voiceState.peers.values()) : []);
-	const present = $derived(
-		!live && channelId != null ? voicePresenceState.participants(channelId) : []
-	);
+	const roster = $derived(channelId != null ? voiceRoster(channelId) : []);
 	const screens = $derived(live ? Array.from(voiceState.screens.values()) : []);
 	let focusedId = $state<string | null>(null);
 	let stageVideo = $state<HTMLVideoElement | null>(null);
 	// If the focused stream ends, the stage just goes away.
 	const focused = $derived(screens.find((s) => s.id === focusedId) ?? null);
 	const tiles = $derived(screens.filter((s) => s.id !== focusedId));
-	const empty = $derived(peers.length === 0 && present.length === 0);
+	const empty = $derived(roster.length === 0);
 
 	// A lone remote stream is focused when it first appears; your own preview never is.
 	let seenStreams = new Set<string>();
@@ -137,22 +133,8 @@
 					{#each tiles as stream (stream.id)}
 						<StreamTile {stream} onfocus={() => (focusedId = stream.id)} />
 					{/each}
-					{#each peers as peer (peer.id)}
-						<VoiceTile
-							name={peer.username}
-							avatar={peer.profile?.avatar}
-							speaking={peer.isSpeaking}
-							muted={peer.muted}
-							deafened={peer.deafened}
-							streaming={peer.streaming}
-						/>
-					{/each}
-					{#each present as participant (participant.user_id)}
-						<PresenceTile
-							userId={participant.user_id}
-							muted={participant.muted}
-							deafened={participant.deafened}
-						/>
+					{#each roster as member (member.userId)}
+						<PresenceTile {member} />
 					{/each}
 				</ul>
 				{#if !live}
