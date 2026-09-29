@@ -9,11 +9,13 @@
 	import VoiceParticipant from './VoiceParticipant.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
+	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import { toast } from 'svelte-sonner';
+	import { mergeProps } from 'bits-ui';
 	import { goto } from '$app/navigation';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { Hash, Volume2, ChevronDown, Plus, Settings } from 'lucide-svelte';
@@ -119,6 +121,30 @@
 			<Settings size={14} strokeWidth={1.75} />
 		</button>
 	{/if}
+{/snippet}
+
+{#snippet voiceRow(channel: Channel, i: number, triggerProps: Record<string, unknown> = {})}
+	<SidebarRow
+		{...mergeProps(triggerProps, {
+			// Screen readers get the topic even though the tooltip is visual.
+			'aria-description': channel.topic?.trim() || undefined,
+			onclick: () => {
+				if (voiceState.channelId !== channel.id) voiceState.joinVoice(channel.id);
+			}
+		})}
+		label={channel.name}
+		active={voiceState.channelId === channel.id}
+		dragging={dragType === 'voice' && dragIndex === i}
+		draggable="true"
+		ondragstart={() => handleDragStart('voice', i)}
+		ondragover={(e) => handleDragOver(e, 'voice', i)}
+		ondrop={() => handleDrop('voice')}
+		ondragend={resetDrag}
+	>
+		{#snippet icon()}
+			<Volume2 size={16} strokeWidth={1.75} />
+		{/snippet}
+	</SidebarRow>
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
@@ -227,24 +253,20 @@
 				</div>
 				<div class="mt-1 flex flex-col gap-0.5">
 					{#each voiceChannels as channel, i (channel.id)}
+						{@const topic = channel.topic?.trim()}
 						<div class="group/row relative">
-							<SidebarRow
-								label={channel.name}
-								active={voiceState.channelId === channel.id}
-								dragging={dragType === 'voice' && dragIndex === i}
-								draggable="true"
-								ondragstart={() => handleDragStart('voice', i)}
-								ondragover={(e) => handleDragOver(e, 'voice', i)}
-								ondrop={() => handleDrop('voice')}
-								ondragend={resetDrag}
-								onclick={() => {
-									if (voiceState.channelId !== channel.id) voiceState.joinVoice(channel.id);
-								}}
-							>
-								{#snippet icon()}
-									<Volume2 size={16} strokeWidth={1.75} />
-								{/snippet}
-							</SidebarRow>
+							{#if topic}
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										{#snippet child({ props })}
+											{@render voiceRow(channel, i, props)}
+										{/snippet}
+									</Tooltip.Trigger>
+									<Tooltip.Content side="right" sideOffset={8}>{topic}</Tooltip.Content>
+								</Tooltip.Root>
+							{:else}
+								{@render voiceRow(channel, i)}
+							{/if}
 							{@render settingsButton(channel)}
 						</div>
 						{#if voiceState.channelId === channel.id}
