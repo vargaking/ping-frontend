@@ -50,6 +50,9 @@ class MemoryTable<T extends Record<string, unknown>> {
 	async bulkPut(items: T[]): Promise<void> {
 		items.forEach((i) => this.upsert(i));
 	}
+	async get(key: T[keyof T]): Promise<T | undefined> {
+		return this.rows.find((r) => r[this.pk] === key);
+	}
 	async update(key: T[keyof T], changes: Partial<T>): Promise<number> {
 		const i = this.rows.findIndex((r) => r[this.pk] === key);
 		if (i < 0) return 0;

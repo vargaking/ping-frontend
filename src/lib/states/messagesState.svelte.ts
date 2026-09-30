@@ -1,4 +1,25 @@
-import type { MessageTarget, MessageType } from '$lib/types/messages.types';
+import type { MessageTarget, MessageType, Reaction } from '$lib/types/messages.types';
+
+/** Idempotent: adding an existing reaction or removing a missing one returns the input unchanged. */
+export function reactionsWith(
+	reactions: Reaction[] | undefined,
+	emoji: string,
+	userId: number,
+	added: boolean
+): Reaction[] {
+	const current = reactions ?? [];
+	const group = current.find((r) => r.emoji === emoji);
+	if (added) {
+		if (!group) return [...current, { emoji, user_ids: [userId] }];
+		if (group.user_ids.includes(userId)) return current;
+		return current.map((r) => (r === group ? { ...r, user_ids: [...r.user_ids, userId] } : r));
+	}
+	if (!group?.user_ids.includes(userId)) return current;
+	const user_ids = group.user_ids.filter((id) => id !== userId);
+	return user_ids.length === 0
+		? current.filter((r) => r !== group)
+		: current.map((r) => (r === group ? { ...r, user_ids } : r));
+}
 
 type ThreadMessages = {
 	messages: MessageType[];
@@ -86,6 +107,16 @@ class MessagesState {
 			const i = thread.messages.findIndex((m) => m.id === id);
 			if (i !== -1) {
 				thread.messages[i] = { ...thread.messages[i], ...changes };
+				return;
+			}
+		}
+	}
+
+	applyReaction(id: string, emoji: string, userId: number, added: boolean) {
+		for (const thread of Object.values(this.threads)) {
+			const message = thread.messages.find((m) => m.id === id);
+			if (message) {
+				message.reactions = reactionsWith(message.reactions, emoji, userId, added);
 				return;
 			}
 		}
