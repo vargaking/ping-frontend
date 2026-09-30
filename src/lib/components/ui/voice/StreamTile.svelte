@@ -1,7 +1,8 @@
 <script lang="ts">
-	import type { ScreenStream } from '$lib/states/voiceState.svelte';
+	import { voiceState, type ScreenStream } from '$lib/states/voiceState.svelte';
 	import StreamVideo from './StreamVideo.svelte';
-	import { Maximize2 } from 'lucide-svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { Maximize2, EyeOff, MonitorUp } from 'lucide-svelte';
 
 	type Props = {
 		stream: ScreenStream;
@@ -13,17 +14,33 @@
 	let video = $state<HTMLVideoElement | null>(null);
 
 	const name = $derived(stream.local ? 'Your screen' : `${stream.username}'s screen`);
+	const hidden = $derived(voiceState.previewHidden(stream));
+	const mirrors = $derived(voiceState.mirrorsSelf(stream));
+	const canHide = $derived(mirrors && !hidden);
+
+	const overlayButton =
+		'absolute top-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 </script>
 
 <li class="group relative aspect-video min-w-0 overflow-hidden rounded-xl bg-black">
-	<StreamVideo track={stream.track} bind:el={video} />
-	<button
-		type="button"
-		aria-label="Focus {name}"
-		onclick={onfocus}
-		ondblclick={() => video?.requestFullscreen()}
-		class="absolute inset-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
-	></button>
+	{#if hidden}
+		<div class="flex h-full flex-col items-center justify-center gap-2 p-4 pb-9 text-center">
+			<MonitorUp size={28} strokeWidth={1.5} class="text-muted-foreground" />
+			<p class="text-sm text-foreground">You're sharing your screen</p>
+			<Button variant="secondary" size="sm" onclick={() => (voiceState.selfPreview = true)}>
+				Show preview
+			</Button>
+		</div>
+	{:else}
+		<StreamVideo track={stream.track} bind:el={video} />
+		<button
+			type="button"
+			aria-label="Focus {name}"
+			onclick={onfocus}
+			ondblclick={mirrors ? undefined : () => video?.requestFullscreen()}
+			class="absolute inset-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+		></button>
+	{/if}
 	<div
 		class="pointer-events-none absolute right-2 bottom-2 left-2 flex items-center justify-between gap-2"
 		aria-hidden="true"
@@ -39,12 +56,24 @@
 			LIVE
 		</span>
 	</div>
-	<button
-		type="button"
-		aria-label="Fullscreen {name}"
-		onclick={() => video?.requestFullscreen()}
-		class="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-	>
-		<Maximize2 size={14} strokeWidth={1.75} />
-	</button>
+	{#if !mirrors}
+		<button
+			type="button"
+			aria-label="Fullscreen {name}"
+			onclick={() => video?.requestFullscreen()}
+			class="{overlayButton} right-2"
+		>
+			<Maximize2 size={14} strokeWidth={1.75} />
+		</button>
+	{/if}
+	{#if canHide}
+		<button
+			type="button"
+			aria-label="Hide preview"
+			onclick={() => (voiceState.selfPreview = false)}
+			class="{overlayButton} right-2"
+		>
+			<EyeOff size={14} strokeWidth={1.75} />
+		</button>
+	{/if}
 </li>
