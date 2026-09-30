@@ -1,23 +1,27 @@
 <script lang="ts">
 	import { usersState } from '$lib/states/usersState.svelte';
-	import type { User } from '$lib/types/auth.types';
+	import type { VoiceMember } from '$lib/states/voiceRoster.svelte';
 	import VoiceParticipant from './VoiceParticipant.svelte';
 
-	type Props = { userId: number; muted: boolean; deafened: boolean };
+	type Props = { member: VoiceMember };
 
-	let { userId, muted, deafened }: Props = $props();
+	let { member }: Props = $props();
 
-	let user = $state<User | null>(null);
+	const user = $derived(usersState.users[member.userId]);
+	const name = $derived(
+		(user?.username ?? member.fallbackName ?? '…') + (member.self ? ' (You)' : '')
+	);
 
 	$effect(() => {
-		let cancelled = false;
-		Promise.resolve(usersState.getOrFetchUser(userId)).then((u) => {
-			if (!cancelled) user = u;
-		});
-		return () => {
-			cancelled = true;
-		};
+		usersState.getOrFetchUser(member.userId);
 	});
 </script>
 
-<VoiceParticipant name={user?.username ?? '…'} avatar={user?.profile?.avatar} {muted} {deafened} />
+<VoiceParticipant
+	{name}
+	avatar={user?.profile?.avatar ?? member.fallbackAvatar}
+	speaking={member.speaking}
+	muted={member.muted}
+	deafened={member.deafened}
+	streaming={member.streaming}
+/>

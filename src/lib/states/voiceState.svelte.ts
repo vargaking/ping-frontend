@@ -12,7 +12,7 @@ import {
 	type LocalVideoTrack,
 	type TrackPublication
 } from 'livekit-client';
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
@@ -89,6 +89,8 @@ class VoiceState {
 	sharing: boolean = $state(false);
 	// participant identity -> their screen share video
 	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
+	/** Identities LiveKit reported gone since they last connected to this room. */
+	departed: SvelteSet<string> = $state(new SvelteSet());
 
 	private room: Room | null = null;
 	// One <audio> element per remote track, attached to the DOM so it plays.
@@ -271,10 +273,12 @@ class VoiceState {
 				this.detachTrack(track);
 			})
 			.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
+				this.departed.delete(p.identity);
 				this.upsertPeer(p);
 			})
 			.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
 				this.removePeer(p.identity);
+				this.departed.add(p.identity);
 				this.screens.delete(p.identity);
 			})
 			.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
@@ -479,6 +483,7 @@ class VoiceState {
 		this.fallback = { audioinput: false, audiooutput: false };
 		this.peers = new SvelteMap();
 		this.screens = new SvelteMap();
+		this.departed = new SvelteSet();
 		this.sharing = false;
 	}
 
