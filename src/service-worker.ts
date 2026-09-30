@@ -26,7 +26,7 @@ type SubscriptionChangeEvent = ExtendableEvent & {
 	newSubscription?: PushSubscription | null;
 };
 
-const ICON = '/notification-icon.png';
+const ICON = '/icon-192.png';
 
 function readPayload(event: PushEvent): PushPayload | null {
 	try {

@@ -3,6 +3,7 @@ import type { Attachment } from '$lib/types/attachment.types';
 import { messagePreviewText } from './messageContent';
 
 const BODY_LIMIT = 140;
+const ICON = '/icon-192.png';
 
 function truncate(text: string): string {
 	return text.length > BODY_LIMIT ? `${text.slice(0, BODY_LIMIT).trimEnd()}…` : text;
@@ -23,7 +24,11 @@ type NotifyOptions = {
  *  focus stolen) must never break message handling. */
 function notify(opts: NotifyOptions) {
 	try {
-		const notification = new Notification(opts.title, { body: truncate(opts.body), tag: opts.tag });
+		const notification = new Notification(opts.title, {
+			body: truncate(opts.body),
+			tag: opts.tag,
+			icon: ICON
+		});
 		notification.onclick = () => {
 			window.focus();
 			goto(opts.href);
