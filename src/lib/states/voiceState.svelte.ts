@@ -93,7 +93,7 @@ class VoiceState {
 	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
 	/** Identities LiveKit reported gone since they last connected to this room. */
 	departed: SvelteSet<string> = $state(new SvelteSet());
-	/** The user chose to see their own whole-screen share, which mirrors into itself. */
+	/** The user chose to see their own share even though it may mirror into itself. */
 	selfPreview: boolean = $state(false);
 
 	private room: Room | null = null;
@@ -176,9 +176,14 @@ class VoiceState {
 			: undefined;
 	}
 
-	/** A whole-screen capture would show its own preview inside itself. */
+	/** Your own share might be capturing the screen it's shown on. Some platforms
+	 *  (e.g. the Wayland portal) don't report the surface, so unknown counts too. */
+	mirrorsSelf(stream: ScreenStream): boolean {
+		return stream.local && stream.surface !== 'window' && stream.surface !== 'browser';
+	}
+
 	previewHidden(stream: ScreenStream): boolean {
-		return stream.local && stream.surface === 'monitor' && !this.selfPreview;
+		return this.mirrorsSelf(stream) && !this.selfPreview;
 	}
 
 	private applyQueue: Promise<void> = Promise.resolve();

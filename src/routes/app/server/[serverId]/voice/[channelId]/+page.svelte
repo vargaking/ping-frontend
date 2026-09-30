@@ -119,7 +119,7 @@
 							class="max-h-[70vh] rounded-xl"
 						/>
 						<div class="absolute top-2 right-2 flex gap-2">
-							{#if stream.local && stream.surface === 'monitor'}
+							{#if voiceState.mirrorsSelf(stream)}
 								<Button
 									variant="secondary"
 									size="sm"
@@ -128,11 +128,16 @@
 									<EyeOff size={14} strokeWidth={1.75} />
 									Hide preview
 								</Button>
+							{:else}
+								<Button
+									variant="secondary"
+									size="sm"
+									onclick={() => stageVideo?.requestFullscreen()}
+								>
+									<Maximize2 size={14} strokeWidth={1.75} />
+									Fullscreen
+								</Button>
 							{/if}
-							<Button variant="secondary" size="sm" onclick={() => stageVideo?.requestFullscreen()}>
-								<Maximize2 size={14} strokeWidth={1.75} />
-								Fullscreen
-							</Button>
 							<Button variant="secondary" size="sm" onclick={() => (focusedId = null)}>
 								<Minimize2 size={14} strokeWidth={1.75} />
 								Exit focus

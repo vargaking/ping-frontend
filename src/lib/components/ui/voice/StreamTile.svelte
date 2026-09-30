@@ -15,7 +15,8 @@
 
 	const name = $derived(stream.local ? 'Your screen' : `${stream.username}'s screen`);
 	const hidden = $derived(voiceState.previewHidden(stream));
-	const canHide = $derived(stream.local && stream.surface === 'monitor' && !hidden);
+	const mirrors = $derived(voiceState.mirrorsSelf(stream));
+	const canHide = $derived(mirrors && !hidden);
 
 	const overlayButton =
 		'absolute top-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
@@ -36,7 +37,7 @@
 			type="button"
 			aria-label="Focus {name}"
 			onclick={onfocus}
-			ondblclick={() => video?.requestFullscreen()}
+			ondblclick={mirrors ? undefined : () => video?.requestFullscreen()}
 			class="absolute inset-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
 		></button>
 	{/if}
@@ -55,7 +56,7 @@
 			LIVE
 		</span>
 	</div>
-	{#if !hidden}
+	{#if !mirrors}
 		<button
 			type="button"
 			aria-label="Fullscreen {name}"
@@ -70,7 +71,7 @@
 			type="button"
 			aria-label="Hide preview"
 			onclick={() => (voiceState.selfPreview = false)}
-			class="{overlayButton} right-11"
+			class="{overlayButton} right-2"
 		>
 			<EyeOff size={14} strokeWidth={1.75} />
 		</button>
