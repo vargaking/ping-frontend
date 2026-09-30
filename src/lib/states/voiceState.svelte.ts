@@ -1,6 +1,7 @@
 import {
 	DisconnectReason,
 	LocalAudioTrack,
+	LocalVideoTrack,
 	Room,
 	RoomEvent,
 	Track,
@@ -8,8 +9,6 @@ import {
 	type RemoteParticipant,
 	type Participant,
 	type RemoteVideoTrack,
-	type VideoPreset,
-	type LocalVideoTrack,
 	type TrackPublication
 } from 'livekit-client';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
@@ -25,7 +24,7 @@ import {
 import { InsecureContextError, describeMicError, describeVoiceError } from '$lib/utils/voiceErrors';
 import {
 	SCREEN_PRESETS,
-	SCREEN_PUBLISH,
+	screenPublishOptions,
 	isPickerCancel,
 	type ScreenContent,
 	type ScreenPresetId
@@ -55,6 +54,7 @@ export interface ScreenStream {
 
 /** Participant attribute other clients read to show someone as deafened. */
 const DEAFENED_ATTR = 'deafened';
+const SCREEN_REPUBLISH_GRACE_MS = 1000;
 const STORAGE_KEY = 'voice.selfState';
 const REJOIN_DELAYS_MS = [1000, 3000, 10000];
 
@@ -102,6 +102,10 @@ class VoiceState {
 	private leaving = false;
 	// Bumped by every join, rejoin and leave so superseded async work can tell.
 	private generation = 0;
+	private swappingScreen = false;
+	private pendingScreenPreset: ScreenPresetId | null = null;
+	// Removal of a remote screen tile is delayed so a republished track can replace it in place.
+	private screenRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 	// The saved device is unplugged and the call is on the default one instead.
 	private fallback = { audioinput: false, audiooutput: false };
 
@@ -157,7 +161,13 @@ class VoiceState {
 		});
 	}
 
+	private clearScreenRemoval(identity: string) {
+		clearTimeout(this.screenRemovals.get(identity));
+		this.screenRemovals.delete(identity);
+	}
+
 	private setScreen(p: Participant, track: RemoteVideoTrack | LocalVideoTrack) {
+		this.clearScreenRemoval(p.identity);
 		const local = p.identity === this.room?.localParticipant.identity;
 		this.screens.set(p.identity, {
 			id: `${p.identity}:screen`,
@@ -269,7 +279,7 @@ class VoiceState {
 			.on(RoomEvent.LocalTrackUnpublished, (pub, p) => {
 				this.upsertPeer(p);
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
-				if (pub.kind === Track.Kind.Video) {
+				if (pub.kind === Track.Kind.Video && !this.swappingScreen) {
 					this.sharing = false;
 					this.screens.delete(p.identity);
 				}
@@ -290,7 +300,16 @@ class VoiceState {
 		)
 			.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub: TrackPublication, p) => {
 				if (track.source === Track.Source.ScreenShare && track.kind === Track.Kind.Video) {
-					if (this.screens.get(p.identity)?.track === track) this.screens.delete(p.identity);
+					this.clearScreenRemoval(p.identity);
+					this.screenRemovals.set(
+						p.identity,
+						setTimeout(() => {
+							this.screenRemovals.delete(p.identity);
+							if (gen === this.generation && this.screens.get(p.identity)?.track === track) {
+								this.screens.delete(p.identity);
+							}
+						}, SCREEN_REPUBLISH_GRACE_MS)
+					);
 					return;
 				}
 				this.detachTrack(track);
@@ -302,6 +321,7 @@ class VoiceState {
 			.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
 				this.removePeer(p.identity);
 				this.departed.add(p.identity);
+				this.clearScreenRemoval(p.identity);
 				this.screens.delete(p.identity);
 			})
 			.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
@@ -370,7 +390,7 @@ class VoiceState {
 		if (!room || this.sharing) return;
 		const { preset } = SCREEN_PRESETS[voiceSettingsState.screenPreset];
 		try {
-			const pub = await room.localParticipant.setScreenShareEnabled(
+			await room.localParticipant.setScreenShareEnabled(
 				true,
 				{
 					audio: true,
@@ -381,13 +401,8 @@ class VoiceState {
 					systemAudio: 'include',
 					suppressLocalAudioPlayback: true
 				},
-				{
-					screenShareEncoding: SCREEN_PUBLISH.encoding,
-					screenShareSimulcastLayers: SCREEN_PUBLISH.layers,
-					simulcast: true
-				}
+				screenPublishOptions(voiceSettingsState.screenPreset)
 			);
-			if (pub?.track) await this.limitTopLayer(pub.track as LocalVideoTrack, preset);
 		} catch (err) {
 			if (isPickerCancel(err)) return;
 			console.warn('Screen share failed:', err);
@@ -403,35 +418,56 @@ class VoiceState {
 		}
 	}
 
-	/** Cap the highest simulcast layer at the preset's bitrate and frame rate. */
-	private async limitTopLayer(track: LocalVideoTrack, preset: VideoPreset) {
-		const sender = track.sender;
-		if (!sender) return;
-		const params = sender.getParameters();
-		// With simulcast the encodings run low to high, so the top layer has the largest bitrate.
-		const top = params.encodings.reduce((a, b) =>
-			(b.maxBitrate ?? 0) > (a.maxBitrate ?? 0) ? b : a
-		);
-		top.maxBitrate = preset.encoding.maxBitrate;
-		top.maxFramerate = preset.encoding.maxFramerate;
-		await sender.setParameters(params);
-	}
-
+	/** Republishes the same capture under the new preset's encodings, so viewers get real layers. */
 	async setScreenQuality(id: ScreenPresetId) {
 		voiceSettingsState.save({ screenPreset: id });
+		if (!this.localScreenTrack) return;
+		if (this.swappingScreen) {
+			this.pendingScreenPreset = id;
+			return;
+		}
+		this.swappingScreen = true;
+		let next: ScreenPresetId | null = id;
+		while (next) {
+			this.pendingScreenPreset = null;
+			if (!(await this.republishScreen(next))) break;
+			next = this.pendingScreenPreset;
+		}
+		this.pendingScreenPreset = null;
+		this.swappingScreen = false;
+	}
+
+	private async republishScreen(id: ScreenPresetId): Promise<boolean> {
+		const lp = this.room?.localParticipant;
 		const track = this.localScreenTrack;
-		if (!track) return;
+		if (!lp || !track) return false;
 		const { preset } = SCREEN_PRESETS[id];
+		const mst = track.mediaStreamTrack;
 		try {
-			await track.mediaStreamTrack.applyConstraints({
+			await lp.unpublishTrack(track, false);
+			await mst.applyConstraints({
 				width: { ideal: preset.width },
 				height: { ideal: preset.height },
 				frameRate: { ideal: preset.encoding.maxFramerate }
 			});
-			await this.limitTopLayer(track, preset);
+			const next = new LocalVideoTrack(mst, undefined, true);
+			next.source = Track.Source.ScreenShare;
+			await lp.publishTrack(next, {
+				source: Track.Source.ScreenShare,
+				...screenPublishOptions(id)
+			});
+			return true;
 		} catch (err) {
 			console.warn('Could not change screen share quality:', err);
-			toast('Quality applies next time you share.');
+			mst.stop();
+			this.swappingScreen = false;
+			this.sharing = false;
+			this.screens.delete(lp.identity);
+			await this.stopScreenShare();
+			const audio = lp.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
+			if (audio) await lp.unpublishTrack(audio).catch(() => {});
+			toast.error("Screen share stopped: couldn't change quality.");
+			return false;
 		}
 	}
 
@@ -505,6 +541,10 @@ class VoiceState {
 		this.sharedDeafened = null;
 		this.fallback = { audioinput: false, audiooutput: false };
 		this.peers = new SvelteMap();
+		this.screenRemovals.forEach((timer) => clearTimeout(timer));
+		this.screenRemovals.clear();
+		this.swappingScreen = false;
+		this.pendingScreenPreset = null;
 		this.screens = new SvelteMap();
 		this.departed = new SvelteSet();
 		this.sharing = false;
