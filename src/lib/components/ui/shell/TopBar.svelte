@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Logo from '$lib/components/brand/Logo.svelte';
 	import ConnectionPill from './ConnectionPill.svelte';
 	import WorkspaceSwitcher from './WorkspaceSwitcher.svelte';
 </script>
@@ -7,7 +8,11 @@
 	class="grid h-11 shrink-0 grid-cols-3 items-center border-b border-border bg-rail px-3 select-none"
 >
 	<!-- Left: wordmark -->
-	<a href="/app" class="justify-self-start font-mono text-sm font-medium tracking-tight lowercase">
+	<a
+		href="/app"
+		class="flex items-center gap-1.5 justify-self-start font-mono text-sm font-medium tracking-tight lowercase"
+	>
+		<Logo />
 		zeta
 	</a>
 

@@ -1,0 +1,23 @@
+<script lang="ts">
+	let { size = 18 }: { size?: number } = $props();
+
+	const id = $props.id();
+</script>
+
+<svg
+	xmlns="http://www.w3.org/2000/svg"
+	viewBox="0 0 512 512"
+	width={size}
+	height={size}
+	aria-hidden="true"
+	class="shrink-0"
+>
+	<mask id="{id}-cut">
+		<rect width="512" height="512" fill="#fff" />
+		<path d="M356 146L156 366" stroke="#000" stroke-width="78" stroke-linecap="round" />
+	</mask>
+	<g fill="none" stroke="#8ab4d8" stroke-width="54" stroke-linecap="round" stroke-linejoin="round">
+		<path d="M156 146H356M156 366H356" mask="url(#{id}-cut)" />
+		<path d="M356 146L156 366" />
+	</g>
+</svg>

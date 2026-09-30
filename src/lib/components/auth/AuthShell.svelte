@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import Logo from '$lib/components/brand/Logo.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -11,7 +12,7 @@
 
 <div class="flex min-h-screen flex-col bg-background text-foreground">
 	<header class="flex items-center justify-between px-5 py-4">
-		<span class="font-mono text-sm font-medium">zeta</span>
+		<span class="flex items-center gap-1.5 font-mono text-sm font-medium"><Logo />zeta</span>
 		<span class="font-mono text-[11px] text-text-subtle">{host}</span>
 	</header>
 

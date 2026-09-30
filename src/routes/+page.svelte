@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowRight } from 'lucide-svelte';
+	import Logo from '$lib/components/brand/Logo.svelte';
 
 	const roadmap = [
 		{
@@ -45,7 +46,9 @@
 <div class="min-h-screen w-full bg-background text-foreground">
 	<header class="topbar sticky z-10 h-11 border-b border-border">
 		<div class="mx-auto flex h-full max-w-[720px] items-center justify-between px-5">
-			<span class="font-mono text-sm font-medium tracking-tight">zeta</span>
+			<span class="flex items-center gap-1.5 font-mono text-sm font-medium tracking-tight"
+				><Logo />zeta</span
+			>
 			<span
 				class="rounded-md border border-border bg-card px-2 py-[3px] font-mono text-[11px] tracking-wide text-muted-foreground"
 			>
