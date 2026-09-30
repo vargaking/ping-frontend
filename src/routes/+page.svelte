@@ -67,7 +67,7 @@
 				A calm home for your server's chat and voice.
 			</h1>
 			<p class="mt-5 max-w-[44ch] text-base leading-relaxed text-muted-foreground">
-				Self-hosted, yours to shape, and quiet by default.
+				Self-hosted and yours to shape.
 			</p>
 
 			<div class="mt-8 flex flex-wrap gap-3">

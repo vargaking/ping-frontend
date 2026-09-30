@@ -12,7 +12,11 @@
 
 <div class="flex min-h-screen flex-col bg-background text-foreground">
 	<header class="flex items-center justify-between px-5 py-4">
-		<span class="flex items-center gap-1.5 font-mono text-sm font-medium"><Logo />zeta</span>
+		<a
+			href="/"
+			class="flex items-center gap-1.5 rounded-sm font-mono text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+			><Logo />zeta</a
+		>
 		<span class="font-mono text-[11px] text-text-subtle">{host}</span>
 	</header>
 
