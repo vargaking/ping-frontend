@@ -35,9 +35,11 @@
 		}
 	}
 
-	const pushShown = $derived(notificationsState.push === 'off' || notificationsState.push === 'on');
+	const pushShown = $derived(notificationsState.push !== 'unsupported');
 	const pushDisabled = $derived(
 		notificationsState.pushBusy ||
+			notificationsState.push === 'disabled' ||
+			notificationsState.push === 'unavailable' ||
 			(notificationsState.push === 'off' &&
 				(notificationsState.permission === 'denied' || !notificationsState.desktop))
 	);
@@ -89,7 +91,15 @@
 				disabled={pushDisabled}
 				onclick={togglePush}
 			>
-				{#if notificationsState.push === 'off' && notificationsState.permission === 'denied'}
+				{#if notificationsState.push === 'disabled'}
+					<span class="text-xs text-muted-foreground">
+						This server doesn't have closed-tab notifications set up.
+					</span>
+				{:else if notificationsState.push === 'unavailable'}
+					<span class="text-xs text-muted-foreground">
+						Couldn't check closed-tab notifications. Try again later.
+					</span>
+				{:else if notificationsState.push === 'off' && notificationsState.permission === 'denied'}
 					<span class="text-xs text-destructive">
 						Notifications are blocked in your browser. Allow them in your site settings to turn this
 						on.

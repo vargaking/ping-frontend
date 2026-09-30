@@ -13,8 +13,9 @@ const SOUND_KEY = 'notifications:sound';
 
 export type NotificationPermissionState = 'default' | 'granted' | 'denied' | 'unsupported';
 
-/** `disabled` means the server has push turned off. */
-export type PushState = 'unsupported' | 'disabled' | 'off' | 'on';
+/** `disabled` means the server has push turned off; `unavailable` means we couldn't
+ *  find out (the config or subscription lookup failed). */
+export type PushState = 'unsupported' | 'disabled' | 'unavailable' | 'off' | 'on';
 
 function readBool(key: string, fallback: boolean): boolean {
 	try {
@@ -95,7 +96,7 @@ class NotificationsState {
 				});
 			}
 		} catch {
-			this.push = 'disabled';
+			this.push = 'unavailable';
 		} finally {
 			this.pushChecked = true;
 		}
