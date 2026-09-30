@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { serversState } from '$lib/states/serversState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
+	import NoServersCard from '$lib/components/servers/NoServersCard.svelte';
 	import { MessagesSquare } from 'lucide-svelte';
 
 	// Open the last DM the user had open, else the most recently active one.
@@ -20,7 +22,7 @@
 </script>
 
 {#if conversationsState.loaded && conversationsState.list.length === 0}
-	<div class="flex h-full items-center justify-center p-8">
+	<div class="flex h-full flex-col items-center justify-center gap-6 p-8">
 		{#if conversationsState.loadFailed}
 			<ErrorState
 				title="Couldn’t load conversations"
@@ -36,6 +38,10 @@
 					<MessagesSquare size={20} strokeWidth={1.75} />
 				{/snippet}
 			</EmptyState>
+		{/if}
+
+		{#if serversState.loaded && serversState.serversList.length === 0}
+			<NoServersCard />
 		{/if}
 	</div>
 {/if}

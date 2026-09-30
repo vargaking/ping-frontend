@@ -5,10 +5,14 @@
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import ServerRailItem from './ServerRailItem.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
-	import { MessagesSquare } from 'lucide-svelte';
+	import AddServerDialog from '$lib/components/servers/AddServerDialog.svelte';
+	import { mergeProps } from 'bits-ui';
+	import { MessagesSquare, Plus } from 'lucide-svelte';
 
 	const activeServerId = $derived(page.params.serverId ? parseInt(page.params.serverId) : null);
 	const directActive = $derived(page.route.id?.startsWith('/app/direct') ?? false);
+
+	let addOpen = $state(false);
 
 	const dmUnreadTotal = $derived(conversationsState.unreadTotal);
 	const directLabel = $derived(
@@ -73,4 +77,24 @@
 			{/each}
 		</div>
 	{/if}
+
+	<Tooltip.Provider>
+		<Tooltip.Root delayDuration={0}>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<button
+						type="button"
+						aria-label="Add a server"
+						class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent bg-card text-text-label transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-rail focus-visible:outline-none"
+						{...mergeProps(props, { onclick: () => (addOpen = true) })}
+					>
+						<Plus size={18} strokeWidth={1.75} />
+					</button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content side="right" sideOffset={8}>Add a server</Tooltip.Content>
+		</Tooltip.Root>
+	</Tooltip.Provider>
 </nav>
+
+<AddServerDialog bind:open={addOpen} />
