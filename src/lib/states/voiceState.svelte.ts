@@ -474,12 +474,12 @@ class VoiceState {
 
 		if (this.leaving || reason === DisconnectReason.CLIENT_INITIATED) {
 			this.cleanup();
-		} else if (reason === DisconnectReason.DUPLICATE_IDENTITY) {
+		} else if (
+			reason === DisconnectReason.DUPLICATE_IDENTITY ||
+			reason === DisconnectReason.PARTICIPANT_REMOVED
+		) {
 			this.cleanup();
-			toast('You joined voice from another tab or device.');
-		} else if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
-			this.cleanup();
-			toast.error('You were removed from the voice channel.');
+			toast('You joined voice somewhere else.');
 		} else if (
 			reason === DisconnectReason.ROOM_DELETED ||
 			reason === DisconnectReason.ROOM_CLOSED
