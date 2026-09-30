@@ -19,6 +19,8 @@
 
 <VoiceTile
 	{name}
+	toneKey={member.userId}
+	initialsFrom={user?.username ?? member.fallbackName ?? '?'}
 	avatar={user?.profile?.avatar ?? member.fallbackAvatar}
 	speaking={member.speaking}
 	muted={member.muted}

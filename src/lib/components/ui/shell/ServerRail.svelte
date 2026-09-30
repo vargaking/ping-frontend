@@ -68,6 +68,7 @@
 				{@const serverUnread = server.id != null ? unreadState.serverUnread(server.id) : null}
 				<ServerRailItem
 					name={server.name}
+					serverId={server.id ?? server.name}
 					href={`/app/server/${server.id}/`}
 					iconUrl={server.server_profile?.icon ?? null}
 					active={server.id === activeServerId}

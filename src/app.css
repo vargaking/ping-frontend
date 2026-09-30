@@ -58,6 +58,20 @@
 	--idle: oklch(0.785 0.121 91);
 	--offline: oklch(0.496 0.016 248.2);
 	--destructive-border: oklch(0.36 0.063 23.5);
+
+	/* default avatar tints: blue, green, yellow, violet, teal, slate */
+	--avatar-1: oklch(0.32 0.05 245);
+	--avatar-1-fg: oklch(0.86 0.07 245);
+	--avatar-2: oklch(0.32 0.05 157);
+	--avatar-2-fg: oklch(0.86 0.07 157);
+	--avatar-3: oklch(0.32 0.05 91);
+	--avatar-3-fg: oklch(0.86 0.07 91);
+	--avatar-4: oklch(0.32 0.05 300);
+	--avatar-4-fg: oklch(0.86 0.07 300);
+	--avatar-5: oklch(0.32 0.05 195);
+	--avatar-5-fg: oklch(0.86 0.07 195);
+	--avatar-6: oklch(0.32 0.02 250);
+	--avatar-6-fg: oklch(0.86 0.03 250);
 }
 
 @theme inline {
@@ -114,6 +128,18 @@
 	--color-idle: var(--idle);
 	--color-offline: var(--offline);
 	--color-destructive-border: var(--destructive-border);
+	--color-avatar-1: var(--avatar-1);
+	--color-avatar-1-fg: var(--avatar-1-fg);
+	--color-avatar-2: var(--avatar-2);
+	--color-avatar-2-fg: var(--avatar-2-fg);
+	--color-avatar-3: var(--avatar-3);
+	--color-avatar-3-fg: var(--avatar-3-fg);
+	--color-avatar-4: var(--avatar-4);
+	--color-avatar-4-fg: var(--avatar-4-fg);
+	--color-avatar-5: var(--avatar-5);
+	--color-avatar-5-fg: var(--avatar-5-fg);
+	--color-avatar-6: var(--avatar-6);
+	--color-avatar-6-fg: var(--avatar-6-fg);
 }
 
 @layer base {

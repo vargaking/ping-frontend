@@ -4,6 +4,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { avatarToneClass, initials } from '$lib/utils/avatar';
 
 	type ConnState = 'connected' | 'reconnecting' | 'disconnected';
 
@@ -33,15 +34,17 @@
 	const identityHost = $derived(env.PUBLIC_IDENTITY_URL ? hostOf(env.PUBLIC_IDENTITY_URL) : null);
 </script>
 
-{#snippet row(name: string, host: string, monogram: string, iconUrl: string | null)}
+{#snippet row(name: string, host: string, toneKey: number | string, iconUrl: string | null)}
 	<div class="flex h-12 items-center gap-3 px-4">
 		<span
-			class="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-accent text-xs font-semibold"
+			class="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg text-xs font-semibold {avatarToneClass(
+				toneKey
+			)}"
 		>
 			{#if iconUrl}
 				<img src={iconUrl} alt="" class="h-full w-full object-cover" />
 			{:else}
-				{monogram}
+				{initials(name)}
 			{/if}
 		</span>
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -62,7 +65,7 @@
 		{@render row(
 			usersState.loggedInUser?.username ?? 'You',
 			identityHost,
-			(usersState.loggedInUser?.username ?? 'Y').charAt(0).toUpperCase(),
+			usersState.loggedInUser?.id ?? 0,
 			usersState.loggedInUser?.profile?.avatar ?? null
 		)}
 	{/if}
@@ -74,7 +77,7 @@
 		{@render row(
 			server.name,
 			serverHost,
-			server.name.charAt(0).toUpperCase(),
+			server.id ?? server.name,
 			server.server_profile?.icon ?? null
 		)}
 	{/each}
