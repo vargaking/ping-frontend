@@ -185,8 +185,10 @@
 			onclick: (e: MouseEvent) => {
 				// Opening the link in a new tab shouldn't join from this one.
 				if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-				serversState.setSelectedChannel(channel);
-				if (voiceState.channelId !== channel.id) voiceState.joinVoice(channel.id);
+				const serverId = serversState.selectedServerId;
+				if (serverId != null && voiceState.channelId !== channel.id) {
+					voiceState.joinVoice(serverId, channel.id);
+				}
 			}
 		})}
 		label={channel.name}
@@ -301,7 +303,6 @@
 							ondragover={(e) => handleDragOver(e, 'text', i)}
 							ondrop={() => handleDrop('text')}
 							ondragend={resetDrag}
-							onclick={() => serversState.setSelectedChannel(channel)}
 						>
 							{#snippet icon()}
 								<Hash size={16} strokeWidth={1.75} />

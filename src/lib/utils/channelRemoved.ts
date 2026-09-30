@@ -10,9 +10,9 @@ import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
  */
 export async function channelRemoved(serverId: number, channelId: number, byMe = false) {
 	const wasViewing =
-		serversState.selectedServer?.id === serverId && serversState.selectedChannel?.id === channelId;
+		serversState.selectedServerId === serverId && serversState.selectedChannelId === channelId;
 	const wasInVoice = voiceState.channelId === channelId;
-	const name = serversState.selectedServerChannels[channelId]?.name;
+	const name = serversState.channels[serverId]?.[channelId]?.name;
 
 	serversState.removeChannel(serverId, channelId);
 	voicePresenceState.forgetChannel(channelId);

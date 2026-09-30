@@ -15,7 +15,7 @@
 	let membersOpen = $state(true);
 
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
-	const serverId = $derived(serversState.selectedServer?.id ?? null);
+	const serverId = $derived(page.params.serverId ? parseInt(page.params.serverId) : null);
 
 	const target = $derived<MessageTarget | null>(
 		serverId != null && currentChannelId != null
@@ -23,12 +23,9 @@
 			: null
 	);
 
-	// Also waits on the channel itself, so a direct load selects it once the
-	// server's channels arrive.
 	$effect(() => {
 		const channelId = currentChannelId;
-		if (channelId == null || !serversState.selectedServerChannels[channelId]) return;
-		untrack(() => serversState.setSelectedChannelById(channelId));
+		untrack(() => serversState.setSelectedChannelId(channelId));
 	});
 </script>
 
@@ -43,9 +40,7 @@
 				{target}
 				fetchPage={(before) => getChannelMessages(channelId, before)}
 				readCache={() =>
-					db.messages
-						.where({ server_id: serversState.selectedServer?.id, channel_id: channelId })
-						.sortBy('timestamp')}
+					db.messages.where({ server_id: serverId, channel_id: channelId }).sortBy('timestamp')}
 				emptyDescription="Be the first to say something in this channel."
 				errorDescription="There was a problem reading this channel."
 			/>

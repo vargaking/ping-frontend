@@ -21,13 +21,7 @@ export async function clearSession(): Promise<void> {
 
 	usersState.reset();
 
-	// serversState is also edited by the realtime work, so clear its public
-	// reactive fields here instead of adding a method to that file.
-	serversState.servers = {};
-	serversState.loaded = false;
-	serversState.selectedServer = null;
-	serversState.selectedServerChannels = {};
-	serversState.selectedChannel = null;
+	serversState.reset();
 
 	messagesState.clearAll();
 	conversationsState.reset();

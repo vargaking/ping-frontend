@@ -103,6 +103,11 @@
 		try {
 			const server = await createServer({ name: trimmed });
 			serversState.addServer(server);
+			if (server.id != null) {
+				serversState
+					.fetchServerChannels(server.id)
+					.catch((e) => console.warn('Failed to load channels for new server', e));
+			}
 
 			// The server exists from here on, so a failed icon doesn't undo it.
 			if (iconFile && server.id != null) {

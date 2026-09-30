@@ -20,7 +20,7 @@
 	const channel = $derived(
 		channelId != null ? (serversState.selectedServerChannels[channelId] ?? null) : null
 	);
-	const channelsLoaded = $derived(serversState.selectedServerChannelsList.length > 0);
+	const channelsLoaded = $derived(serversState.selectedServerChannelsLoaded);
 
 	const inThisCall = $derived(channelId != null && voiceState.channelId === channelId);
 	const live = $derived(inThisCall && voiceState.connected);
@@ -56,18 +56,22 @@
 
 	$effect(() => {
 		const id = channelId;
-		if (id == null || !channel) return;
+		if (id == null) return;
+		untrack(() => serversState.setSelectedChannelId(id));
+		if (!channel) return;
 		if (channel.type !== 'voice') {
 			untrack(() =>
 				goto(`/app/server/${page.params.serverId}/channel/${id}/`, { replaceState: true })
 			);
 			return;
 		}
-		untrack(() => serversState.setSelectedChannelById(id));
 	});
 
 	function join() {
-		if (channelId != null && !inThisCall) voiceState.joinVoice(channelId);
+		const serverId = page.params.serverId ? parseInt(page.params.serverId) : null;
+		if (serverId != null && channelId != null && !inThisCall) {
+			voiceState.joinVoice(serverId, channelId);
+		}
 	}
 </script>
 

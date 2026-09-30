@@ -592,10 +592,8 @@ class VoiceState {
 		await this.setSelfState({ muted: this.muted, deafened: !this.deafened });
 	}
 
-	async joinVoice(channelId: number) {
-		const user = usersState.loggedInUser;
-		const serverId = serversState.selectedServer?.id;
-		if (!user || !serverId) return;
+	async joinVoice(serverId: number, channelId: number) {
+		if (!usersState.loggedInUser) return;
 
 		// Already connected somewhere: leave first. Leaving bumps the generation,
 		// so this attempt's own is taken afterwards.
@@ -606,7 +604,7 @@ class VoiceState {
 		this.reconnecting = false;
 		this.channelId = channelId;
 		this.serverId = serverId;
-		this.channelName = serversState.selectedServerChannels[channelId]?.name ?? null;
+		this.channelName = serversState.channels[serverId]?.[channelId]?.name ?? null;
 
 		try {
 			await this.connect(channelId, gen);

@@ -60,8 +60,8 @@ class SocketState {
 			this.reconnecting = false;
 
 			// Voice frames sent while we were offline are gone, so refetch.
-			const serverId = serversState.selectedServer?.id;
-			if (this.hasConnected && serverId) voicePresenceState.load(serverId);
+			const serverId = serversState.selectedServerId;
+			if (this.hasConnected && serverId != null) voicePresenceState.load(serverId);
 			this.hasConnected = true;
 		};
 
@@ -190,15 +190,14 @@ class SocketState {
 	}
 
 	async handleIncomingMessage(message: MessageType) {
-		const selectedServer = serversState.selectedServer;
-		const selectedChannel = serversState.selectedChannel;
 		const me = usersState.loggedInUser;
 		const mine = me != null && message.user_id === me.id;
 		const channelId = message.channel_id;
 		const serverId = message.server_id;
 
 		const isCurrentThread =
-			message.server_id == selectedServer?.id && message.channel_id == selectedChannel?.id;
+			message.server_id == serversState.selectedServerId &&
+			message.channel_id == serversState.selectedChannelId;
 		if (isCurrentThread) {
 			messagesState.addMessage(message);
 		}

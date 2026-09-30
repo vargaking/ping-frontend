@@ -28,10 +28,7 @@
 	const channelName = $derived.by(() => {
 		const { channelId, serverId } = voiceState;
 		if (channelId == null) return 'Voice';
-		const live =
-			serverId === serversState.selectedServer?.id
-				? serversState.selectedServerChannels[channelId]?.name
-				: undefined;
+		const live = serverId != null ? serversState.channels[serverId]?.[channelId]?.name : undefined;
 		return live ?? voiceState.channelName ?? 'Voice';
 	});
 	const channelHref = $derived(
