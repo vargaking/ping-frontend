@@ -22,7 +22,12 @@ import {
 	refreshVoicePresence,
 	refreshVoicePresenceOnUnload
 } from '$lib/requests/voice/refreshVoicePresence';
-import { InsecureContextError, describeMicError, describeVoiceError } from '$lib/utils/voiceErrors';
+import {
+	InsecureContextError,
+	classifyMicError,
+	describeVoiceError,
+	type MicIssue
+} from '$lib/utils/voiceErrors';
 import {
 	SCREEN_PRESETS,
 	SCREEN_PUBLISH,
@@ -85,6 +90,10 @@ class VoiceState {
 	deafened: boolean = $state(false);
 	/** What the mic button shows: deafening always silences the mic too. */
 	readonly micOff: boolean = $derived(this.muted || this.deafened);
+	/** Why the mic isn't live although the user wants it. Not saved: the next join asks again. */
+	micError: MicIssue | null = $state(null);
+	/** The in-app explainer shown before the browser's own microphone prompt. */
+	micPrompt: { resolve: (allow: boolean) => void } | null = $state(null);
 	// participant identity (user id) -> VoicePeer
 	peers: SvelteMap<string, VoicePeer> = $state(new SvelteMap());
 	/** The user's own screen share is live. */
@@ -104,6 +113,9 @@ class VoiceState {
 	private generation = 0;
 	// The saved device is unplugged and the call is on the default one instead.
 	private fallback = { audioinput: false, audiooutput: false };
+	private micWatch: { status: PermissionStatus; onChange: () => void } | null = null;
+	// Bumped whenever the permission listener is replaced or removed.
+	private micWatchSeq = 0;
 
 	private parseProfile(p: Participant): any {
 		// We stash the user's profile JSON in participant metadata when we can;
@@ -205,9 +217,10 @@ class VoiceState {
 
 		this.audioEls.forEach((el) => (el.muted = this.deafened));
 
-		// Only publishes a mic when it should be live, so joining muted never opens one.
+		// Only publishes a mic when it should be live, so joining muted never opens one,
+		// and a mic that already failed isn't retried until the user asks.
 		let changed = false;
-		const micOn = !this.micOff;
+		const micOn = !this.micOff && !this.micError;
 		if (micOn !== room.localParticipant.isMicrophoneEnabled) {
 			await room.localParticipant.setMicrophoneEnabled(micOn);
 			changed = true;
@@ -226,6 +239,61 @@ class VoiceState {
 		}
 		if (changed) this.announce(room);
 		this.upsertPeer(room.localParticipant);
+	}
+
+	private setMicError(issue: MicIssue | null) {
+		this.micError = issue;
+		this.unwatchMic();
+		if (issue && this.room) void this.watchMic();
+	}
+
+	/** Try to go live again. When permission was never given, this is what makes the browser
+	 *  ask; a failure sets the error again through setSelfState. */
+	async retryMic() {
+		this.setMicError(null);
+		await this.setSelfState({ muted: false, deafened: false });
+	}
+
+	private async micPermission(): Promise<PermissionStatus | null> {
+		try {
+			return (await navigator.permissions?.query({ name: 'microphone' as PermissionName })) ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Retry on its own once the user allows the mic in the browser's settings. */
+	private async watchMic() {
+		this.unwatchMic();
+		if (this.micError !== 'blocked' && this.micError !== 'off') return;
+		const seq = this.micWatchSeq;
+		const gen = this.generation;
+		const status = await this.micPermission();
+		if (!status || seq !== this.micWatchSeq) return;
+		const onChange = () => {
+			if (status.state === 'granted' && gen === this.generation && this.room) void this.retryMic();
+		};
+		status.addEventListener('change', onChange);
+		this.micWatch = { status, onChange };
+	}
+
+	private unwatchMic() {
+		this.micWatchSeq++;
+		this.micWatch?.status.removeEventListener('change', this.micWatch.onChange);
+		this.micWatch = null;
+	}
+
+	/** Explain why the mic is needed before the browser asks. Resolves true to go ahead. */
+	private askForMic(): Promise<boolean> {
+		this.micPrompt?.resolve(false);
+		return new Promise((resolve) => {
+			this.micPrompt = {
+				resolve: (allow) => {
+					this.micPrompt = null;
+					resolve(allow);
+				}
+			};
+		});
 	}
 
 	/** Let members outside the call see a change to this room now. */
@@ -512,6 +580,8 @@ class VoiceState {
 	}
 
 	private cleanup() {
+		this.micPrompt?.resolve(false);
+		this.setMicError(null);
 		this.resetRoom();
 		this.channelId = null;
 		this.serverId = null;
@@ -568,10 +638,14 @@ class VoiceState {
 			await this.applySelfState();
 		} catch (err) {
 			console.error('Failed to update microphone:', err);
-			this.muted = prev.muted;
-			this.deafened = prev.deafened;
-			this.persistSelfState();
-			if (!next.muted && !next.deafened) toast.error(describeMicError(err));
+			if (!next.muted && !next.deafened) {
+				// The user wants to talk, so keep that choice and let the dock explain what's wrong.
+				this.setMicError(classifyMicError(err));
+			} else {
+				this.muted = prev.muted;
+				this.deafened = prev.deafened;
+				this.persistSelfState();
+			}
 			await this.applySelfState().catch(() => {});
 		}
 	}
@@ -579,7 +653,9 @@ class VoiceState {
 	/** Toggle the mic. Unmuting while deafened also undeafens, since a live mic
 	 *  you can't hear back through is never what was meant. */
 	async toggleMute() {
-		if (this.deafened) {
+		if (this.micError) {
+			await this.retryMic();
+		} else if (this.deafened) {
 			await this.setSelfState({ muted: false, deafened: false });
 		} else {
 			await this.setSelfState({ muted: !this.muted, deafened: false });
@@ -622,6 +698,17 @@ class VoiceState {
 		if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
 			throw new InsecureContextError();
 		}
+		const fresh = !this.reconnecting;
+
+		// 0. On a fresh join, explain the mic prompt first. A rejoin never asks again.
+		if (fresh) {
+			this.setMicError(null);
+			if (!this.micOff && (await this.micPermission())?.state === 'prompt') {
+				const allow = await this.askForMic();
+				if (gen !== this.generation) return;
+				if (!allow) this.micError = 'off';
+			}
+		}
 
 		// 1. Get a LiveKit token from ping-server (membership checked there).
 		const { token, url } = await axiosClient
@@ -654,12 +741,11 @@ class VoiceState {
 				await this.applySelfState();
 			} catch (err) {
 				if (gen !== this.generation) return await this.dropRoom(room, channelId);
-				this.muted = true;
-				this.persistSelfState();
-				toast.error(describeMicError(err));
+				this.setMicError(classifyMicError(err));
 				await this.applySelfState().catch(() => {});
 			}
 			if (gen !== this.generation) return await this.dropRoom(room, channelId);
+			if (this.micError) void this.watchMic();
 
 			// 4. Seed the peers map: self + everyone already in the room.
 			this.upsertPeer(room.localParticipant);
@@ -671,6 +757,9 @@ class VoiceState {
 			this.connected = true;
 			this.connecting = false;
 			this.reconnecting = false;
+
+			if (fresh && this.deafened) toast("You're deafened");
+			else if (fresh && this.muted) toast("You're muted");
 		} catch (err) {
 			await this.dropRoom(room, channelId);
 			if (gen !== this.generation) return;
