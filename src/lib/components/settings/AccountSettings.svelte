@@ -10,6 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { logout } from '$lib/auth/session';
+	import { dropLocalSubscription } from '$lib/utils/push';
 	import SettingsForm from './SettingsForm.svelte';
 	import SettingsTextField from './SettingsTextField.svelte';
 	import DangerZone from './DangerZone.svelte';
@@ -137,6 +138,7 @@
 			toast.error(`Couldn't delete your account: ${getErrorMessage(e)}`);
 			return;
 		}
+		await dropLocalSubscription();
 		usersState.setLoggedInUser(null);
 		window.location.href = '/login';
 	}

@@ -4,8 +4,10 @@ import { serversState } from '$lib/states/serversState.svelte';
 import { messagesState } from '$lib/states/messagesState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { unreadState } from '$lib/states/unreadState.svelte';
+import { notificationsState } from '$lib/states/notificationsState.svelte';
 import { socketState } from '$lib/states/socketState.svelte';
 import { clearLocalCache } from '$lib/utils/db';
+import { disablePush } from '$lib/utils/push';
 import { logout as logoutRequest } from '$lib/requests/auth/logout';
 
 /**
@@ -30,6 +32,7 @@ export async function clearSession(): Promise<void> {
 	messagesState.clearAll();
 	conversationsState.reset();
 	unreadState.reset();
+	notificationsState.resetPush();
 
 	try {
 		await clearLocalCache();
@@ -39,11 +42,18 @@ export async function clearSession(): Promise<void> {
 }
 
 /**
- * Full logout: tell the server to drop the session, wipe local state, and land
+ * Full logout: remove the push subscription, tell the server to drop the session, wipe local state, and land
  * on /login. The cookie is cleared server-side even if the request fails, so we
  * always tear down and redirect regardless.
  */
 export async function logout(): Promise<void> {
+	// Needs the session cookie, so it has to come before the logout request.
+	// Otherwise the next account on this browser would receive these pushes.
+	try {
+		await disablePush();
+	} catch (e) {
+		console.warn('Failed to remove push subscription; logging out anyway', e);
+	}
 	try {
 		await logoutRequest();
 	} catch (e) {

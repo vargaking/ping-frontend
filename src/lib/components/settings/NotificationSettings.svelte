@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import SettingsSwitch from './SettingsSwitch.svelte';
 
 	onMount(() => {
 		notificationsState.refreshPermission();
 		notificationsState.attachPermissionListeners();
+		void notificationsState.refreshPush();
 	});
 
 	const desktopDisabled = $derived(
@@ -33,6 +35,26 @@
 		}
 	}
 
+	const pushShown = $derived(notificationsState.push === 'off' || notificationsState.push === 'on');
+	const pushDisabled = $derived(
+		notificationsState.pushBusy ||
+			(notificationsState.push === 'off' &&
+				(notificationsState.permission === 'denied' || !notificationsState.desktop))
+	);
+
+	async function togglePush() {
+		if (pushDisabled) return;
+
+		if (notificationsState.push === 'on') {
+			await notificationsState.setPush(false);
+			return;
+		}
+
+		// Must be called straight from this click, like the permission request above.
+		const result = await notificationsState.setPush(true);
+		if (result === 'error') toast.error("Couldn't turn on notifications. Try again in a moment.");
+	}
+
 	function toggleSound() {
 		notificationsState.setSound(!notificationsState.sound);
 	}
@@ -58,6 +80,25 @@
 				</span>
 			{/if}
 		</SettingsSwitch>
+
+		{#if pushShown}
+			<SettingsSwitch
+				label="Notify me when zeta is closed"
+				description="DMs and @mentions, even with every tab closed."
+				checked={notificationsState.push === 'on'}
+				disabled={pushDisabled}
+				onclick={togglePush}
+			>
+				{#if notificationsState.push === 'off' && notificationsState.permission === 'denied'}
+					<span class="text-xs text-destructive">
+						Notifications are blocked in your browser. Allow them in your site settings to turn this
+						on.
+					</span>
+				{:else if notificationsState.push === 'off' && !notificationsState.desktop}
+					<span class="text-xs text-muted-foreground">Turn on desktop notifications first.</span>
+				{/if}
+			</SettingsSwitch>
+		{/if}
 
 		<SettingsSwitch
 			label="Sound"
