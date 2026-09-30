@@ -62,7 +62,7 @@
 		<hr class="my-0.5 w-6 border-t border-border" />
 
 		<div
-			class="-mt-1 scrollbar-none flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pt-1 pb-1"
+			class="-mt-1 scrollbar-none flex min-h-0 w-full flex-col items-center gap-2 overflow-y-auto pt-1 pb-1"
 		>
 			{#each serversState.serversList as server (server.id)}
 				{@const serverUnread = server.id != null ? unreadState.serverUnread(server.id) : null}
