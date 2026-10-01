@@ -5,7 +5,10 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 </script>
 
-<aside class="flex w-[248px] shrink-0 flex-col border-r border-border bg-sidebar">
+<aside
+	aria-label="Channels"
+	class="flex w-[248px] shrink-0 flex-col border-r border-border bg-sidebar"
+>
 	<Tooltip.Provider>
 		<ChannelList />
 	</Tooltip.Provider>

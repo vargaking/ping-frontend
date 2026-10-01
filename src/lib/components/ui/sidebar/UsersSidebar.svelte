@@ -31,7 +31,10 @@
 	);
 </script>
 
-<aside class="flex h-full w-[232px] shrink-0 flex-col border-l border-border bg-sidebar">
+<aside
+	aria-label="Members"
+	class="flex h-full w-[232px] shrink-0 flex-col border-l border-border bg-sidebar"
+>
 	<div class="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-5 scrollbar-stable">
 		{#if onlineUsers.length > 0}
 			<section>
