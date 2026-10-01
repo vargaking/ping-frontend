@@ -1,12 +1,15 @@
 <script lang="ts">
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
-	import { avatarToneClass, initials } from '$lib/utils/avatar';
+	import { serverToneClass } from '$lib/utils/avatar';
+	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
 
 	type Props = {
 		name: string;
 		serverId: number | string;
 		href: string;
 		iconUrl?: string | null;
+		iconText?: string | null;
+		iconTone?: number | null;
 		active?: boolean;
 		/** Unread but no mentions — shows a dot. */
 		unread?: boolean;
@@ -20,13 +23,15 @@
 		serverId,
 		href,
 		iconUrl = null,
+		iconText = null,
+		iconTone = null,
 		active = false,
 		unread = false,
 		mentions = 0,
 		muted = false
 	}: Props = $props();
 
-	const toneClass = $derived(avatarToneClass(serverId));
+	const toneClass = $derived(serverToneClass(serverId, iconText, iconTone));
 	const stateClasses = $derived(
 		active
 			? 'bg-primary/15 text-primary'
@@ -59,11 +64,14 @@
 						></span>
 					{/if}
 
-					{#if iconUrl}
-						<img src={iconUrl} alt="" class="h-full w-full rounded-xl object-cover" />
-					{:else}
-						<span>{initials(name)}</span>
-					{/if}
+					<ServerIcon
+						{name}
+						{serverId}
+						{iconUrl}
+						{iconText}
+						{iconTone}
+						class="h-full w-full rounded-xl"
+					/>
 
 					{#if mentions > 0}
 						<span

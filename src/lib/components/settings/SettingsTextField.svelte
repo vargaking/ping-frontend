@@ -8,6 +8,8 @@
 		maxlength?: number;
 		placeholder?: string;
 		multiline?: boolean;
+		/** Rewrites what the user typed before it reaches `value`. */
+		normalize?: (value: string) => string;
 		oninput?: () => void;
 	};
 
@@ -20,12 +22,21 @@
 		maxlength,
 		placeholder,
 		multiline = false,
+		normalize,
 		oninput
 	}: Props = $props();
 
 	const describedBy = $derived(
 		[error ? `${id}-error` : '', hint ? `${id}-hint` : ''].filter(Boolean).join(' ') || undefined
 	);
+
+	function handleInput(e: Event & { currentTarget: HTMLInputElement }) {
+		const typed = e.currentTarget.value;
+		const next = normalize ? normalize(typed) : typed;
+		if (next !== typed) e.currentTarget.value = next;
+		value = next;
+		oninput?.();
+	}
 
 	const fieldClass =
 		'w-full rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none placeholder:text-text-subtle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-invalid:border-destructive';
@@ -49,8 +60,8 @@
 		<input
 			{id}
 			type="text"
-			bind:value
-			{oninput}
+			{value}
+			oninput={handleInput}
 			{maxlength}
 			{placeholder}
 			aria-invalid={error ? true : undefined}

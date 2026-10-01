@@ -6,6 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { fade } from 'svelte/transition';
 	import { page } from '$app/stores';
+	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
 	import type { InvitePublicResponse } from '$lib/types/invite.types';
 
 	const loggedIn = $derived(!!usersState.loggedInUser);
@@ -112,19 +113,14 @@
 			</div>
 		{:else}
 			<!-- Server Icon -->
-			<div
-				class="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl bg-surface-input text-2xl font-bold shadow-md"
-			>
-				{#if invite.server_icon}
-					<img
-						src={invite.server_icon}
-						alt={invite.server_name}
-						class="h-full w-full object-cover"
-					/>
-				{:else}
-					<span class="text-3xl text-primary">{invite.server_name[0]?.toUpperCase()}</span>
-				{/if}
-			</div>
+			<ServerIcon
+				name={invite.server_name}
+				serverId={invite.server_id}
+				iconUrl={invite.server_icon}
+				iconText={invite.server_icon_text}
+				iconTone={invite.server_icon_tone}
+				class="h-20 w-20 rounded-2xl text-3xl shadow-md"
+			/>
 
 			<!-- Title & Subtitle -->
 			<div class="text-center">
