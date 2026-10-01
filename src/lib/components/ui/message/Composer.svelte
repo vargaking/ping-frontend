@@ -16,6 +16,7 @@
 		uploadAttachment
 	} from '$lib/requests/attachments/uploadAttachment';
 	import { getErrorMessage } from '$lib/requests/errors';
+	import { mentionCandidates } from '$lib/utils/mentions';
 	import MessageEditor from './MessageEditor.svelte';
 	import { File as FileIcon, Paperclip, Smile, SendHorizontal, X } from 'lucide-svelte';
 
@@ -316,6 +317,11 @@
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
 				onArrowUp={editLastOwnMessage}
+				mentionCandidates={() =>
+					mentionCandidates({
+						serverId: target?.kind === 'channel' ? target.serverId : null,
+						conversationId: target?.kind === 'direct' ? target.conversationId : null
+					})}
 				editorClass="prose prose-sm max-h-40 w-full max-w-none min-w-0 flex-1 self-center overflow-y-auto py-1.5 text-[15px] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 			/>
 
