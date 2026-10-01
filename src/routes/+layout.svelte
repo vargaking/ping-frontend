@@ -3,6 +3,7 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import faviconUnread from '$lib/assets/favicon-unread.svg';
+	import logo from '$lib/brand/logo.svg';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
@@ -107,12 +108,7 @@
 {:else}
 	<div class="flex h-screen w-screen items-center justify-center bg-background">
 		<div class="flex flex-col items-center gap-3">
-			<div
-				class="flex h-11 w-11 animate-pulse items-center justify-center rounded-xl bg-primary/15 font-mono text-lg font-semibold text-primary"
-				aria-hidden="true"
-			>
-				z
-			</div>
+			<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
 			<span class="sr-only">Loading…</span>
 		</div>
 	</div>
