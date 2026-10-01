@@ -7,7 +7,6 @@
 	import { mount, unmount, untrack } from 'svelte';
 	import MentionList from '$lib/components/ui/MentionList.svelte';
 	import type { User } from '$lib/types/auth.types';
-	import { serversState } from '$lib/states/serversState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 
 	let {
@@ -17,6 +16,7 @@
 		autofocus = false,
 		allowEmpty = false,
 		editorClass = '',
+		mentionCandidates,
 		onSubmit,
 		onCancel,
 		onArrowUp
@@ -28,6 +28,8 @@
 		/** Submit even when the editor has no text (e.g. attachments carry the message). */
 		allowEmpty?: boolean;
 		editorClass?: string;
+		/** Who the @mention list can suggest; without it there are no suggestions. */
+		mentionCandidates?: () => User[];
 		onSubmit: (json: JSONContent) => void;
 		onCancel?: () => void;
 		onArrowUp?: () => void;
@@ -110,7 +112,7 @@
 					},
 					suggestion: {
 						items: ({ query }) => {
-							return (serversState.selectedServer?.members || [])
+							return (mentionCandidates?.() ?? [])
 								.map((m) => usersState.users[m.id] ?? m)
 								.filter((item) => item.username.toLowerCase().startsWith(query.toLowerCase()))
 								.slice(0, 5);

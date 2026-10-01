@@ -15,6 +15,7 @@
 	import { editMessage } from '$lib/requests/messages/editMessage';
 	import { deleteMessage } from '$lib/requests/messages/deleteMessage';
 	import { db } from '$lib/utils/db';
+	import { mentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
 	import { Pencil, Trash2 } from 'lucide-svelte';
 
@@ -82,6 +83,11 @@
 				content={parsedContent}
 				autofocus
 				allowEmpty={attachments.length > 0}
+				mentionCandidates={() =>
+					mentionCandidates({
+						serverId: message.server_id,
+						conversationId: message.conversation_id
+					})}
 				onSubmit={saveEdit}
 				onCancel={() => messageEditState.stop()}
 				editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
