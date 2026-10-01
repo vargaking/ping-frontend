@@ -43,9 +43,22 @@ function safePath(url: unknown): string {
 	return url;
 }
 
-async function hasFocusedWindow(): Promise<boolean> {
+const activity = new Map<string, 'active' | 'idle'>();
+
+sw.addEventListener('message', (event) => {
+	const source = event.source;
+	if (!source || !('id' in source)) return;
+	const { type, state } = event.data ?? {};
+	if (type !== 'activity' || (state !== 'active' && state !== 'idle')) return;
+	activity.set(source.id, state);
+});
+
+async function hasActiveWindow(): Promise<boolean> {
 	const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
-	return windows.some((client) => client.visibilityState === 'visible' && client.focused);
+	return windows.some(
+		(client) =>
+			client.visibilityState === 'visible' && client.focused && activity.get(client.id) === 'active'
+	);
 }
 
 async function handlePush(event: PushEvent) {
@@ -59,8 +72,8 @@ async function handlePush(event: PushEvent) {
 	}
 	if (payload.kind !== 'dm' && payload.kind !== 'mention') return;
 
-	// The open tab shows its own notifications.
-	if (await hasFocusedWindow()) return;
+	// A window the user is working in shows its own notifications.
+	if (await hasActiveWindow()) return;
 
 	const [existing] = await sw.registration.getNotifications({ tag: payload.tag });
 	const previous = (existing?.data as NotificationData | undefined)?.count ?? 0;

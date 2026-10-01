@@ -37,6 +37,17 @@ export function pushSupported(): boolean {
 	);
 }
 
+/** Tell the service worker whether this window is active, so it can tell a
+ *  pushed notification apart from one for a window the user is working in. */
+export function reportActivity(state: 'active' | 'idle'): void {
+	if (!pushSupported()) return;
+	try {
+		navigator.serviceWorker.controller?.postMessage({ type: 'activity', state });
+	} catch {
+		// Best effort: without a report the worker shows the push.
+	}
+}
+
 let configPromise: Promise<PushConfig> | null = null;
 
 /** Cached for the session; a failed fetch is not cached so the next call retries. */
