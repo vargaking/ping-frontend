@@ -1,7 +1,8 @@
 import { getPushConfig as fetchPushConfig } from '$lib/requests/push/getPushConfig';
 import { subscribePush } from '$lib/requests/push/subscribePush';
 import { unsubscribePush } from '$lib/requests/push/unsubscribePush';
-import type { PushConfig } from '$lib/types/push.types';
+import type { PushConfig, PushTestResult } from '$lib/types/push.types';
+import { urlBase64ToBytes } from '$lib/utils/base64url';
 
 export type EnablePushResult = 'enabled' | 'denied' | 'dismissed' | 'unsupported' | 'error';
 
@@ -78,21 +79,42 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
 	}
 }
 
-function urlBase64ToBytes(value: string): Uint8Array<ArrayBuffer> {
-	const padded = value
-		.replace(/-/g, '+')
-		.replace(/_/g, '/')
-		.padEnd(Math.ceil(value.length / 4) * 4, '=');
-	const raw = atob(padded);
-	const bytes = new Uint8Array(new ArrayBuffer(raw.length));
-	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-	return bytes;
-}
-
 function sameKey(existing: ArrayBuffer | null | undefined, key: Uint8Array): boolean {
 	if (!existing) return false;
 	const a = new Uint8Array(existing);
 	return a.length === key.length && a.every((byte, i) => byte === key[i]);
+}
+
+/** A subscription made under an older server key is rejected by the push
+ *  service, so swap it for one made with the current key. */
+export async function ensureSubscriptionKey(
+	subscription: PushSubscription,
+	publicKey: string
+): Promise<PushSubscription> {
+	const current = subscription.options.applicationServerKey;
+	const key = urlBase64ToBytes(publicKey);
+	if (!current || sameKey(current, key)) return subscription;
+
+	const registration = await readyRegistration();
+	if (!registration) throw new Error('No service worker registration');
+	await unsubscribePush(subscription.endpoint).catch((e) =>
+		console.warn('[push] failed to remove the old subscription on the server', e)
+	);
+	await subscription.unsubscribe();
+	const replacement = await withTimeout(
+		registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }),
+		SUBSCRIBE_TIMEOUT_MS
+	);
+	console.info('[push] re-subscribed with the current server key');
+	return replacement;
+}
+
+export function describePushTestResult(r: PushTestResult): string {
+	if (r.status === null) return `Failed: ${r.error ?? 'no response'}`;
+	if (r.status >= 200 && r.status < 300) return 'Delivered';
+	if (r.status === 401 || r.status === 403) return 'Rejected: key mismatch, turn push off and on';
+	if (r.status === 404 || r.status === 410) return 'Subscription expired';
+	return r.error ? `Status ${r.status}: ${r.error}` : `Status ${r.status}`;
 }
 
 /** Send a browser subscription to the server. Also used to re-claim an existing

@@ -7,3 +7,9 @@ export type PushSubscriptionBody = {
 	endpoint: string;
 	keys: { p256dh: string; auth: string };
 };
+
+export type PushTestResult = {
+	endpoint_host: string;
+	status: number | null;
+	error: string | null;
+};
