@@ -13,7 +13,10 @@ export type MessageType = {
 	conversation_id?: number | null;
 	edited_at?: string | null;
 	attachments?: Attachment[];
+	reactions?: Reaction[];
 };
+
+export type Reaction = { emoji: string; user_ids: number[] };
 
 /** Where a composed message goes: a server channel or a DM conversation. */
 export type MessageTarget =

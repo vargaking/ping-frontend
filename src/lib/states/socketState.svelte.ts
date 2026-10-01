@@ -25,6 +25,7 @@ import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
 import type { Attachment } from '$lib/types/attachment.types';
 import { toast } from 'svelte-sonner';
+import { applyReaction } from '$lib/utils/reactions';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -323,9 +324,11 @@ class SocketState {
 
 	async handleMessageUpdated(message: MessageType) {
 		const changes = { content: message.content, edited_at: message.edited_at };
-		const withAttachments = message.attachments
-			? { ...changes, attachments: message.attachments }
-			: changes;
+		const withAttachments = {
+			...changes,
+			...(message.attachments && { attachments: message.attachments }),
+			...(message.reactions && { reactions: message.reactions })
+		};
 		messagesState.updateMessage(message.id, withAttachments);
 		conversationsState.messageEdited(message.id, changes);
 		await db.messages.update(message.id, withAttachments);
@@ -388,6 +391,15 @@ class SocketState {
 				break;
 			case 'message_deleted':
 				this.handleMessageDeleted(message);
+				break;
+			case 'reaction_added':
+			case 'reaction_removed':
+				applyReaction(
+					message.message_id,
+					message.emoji,
+					message.user_id,
+					message.type === 'reaction_added'
+				);
 				break;
 			case 'user_updated':
 				this.handleUserUpdate(message.user);

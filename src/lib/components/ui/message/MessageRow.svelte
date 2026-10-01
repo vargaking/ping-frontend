@@ -4,6 +4,8 @@
 	import MessageNode from './MessageNode.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import MessageAttachments from './MessageAttachments.svelte';
+	import MessageReactions from './MessageReactions.svelte';
+	import ReactionPicker from './ReactionPicker.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
@@ -17,7 +19,7 @@
 	import { db } from '$lib/utils/db';
 	import { mentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
-	import { Pencil, Trash2 } from 'lucide-svelte';
+	import { Pencil, SmilePlus, Trash2 } from 'lucide-svelte';
 
 	// The first row in a group already shows the timestamp in the group header,
 	// so the hover-gutter time is only rendered on continuation rows.
@@ -40,6 +42,7 @@
 	const isModerator = $derived(serversState.can(Permission.MANAGE_MESSAGES, message.server_id));
 	const canEdit = $derived(isAuthor);
 	const canDelete = $derived(isAuthor || (isModerator && !isDirect));
+	let pickerOpen = $state(false);
 	const editing = $derived(messageEditState.isEditing(message.id));
 
 	async function saveEdit(content: JSONContent) {
@@ -112,32 +115,44 @@
 			</span>
 		{/if}
 
-		{#if canEdit || canDelete}
-			<div
-				class="absolute -top-3 right-0 hidden items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex"
-			>
-				{#if canEdit}
+		<div
+			class="absolute -top-3 right-0 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex {pickerOpen
+				? 'flex'
+				: 'hidden'}"
+		>
+			<ReactionPicker {message} bind:open={pickerOpen}>
+				{#snippet trigger(props)}
 					<button
+						{...props}
 						type="button"
-						aria-label="Edit message"
-						onclick={() => messageEditState.start(message.id)}
+						aria-label="Add reaction"
 						class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					>
-						<Pencil size={15} strokeWidth={1.75} />
+						<SmilePlus size={15} strokeWidth={1.75} />
 					</button>
-				{/if}
-				{#if canDelete}
-					<button
-						type="button"
-						aria-label="Delete message"
-						onclick={promptDelete}
-						class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>
-						<Trash2 size={15} strokeWidth={1.75} />
-					</button>
-				{/if}
-			</div>
-		{/if}
+				{/snippet}
+			</ReactionPicker>
+			{#if canEdit}
+				<button
+					type="button"
+					aria-label="Edit message"
+					onclick={() => messageEditState.start(message.id)}
+					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					<Pencil size={15} strokeWidth={1.75} />
+				</button>
+			{/if}
+			{#if canDelete}
+				<button
+					type="button"
+					aria-label="Delete message"
+					onclick={promptDelete}
+					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					<Trash2 size={15} strokeWidth={1.75} />
+				</button>
+			{/if}
+		</div>
 
 		{#if hasText || attachments.length === 0}
 			<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
@@ -159,5 +174,6 @@
 				<span class="text-[11px] text-text-subtle select-none">(edited)</span>
 			{/if}
 		{/if}
+		<MessageReactions {message} />
 	{/if}
 </div>
