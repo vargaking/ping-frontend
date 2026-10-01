@@ -17,16 +17,47 @@ export function describeVoiceError(err: unknown): string {
 	return "Couldn't join voice.";
 }
 
-/** Toast text for a microphone that failed to start. */
-export function describeMicError(err: unknown): string {
-	const name = err instanceof Error ? err.name : '';
-	switch (name) {
+/** Why the microphone isn't live. 'off' means it hasn't been asked for yet or the user skipped it. */
+export type MicIssue = 'off' | 'blocked' | 'notFound' | 'inUse' | 'failed';
+
+export function classifyMicError(err: unknown): MicIssue {
+	switch (err instanceof Error ? err.name : '') {
 		case 'NotAllowedError':
 		case 'SecurityError':
-			return "Microphone access is blocked. Allow it in your browser's site settings, then unmute.";
+			return 'blocked';
 		case 'NotFoundError':
-			return 'No microphone found.';
+			return 'notFound';
 		case 'NotReadableError':
+			return 'inUse';
+		default:
+			return 'failed';
+	}
+}
+
+/** Banner text for a microphone that isn't live. */
+export function micIssueText(issue: MicIssue): string {
+	switch (issue) {
+		case 'blocked':
+			return "Microphone blocked — allow it in your browser's site settings";
+		case 'notFound':
+			return 'No microphone found';
+		case 'inUse':
+			return 'Your microphone is being used by another app';
+		case 'failed':
+			return "Couldn't start your microphone";
+		case 'off':
+			return 'Your microphone is off';
+	}
+}
+
+/** Toast text for a microphone that failed to start. */
+export function describeMicError(err: unknown): string {
+	switch (classifyMicError(err)) {
+		case 'blocked':
+			return "Microphone access is blocked. Allow it in your browser's site settings, then unmute.";
+		case 'notFound':
+			return 'No microphone found.';
+		case 'inUse':
 			return 'Your microphone is being used by another app.';
 		default:
 			return "Couldn't start your microphone.";

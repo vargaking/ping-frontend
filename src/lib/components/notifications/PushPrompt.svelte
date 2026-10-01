@@ -3,12 +3,17 @@
 	import { toast } from 'svelte-sonner';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
+	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { dismissPushPrompt, isPushPromptSnoozed } from '$lib/utils/pushPrompt';
 
 	let snoozed = $state(isPushPromptSnoozed());
 
+	// Steps aside while the mic prompt for a voice join is up; they share this corner.
 	const visible = $derived(
-		notificationsState.pushChecked && notificationsState.push === 'off' && !snoozed
+		notificationsState.pushChecked &&
+			notificationsState.push === 'off' &&
+			!snoozed &&
+			!voiceState.micPrompt
 	);
 	const blocked = $derived(notificationsState.permission === 'denied');
 

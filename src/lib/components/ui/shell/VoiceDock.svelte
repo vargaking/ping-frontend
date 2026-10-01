@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
+	import { micIssueText } from '$lib/utils/voiceErrors';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
 	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
@@ -53,6 +54,9 @@
 		else voiceState.toggleDeafen();
 	}
 
+	// Muted by choice, or the mic can't run.
+	const micDown = $derived(voiceState.micOff || voiceState.micError != null);
+
 	const iconButton =
 		'flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 </script>
@@ -95,7 +99,7 @@
 {/snippet}
 
 {#snippet micIcon()}
-	{#if voiceState.micOff}
+	{#if micDown}
 		<MicOff size={18} strokeWidth={1.75} />
 	{:else}
 		<Mic size={18} strokeWidth={1.75} />
@@ -140,12 +144,31 @@
 			{/if}
 		</div>
 
+		{#if voiceState.micError && !voiceState.connecting}
+			<div
+				class="mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs {voiceState.micError ===
+				'off'
+					? 'bg-muted text-muted-foreground'
+					: 'bg-destructive/10 text-destructive'}"
+				role="status"
+			>
+				<span class="min-w-0 flex-1">{micIssueText(voiceState.micError)}</span>
+				<button
+					type="button"
+					onclick={() => voiceState.retryMic()}
+					class="shrink-0 rounded-sm font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					{voiceState.micError === 'off' ? 'Allow' : 'Try again'}
+				</button>
+			</div>
+		{/if}
+
 		<Tooltip.Provider>
 			<div class="flex items-center gap-2">
 				{@render control(
-					voiceState.micOff ? 'Unmute' : 'Mute',
+					micDown ? 'Unmute' : 'Mute',
 					VOICE_SHORTCUTS.mute.keys,
-					voiceState.micOff,
+					micDown,
 					() => voiceState.toggleMute(),
 					micIcon
 				)}

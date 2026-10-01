@@ -6,6 +6,7 @@
 	import ChannelSidebar from '$lib/components/ui/shell/ChannelSidebar.svelte';
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
+	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
@@ -52,3 +53,4 @@
 
 <Overlay />
 <PushPrompt />
+<MicPrompt />
