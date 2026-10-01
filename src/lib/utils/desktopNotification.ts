@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import type { Attachment } from '$lib/types/attachment.types';
 import { messagePreviewText } from './messageContent';
+import type { NotificationData } from './notificationTags';
 
 const BODY_LIMIT = 140;
 const ICON = '/icon-192.png';
@@ -57,18 +58,35 @@ export function notifyChannelMessage(opts: {
 	});
 }
 
-/** DM: title is just the sender's username. */
-export function notifyDirectMessage(opts: {
+/** DM or mention: shares a tag with the pushed notification, so whichever
+ *  arrives second replaces the first instead of stacking. */
+export async function showThreadNotification(opts: {
 	tag: string;
-	senderUsername: string;
-	content: unknown;
-	attachments?: Attachment[];
-	href: string;
+	title: string;
+	body: string;
+	url: string;
+	messageUuid: string;
+	noun: 'messages' | 'mentions';
 }) {
-	notify({
-		tag: opts.tag,
-		title: opts.senderUsername,
-		body: messagePreviewText(opts.content, opts.attachments),
-		href: opts.href
-	});
+	try {
+		const registration = await navigator.serviceWorker?.getRegistration();
+		if (!registration) {
+			notify({ tag: opts.tag, title: opts.title, body: opts.body, href: opts.url });
+			return;
+		}
+		const [existing] = await registration.getNotifications({ tag: opts.tag });
+		const previous = existing?.data as Partial<NotificationData> | undefined;
+		if (previous?.messageUuid === opts.messageUuid) return;
+		const count = (previous?.count ?? 0) + 1;
+		await registration.showNotification(opts.title, {
+			body: count > 1 ? `${count} new ${opts.noun}` : truncate(opts.body),
+			tag: opts.tag,
+			icon: ICON,
+			data: { url: opts.url, count, messageUuid: opts.messageUuid } satisfies NotificationData,
+			// Not in the DOM typings yet, but Chrome and Firefox honour it.
+			...({ renotify: true } as object)
+		});
+	} catch (e) {
+		console.warn('Failed to show desktop notification', e);
+	}
 }

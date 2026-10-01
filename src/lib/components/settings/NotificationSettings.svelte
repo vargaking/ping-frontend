@@ -2,6 +2,11 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { testPush } from '$lib/requests/push/testPush';
+	import { normalizeError } from '$lib/requests/errors';
+	import { describePushTestResult } from '$lib/utils/push';
+	import type { PushTestResult } from '$lib/types/push.types';
 	import SettingsSwitch from './SettingsSwitch.svelte';
 
 	onMount(() => {
@@ -57,6 +62,29 @@
 		if (result === 'error') toast.error("Couldn't turn on notifications. Try again in a moment.");
 	}
 
+	let testing = $state(false);
+	let testResults = $state<PushTestResult[] | null>(null);
+	let testError = $state<string | null>(null);
+
+	async function sendTest() {
+		testing = true;
+		testResults = null;
+		testError = null;
+		try {
+			testResults = await testPush();
+		} catch (e) {
+			const { status, message } = normalizeError(e);
+			testError =
+				status === 409
+					? "Push isn't set up on this server."
+					: status === 429
+						? 'Too many tests. Try again in a minute.'
+						: message;
+		} finally {
+			testing = false;
+		}
+	}
+
 	function toggleSound() {
 		notificationsState.setSound(!notificationsState.sound);
 	}
@@ -108,6 +136,32 @@
 					<span class="text-xs text-muted-foreground">Turn on desktop notifications first.</span>
 				{/if}
 			</SettingsSwitch>
+
+			{#if notificationsState.push === 'on'}
+				<div class="-mt-2 flex flex-col items-start gap-2">
+					<Button variant="outline" size="sm" disabled={testing} onclick={sendTest}>
+						{testing ? 'Sending…' : 'Send test notification'}
+					</Button>
+					{#if testError}
+						<span class="text-xs text-destructive">{testError}</span>
+					{:else if testResults?.length === 0}
+						<span class="text-xs text-destructive">
+							No subscription on the server for this account. Turn push off and on.
+						</span>
+					{:else if testResults}
+						{#each testResults as result, i (i)}
+							{@const description = describePushTestResult(result)}
+							<span
+								class="text-xs {description === 'Delivered'
+									? 'text-muted-foreground'
+									: 'text-destructive'}"
+							>
+								{result.endpoint_host}: {description}
+							</span>
+						{/each}
+					{/if}
+				</div>
+			{/if}
 		{/if}
 
 		<SettingsSwitch
