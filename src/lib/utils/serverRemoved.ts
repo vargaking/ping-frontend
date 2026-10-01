@@ -27,11 +27,8 @@ export async function serverRemoved(serverId: number, reason?: keyof typeof noti
 }
 
 async function removeNow(serverId: number, reason?: keyof typeof notices) {
-	const wasSelected = serversState.selectedServer?.id === serverId;
-	const inItsVoice =
-		wasSelected &&
-		voiceState.channelId != null &&
-		serversState.selectedServerChannels[voiceState.channelId] != null;
+	const wasSelected = serversState.selectedServerId === serverId;
+	const inItsVoice = voiceState.serverId === serverId;
 	const name = serversState.servers[serverId]?.name;
 
 	if (inItsVoice) await voiceState.leaveVoice();

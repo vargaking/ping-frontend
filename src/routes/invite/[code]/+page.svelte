@@ -61,6 +61,9 @@
 
 			// If join is successful, immediately fetch user servers to update the state
 			await serversState.fetchUserServers();
+			serversState
+				.fetchServerChannels(result.server_id)
+				.catch((e) => console.warn('Failed to load channels for joined server', e));
 
 			// Navigate to the server page
 			goto(`/app/server/${result.server_id}`);

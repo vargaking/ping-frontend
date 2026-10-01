@@ -14,15 +14,30 @@ export class ServersState {
 	servers: Record<number, Server> = $state({});
 	/** Set once the first server fetch succeeds, so "no servers" isn't shown while loading. */
 	loaded = $state(false);
-	selectedServer: Server | null = $state(null);
-	selectedServerChannels: Record<number, Channel> = $state({});
-	selectedChannel: Channel | null = $state(null);
+	/** Channels per server; a missing key means the server's channels aren't loaded yet. */
+	channels: Record<number, Record<number, Channel>> = $state({});
+	selectedServerId: number | null = $state(null);
+	selectedChannelId: number | null = $state(null);
 	permissions: Record<number, bigint> = $state({});
 	roles: Record<number, Role[]> = $state({});
 	/** Assigned role ids per server and user; the default role is never listed. */
 	memberRoles: Record<number, Record<number, number[]>> = $state({});
 
 	serversList: Server[] = $derived(Object.values(this.servers));
+	selectedServer: Server | null = $derived(
+		this.selectedServerId != null ? (this.servers[this.selectedServerId] ?? null) : null
+	);
+	selectedServerChannels: Record<number, Channel> = $derived(
+		this.selectedServerId != null ? (this.channels[this.selectedServerId] ?? {}) : {}
+	);
+	selectedServerChannelsLoaded: boolean = $derived(
+		this.selectedServerId != null && this.channels[this.selectedServerId] != null
+	);
+	selectedChannel: Channel | null = $derived(
+		this.selectedChannelId != null
+			? (this.selectedServerChannels[this.selectedChannelId] ?? null)
+			: null
+	);
 	selectedServerChannelsList: Channel[] = $derived.by(() => {
 		const channels = this.selectedServerChannels;
 		const all = Object.values(channels);
@@ -75,35 +90,22 @@ export class ServersState {
 		}
 	}
 
-	setSelectedServer(server: Server | null) {
-		this.selectedServer = server;
-
-		if (server && server.id != null) {
-			this.servers[server.id] = server;
-			this.notePermissions(server);
-		}
+	setSelectedServerId(id: number | null) {
+		this.selectedServerId = id;
 	}
 
-	setSelectedServerById(serverId: number) {
-		const server = this.servers[serverId];
-		if (server) {
-			this.setSelectedServer(server);
-		}
+	setSelectedChannelId(id: number | null) {
+		this.selectedChannelId = id;
 	}
 
-	setSelectedChannel(channel: Channel | null) {
-		this.selectedChannel = channel;
-
-		if (channel) {
-			this.selectedServerChannels[channel.id] = channel;
-		}
-	}
-
-	setSelectedChannelById(channelId: number) {
-		const channel = this.selectedServerChannels[channelId];
-		if (channel) {
-			this.setSelectedChannel(channel);
-		}
+	reset() {
+		this.servers = {};
+		this.loaded = false;
+		this.channels = {};
+		this.selectedServerId = null;
+		this.selectedChannelId = null;
+		this.reorderTimeouts.forEach(clearTimeout);
+		this.reorderTimeouts.clear();
 	}
 
 	async fetchUserServers(): Promise<Server[]> {
@@ -149,9 +151,7 @@ export class ServersState {
 
 	async fetchServerChannels(serverId: number): Promise<Channel[]> {
 		const fetchedChannels = await getServerChannels(serverId);
-		fetchedChannels.forEach((channel) => {
-			this.selectedServerChannels[channel.id] = channel;
-		});
+		this.channels[serverId] = Object.fromEntries(fetchedChannels.map((ch) => [ch.id, ch]));
 		unreadState.noteFetchedChannels(serverId, fetchedChannels);
 		return fetchedChannels;
 	}
@@ -160,33 +160,26 @@ export class ServersState {
 	addChannel(serverId: number, channel: Channel) {
 		unreadState.noteNewChannel(serverId, channel);
 
-		// Only the selected server's channels live in this record; other servers
-		// re-fetch their channels when opened, so there's nothing to patch there.
-		if (this.selectedServer?.id !== serverId) return;
-		if (this.selectedServerChannels[channel.id]) return;
-		this.selectedServerChannels[channel.id] = channel;
+		const loaded = this.channels[serverId];
+		if (!loaded || loaded[channel.id]) return;
+		loaded[channel.id] = channel;
 	}
 
 	/** Merge fields of a changed server (own save or server_updated). */
 	patchServer(serverId: number, changes: Partial<Server>) {
 		const server = this.servers[serverId];
 		if (!server) return;
-		const updated = { ...server, ...changes };
-		this.servers[serverId] = updated;
-		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+		this.servers[serverId] = { ...server, ...changes };
 	}
 
 	/** Forget a deleted server (own delete or server_deleted). */
 	removeServer(serverId: number) {
 		delete this.servers[serverId];
+		delete this.channels[serverId];
 		delete this.permissions[serverId];
 		delete this.roles[serverId];
 		delete this.memberRoles[serverId];
 		unreadState.forgetServer(serverId);
-		if (this.selectedServer?.id !== serverId) return;
-		this.selectedServer = null;
-		this.selectedServerChannels = {};
-		this.selectedChannel = null;
 	}
 
 	/** Merge a changed channel (own save or channel_updated) into local state.
@@ -194,16 +187,15 @@ export class ServersState {
 	updateChannel(serverId: number, channel: Channel) {
 		unreadState.renameChannel(channel.id, channel.name);
 
-		const existing = this.selectedServerChannels[channel.id];
-		if (this.selectedServer?.id !== serverId || !existing) return;
-		const merged: Channel = {
+		const loaded = this.channels[serverId];
+		const existing = loaded?.[channel.id];
+		if (!loaded || !existing) return;
+		loaded[channel.id] = {
 			...existing,
 			name: channel.name,
 			topic: channel.topic ?? null,
 			channel_settings: channel.channel_settings
 		};
-		this.selectedServerChannels[channel.id] = merged;
-		if (this.selectedChannel?.id === channel.id) this.selectedChannel = merged;
 	}
 
 	/** Drop a deleted channel (own delete or channel_deleted). */
@@ -213,20 +205,17 @@ export class ServersState {
 		const server = this.servers[serverId];
 		const order = server?.server_settings?.channel_order;
 		if (server && order?.includes(channelId)) {
-			const updated: Server = {
+			this.servers[serverId] = {
 				...server,
 				server_settings: {
 					...server.server_settings,
 					channel_order: order.filter((id) => id !== channelId)
 				}
 			};
-			this.servers[serverId] = updated;
-			if (this.selectedServer?.id === serverId) this.selectedServer = updated;
 		}
 
-		if (this.selectedServer?.id !== serverId) return;
-		delete this.selectedServerChannels[channelId];
-		if (this.selectedChannel?.id === channelId) this.selectedChannel = null;
+		const loaded = this.channels[serverId];
+		if (loaded) delete loaded[channelId];
 	}
 
 	/** Patch in a member who joined over the socket (member_joined). */
@@ -235,9 +224,7 @@ export class ServersState {
 		if (!server) return;
 		if (server.members?.some((m) => m.id === member.id)) return;
 
-		const updated = { ...server, members: [...(server.members ?? []), member] };
-		this.servers[serverId] = updated;
-		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+		this.servers[serverId] = { ...server, members: [...(server.members ?? []), member] };
 	}
 
 	/** Drop a member who left or was kicked (member_left). */
@@ -245,37 +232,38 @@ export class ServersState {
 		const server = this.servers[serverId];
 		if (!server?.members?.some((m) => m.id === userId)) return;
 
-		const updated = { ...server, members: server.members.filter((m) => m.id !== userId) };
-		this.servers[serverId] = updated;
-		if (this.selectedServer?.id === serverId) this.selectedServer = updated;
+		this.servers[serverId] = { ...server, members: server.members.filter((m) => m.id !== userId) };
 	}
 
-	private reorderTimeout: ReturnType<typeof setTimeout> | null = null;
+	// Timer handles are never rendered, so they needn't be reactive.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	private reorderTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
 
 	reorderChannels(serverId: number, channelIds: number[]) {
-		if (!this.selectedServer || this.selectedServer.id !== serverId) return;
+		const server = this.servers[serverId];
+		if (!server) return;
 
 		// Update local state immediately — Svelte re-renders the list
-		this.selectedServer = {
-			...this.selectedServer,
-			server_settings: {
-				...this.selectedServer.server_settings,
-				channel_order: channelIds
-			}
+		this.servers[serverId] = {
+			...server,
+			server_settings: { ...server.server_settings, channel_order: channelIds }
 		};
-		this.servers[serverId] = this.selectedServer;
 
 		// Debounce the server update so rapid reorders don't spam the API
-		if (this.reorderTimeout) clearTimeout(this.reorderTimeout);
-		this.reorderTimeout = setTimeout(async () => {
-			try {
-				await updateServer(serverId, {
-					server_settings: this.servers[serverId].server_settings
-				});
-			} catch (e) {
-				console.error('Failed to persist channel order:', e);
-			}
-		}, 500);
+		clearTimeout(this.reorderTimeouts.get(serverId));
+		this.reorderTimeouts.set(
+			serverId,
+			setTimeout(async () => {
+				this.reorderTimeouts.delete(serverId);
+				try {
+					await updateServer(serverId, {
+						server_settings: this.servers[serverId].server_settings
+					});
+				} catch (e) {
+					console.error('Failed to persist channel order:', e);
+				}
+			}, 500)
+		);
 	}
 }
 
