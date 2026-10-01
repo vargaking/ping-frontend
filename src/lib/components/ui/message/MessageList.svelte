@@ -12,6 +12,7 @@
 	import { db } from '$lib/utils/db';
 	import { tick, untrack } from 'svelte';
 	import { MessagesSquare } from 'lucide-svelte';
+	import { toast } from 'svelte-sonner';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
@@ -128,6 +129,7 @@
 			if (
 				group &&
 				group.userId === m.user_id &&
+				!m.reply_to &&
 				new Date(m.timestamp).getTime() - new Date(group.lastTs).getTime() < GROUP_GAP_MS
 			) {
 				group.messages.push(m);
@@ -254,9 +256,8 @@
 	}
 
 	async function loadOlder() {
-		const key = threadKey;
 		if (loadingOlder) return;
-		if (!messagesState.hasMore(key) || !nextCursor) return;
+		if (!messagesState.hasMore(threadKey) || !nextCursor) return;
 
 		const el = messageWrapper;
 		// The top sentinel stays permanently in view while the loaded history is
@@ -271,6 +272,19 @@
 			if (el.scrollTop > 150) return;
 		}
 
+		await fetchOlder();
+	}
+
+	let olderInFlight: Promise<void> | null = null;
+
+	function fetchOlder(): Promise<void> {
+		olderInFlight ??= loadOlderPage().finally(() => (olderInFlight = null));
+		return olderInFlight;
+	}
+
+	async function loadOlderPage() {
+		const key = threadKey;
+		const el = messageWrapper;
 		loadingOlder = true;
 		const prevHeight = el?.scrollHeight ?? 0;
 		const prevTop = el?.scrollTop ?? 0;
@@ -295,6 +309,34 @@
 		} finally {
 			loadingOlder = false;
 		}
+	}
+
+	const MAX_JUMP_PAGES = 10;
+	const HIGHLIGHT_MS = 1500;
+
+	function isLoaded(id: string) {
+		return messagesState.messages(threadKey).some((m) => m.id === id);
+	}
+
+	async function jumpToMessage(id: string) {
+		const key = threadKey;
+		for (let pages = 0; !isLoaded(id) && pages < MAX_JUMP_PAGES; pages++) {
+			if (!messagesState.hasMore(key) || !nextCursor) break;
+			await fetchOlder();
+			if (key !== threadKey) return;
+		}
+
+		if (!isLoaded(id)) {
+			toast.error("Couldn't find the original message");
+			return;
+		}
+
+		await tick();
+		const row = messageWrapper?.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+		if (!row) return;
+		row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		row.classList.add('bg-accent');
+		setTimeout(() => row.classList.remove('bg-accent'), HIGHLIGHT_MS);
 	}
 
 	// Reload only when the thread itself changes. loadMessages reads message
@@ -438,7 +480,11 @@
 				{:else if item.kind === 'unread'}
 					<UnreadDivider />
 				{:else}
-					<MessageGroup userId={item.userId} messages={item.messages} />
+					<MessageGroup
+						userId={item.userId}
+						messages={item.messages}
+						onJumpToMessage={jumpToMessage}
+					/>
 				{/if}
 			{/each}
 		</div>

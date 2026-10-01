@@ -26,6 +26,8 @@ import type { User } from '$lib/types/auth.types';
 import type { Attachment } from '$lib/types/attachment.types';
 import { toast } from 'svelte-sonner';
 import { applyReaction } from '$lib/utils/reactions';
+import { markRepliesDeleted, refreshReplyQuotes, replyRefFor } from '$lib/utils/replies';
+import { replyState } from './replyState.svelte';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -121,7 +123,8 @@ class SocketState {
 	sendMessage(
 		target: MessageTarget,
 		message: JSONContent,
-		attachments: Attachment[] = []
+		attachments: Attachment[] = [],
+		replyTo?: MessageType
 	): boolean {
 		if (!message) return false;
 		// Callers pass reactive state; IndexedDB can't store Svelte's proxies.
@@ -137,6 +140,7 @@ class SocketState {
 		const id = uuidv4();
 		const timestamp = new Date().toISOString();
 		const attachmentIds = attachments.map((a) => a.id);
+		const reply_to = replyTo ? replyRefFor(replyTo) : undefined;
 
 		const local: MessageType =
 			target.kind === 'channel'
@@ -147,7 +151,8 @@ class SocketState {
 						user_id: user.id,
 						content: message,
 						timestamp,
-						attachments
+						attachments,
+						reply_to
 					}
 				: {
 						id,
@@ -155,7 +160,8 @@ class SocketState {
 						user_id: user.id,
 						content: message,
 						timestamp,
-						attachments
+						attachments,
+						reply_to
 					};
 
 		const frame =
@@ -167,7 +173,8 @@ class SocketState {
 						channel_id: target.channelId,
 						content: message,
 						timestamp,
-						attachment_ids: attachmentIds
+						attachment_ids: attachmentIds,
+						reply_to: replyTo?.id
 					}
 				: {
 						type: 'direct_message',
@@ -175,7 +182,8 @@ class SocketState {
 						conversation_id: target.conversationId,
 						content: message,
 						timestamp,
-						attachment_ids: attachmentIds
+						attachment_ids: attachmentIds,
+						reply_to: replyTo?.id
 					};
 
 		this.socket.send(JSON.stringify(frame));
@@ -332,6 +340,7 @@ class SocketState {
 		messagesState.updateMessage(message.id, withAttachments);
 		conversationsState.messageEdited(message.id, changes);
 		await db.messages.update(message.id, withAttachments);
+		await refreshReplyQuotes(message);
 	}
 
 	async handleMessageDeleted(message: { id: string }) {
@@ -339,6 +348,8 @@ class SocketState {
 		conversationsState.messageDeleted(message.id);
 		unreadState.messageDeleted(message.id);
 		await db.messages.delete(message.id);
+		replyState.cancelFor(message.id);
+		await markRepliesDeleted(message.id);
 	}
 
 	handleUserUpdate(user: User) {
@@ -472,6 +483,11 @@ class SocketState {
 					// Nothing was stored server-side, so drop the optimistic copy.
 					this.handleMessageDeleted({ id: message.ref });
 					toast.error("Couldn't send the attachment. Try uploading it again.");
+					break;
+				}
+				if (message.code === 'invalid_reply' && message.ref) {
+					this.handleMessageDeleted({ id: message.ref });
+					toast.error("Couldn't send the reply. The original message is no longer there.");
 					break;
 				}
 				// e.g. { code: 'forbidden', ref: <message id> } when posting to a
