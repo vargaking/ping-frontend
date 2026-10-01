@@ -32,6 +32,7 @@ export type InvitePublicResponse = {
 	server_id: number;
 	server_name: string;
 	server_icon: string | null;
+	member_count: number;
 	is_valid: boolean;
 	has_password: boolean;
 };
