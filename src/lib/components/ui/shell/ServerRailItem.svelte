@@ -1,8 +1,10 @@
 <script lang="ts">
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
+	import { avatarToneClass, initials } from '$lib/utils/avatar';
 
 	type Props = {
 		name: string;
+		serverId: number | string;
 		href: string;
 		iconUrl?: string | null;
 		active?: boolean;
@@ -15,6 +17,7 @@
 
 	let {
 		name,
+		serverId,
 		href,
 		iconUrl = null,
 		active = false,
@@ -23,6 +26,14 @@
 		muted = false
 	}: Props = $props();
 
+	const toneClass = $derived(avatarToneClass(serverId));
+	const stateClasses = $derived(
+		active
+			? 'bg-primary/15 text-primary'
+			: muted
+				? 'bg-card text-text-subtle hover:bg-accent'
+				: 'bg-card text-text-label hover:bg-accent hover:text-foreground'
+	);
 	const label = $derived(
 		`${name}${mentions > 0 ? `, ${mentions} mention${mentions === 1 ? '' : 's'}` : unread ? ', unread messages' : ''}`
 	);
@@ -36,11 +47,9 @@
 					{href}
 					aria-label={label}
 					aria-current={active ? 'page' : undefined}
-					class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-rail focus-visible:outline-none {active
-						? 'bg-primary/15 text-primary'
-						: muted
-							? 'bg-card text-text-subtle hover:bg-accent'
-							: 'bg-card text-text-label hover:bg-accent hover:text-foreground'}"
+					class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-rail focus-visible:outline-none {iconUrl
+						? stateClasses
+						: `${toneClass} ${active ? 'ring-2 ring-primary' : muted ? 'opacity-60 hover:opacity-100' : 'hover:brightness-125'}`}"
 					{...props}
 				>
 					<!-- active accent bar, flush to the rail's left edge -->
@@ -53,7 +62,7 @@
 					{#if iconUrl}
 						<img src={iconUrl} alt="" class="h-full w-full rounded-xl object-cover" />
 					{:else}
-						<span>{name.charAt(0).toUpperCase()}</span>
+						<span>{initials(name)}</span>
 					{/if}
 
 					{#if mentions > 0}

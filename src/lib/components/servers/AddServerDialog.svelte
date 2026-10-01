@@ -16,6 +16,7 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import SettingsTextField from '$lib/components/settings/SettingsTextField.svelte';
 	import { ImagePlus } from 'lucide-svelte';
+	import { avatarToneClass, initials } from '$lib/utils/avatar';
 
 	let {
 		open = $bindable(false),
@@ -189,12 +190,15 @@
 			>
 				<div class="flex items-center gap-4">
 					<div
-						class="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] bg-card text-2xl font-semibold text-text-label"
+						class="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] text-2xl font-semibold {iconPreview ||
+						!name.trim()
+							? 'bg-card text-text-label'
+							: avatarToneClass(name.trim())}"
 					>
 						{#if iconPreview}
 							<img src={iconPreview} alt="Server icon preview" class="h-full w-full object-cover" />
 						{:else if name.trim()}
-							{name.trim()[0].toUpperCase()}
+							{initials(name)}
 						{:else}
 							<ImagePlus size={24} strokeWidth={1.5} class="text-text-subtle" />
 						{/if}

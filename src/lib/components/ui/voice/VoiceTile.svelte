@@ -1,9 +1,14 @@
 <script lang="ts">
+	import { avatarToneClass, initials } from '$lib/utils/avatar';
 	import type { Snippet } from 'svelte';
 	import { MicOff, HeadphoneOff } from 'lucide-svelte';
 
 	type Props = {
 		name: string;
+		/** Stable key (the user id) for the default avatar colour. */
+		toneKey: number | string;
+		/** Name to take initials from when `name` carries a suffix like "(You)". */
+		initialsFrom?: string;
 		avatar?: string | null;
 		speaking?: boolean;
 		muted?: boolean;
@@ -15,6 +20,8 @@
 
 	let {
 		name,
+		toneKey,
+		initialsFrom,
 		avatar = null,
 		speaking = false,
 		muted = false,
@@ -36,12 +43,14 @@
 		{@render media()}
 	{:else}
 		<span
-			class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-accent text-2xl font-semibold text-text-label"
+			class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold {avatar
+				? 'bg-accent'
+				: avatarToneClass(toneKey)}"
 		>
 			{#if avatar}
 				<img src={avatar} alt="" class="h-full w-full object-cover" />
 			{:else}
-				{name.charAt(0).toUpperCase()}
+				{initials(initialsFrom ?? name)}
 			{/if}
 		</span>
 	{/if}
