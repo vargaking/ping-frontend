@@ -33,9 +33,9 @@ jobs:
       AUTH_RATE_LIMIT: 10000/minute
       INVITE_USE_RATE_LIMIT: 10000/minute
       ATTACHMENT_URL_KEY: e2e-attachment-key-0123456789-abcdefghijklmnop
-      MEDIA_ROOT: ${{ runner.temp }}/media
-      ATTACHMENTS_ROOT: ${{ runner.temp }}/attachments
-      LOG_DIR: ${{ runner.temp }}/logs
+      MEDIA_ROOT: /tmp/ping-e2e/media
+      ATTACHMENTS_ROOT: /tmp/ping-e2e/attachments
+      LOG_DIR: /tmp/ping-e2e/logs
     steps:
       - uses: actions/checkout@v4
 
@@ -108,5 +108,5 @@ jobs:
           name: uvicorn-log
           path: |
             ${{ runner.temp }}/uvicorn.log
-            ${{ runner.temp }}/logs/
+            /tmp/ping-e2e/logs/
           if-no-files-found: ignore
