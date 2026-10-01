@@ -36,11 +36,14 @@ export async function clearSession(): Promise<void> {
 }
 
 /**
- * Full logout: remove the push subscription, tell the server to drop the session, wipe local state, and land
+ * Full logout: close the socket, remove the push subscription, tell the server to drop the session, wipe local state, and land
  * on /login. The cookie is cleared server-side even if the request fails, so we
  * always tear down and redirect regardless.
  */
 export async function logout(): Promise<void> {
+	// First, so the user goes offline right away instead of after the slower
+	// push and logout requests below.
+	socketState.disconnect();
 	// Needs the session cookie, so it has to come before the logout request.
 	// Otherwise the next account on this browser would receive these pushes.
 	try {
