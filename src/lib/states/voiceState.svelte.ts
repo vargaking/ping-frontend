@@ -1,4 +1,5 @@
 import {
+	ConnectionQuality,
 	DisconnectReason,
 	LocalAudioTrack,
 	LocalVideoTrack,
@@ -13,6 +14,7 @@ import {
 } from 'livekit-client';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
+import type { VoiceQuality } from './connectionState.svelte';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { DEFAULT_DEVICE, voiceSettingsState } from './voiceSettingsState.svelte';
@@ -63,6 +65,21 @@ const SCREEN_REPUBLISH_GRACE_MS = 1000;
 const STORAGE_KEY = 'voice.selfState';
 const REJOIN_DELAYS_MS = [1000, 3000, 10000];
 
+function mapQuality(quality: ConnectionQuality): VoiceQuality {
+	switch (quality) {
+		case ConnectionQuality.Excellent:
+			return 'excellent';
+		case ConnectionQuality.Good:
+			return 'good';
+		case ConnectionQuality.Poor:
+			return 'poor';
+		case ConnectionQuality.Lost:
+			return 'lost';
+		default:
+			return 'unknown';
+	}
+}
+
 function loadSelfState(): { muted: boolean; deafened: boolean } {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
@@ -85,6 +102,8 @@ class VoiceState {
 	connecting: boolean = $state(false);
 	/** LiveKit is recovering the connection, or a rejoin is in progress. */
 	reconnecting: boolean = $state(false);
+	/** LiveKit's rating of our own link to the call. */
+	quality: VoiceQuality = $state('unknown');
 	/** The user's own mute choice. It survives deafening and leaving voice. */
 	muted: boolean = $state(false);
 	deafened: boolean = $state(false);
@@ -408,6 +427,9 @@ class VoiceState {
 			.on(RoomEvent.Reconnected, () => {
 				this.reconnecting = false;
 			})
+			.on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, p: Participant) => {
+				if (p.isLocal) this.quality = mapQuality(quality);
+			})
 			.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
 				this.handleDisconnected(r, reason);
 			})
@@ -617,6 +639,7 @@ class VoiceState {
 		this.departed = new SvelteSet();
 		this.sharing = false;
 		this.selfPreview = false;
+		this.quality = 'unknown';
 	}
 
 	private cleanup() {

@@ -3,6 +3,7 @@ import type { JSONContent } from '@tiptap/core';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { voiceState } from './voiceState.svelte';
+import { connectionState, serverHost } from './connectionState.svelte';
 import {
 	messagesState,
 	messageThreadKey,
@@ -34,7 +35,10 @@ import { replyState } from './replyState.svelte';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
-const RECONNECT_DELAY_MS = 2000;
+const RECONNECT_DELAYS_MS = [2000, 4000, 8000, 10000];
+const PING_INTERVAL_MS = 10_000;
+const PONG_TIMEOUT_MS = 5_000;
+const MAX_MISSED_PONGS = 2;
 
 class SocketState {
 	private socket: WebSocket | null = null;
@@ -44,6 +48,15 @@ class SocketState {
 	reconnecting: boolean = $state(false);
 	private hasConnected = false;
 	private activitySubscribed = false;
+	private listenersAttached = false;
+	private reconnectAttempt = 0;
+	private outageLogged = false;
+	private pingTimer: ReturnType<typeof setInterval> | null = null;
+	private pongTimer: ReturnType<typeof setTimeout> | null = null;
+	private outstandingPing: number | null = null;
+	private missedPongs = 0;
+	/** The server answered a ping with invalid_frame: it predates the heartbeat. */
+	private heartbeatUnsupported = false;
 
 	/**
 	 * Open the socket. The server identifies us from the session cookie during
@@ -61,6 +74,18 @@ class SocketState {
 			});
 		}
 
+		if (!this.listenersAttached) {
+			this.listenersAttached = true;
+			document.addEventListener('visibilitychange', () => {
+				if (document.hidden) return;
+				if (this.reconnecting) this.retryNow();
+				else this.sendPing();
+			});
+			window.addEventListener('online', () => this.retryNow());
+		}
+
+		connectionState.setStatus(serverHost, this.reconnecting ? 'reconnecting' : 'connecting');
+
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const host = window.location.host;
 		const wsUrl = PUBLIC_WS_URL.startsWith('/')
@@ -71,9 +96,14 @@ class SocketState {
 		this.socket = socket;
 
 		socket.onopen = () => {
-			console.log('WebSocket connection established');
+			if (this.outageLogged) console.info('WebSocket recovered');
+			this.outageLogged = false;
+			this.reconnectAttempt = 0;
 			this.connected = true;
 			this.reconnecting = false;
+			connectionState.setStatus(serverHost, 'connected');
+			this.startHeartbeat();
+			void connectionState.checkIdentity();
 
 			// Voice frames sent while we were offline are gone, so refetch.
 			const serverId = serversState.selectedServerId;
@@ -84,16 +114,16 @@ class SocketState {
 		};
 
 		socket.onclose = (event) => {
-			console.log('WebSocket connection closed', event.code);
-
 			// A close event from a socket we already replaced or dropped on
 			// purpose (see disconnect()) must not touch the current state.
 			if (this.socket !== socket) return;
 
 			this.socket = null;
 			this.connected = false;
+			this.stopHeartbeat();
 
 			if (event.code === WS_CLOSE_UNAUTHENTICATED) {
+				connectionState.setStatus(serverHost, 'disconnected');
 				// Session is gone or expired. Retrying would loop forever, so
 				// hand over to the login page instead.
 				usersState.setLoggedInUser(null);
@@ -103,21 +133,88 @@ class SocketState {
 				return;
 			}
 
-			this.reconnecting = true;
-			this.reconnectTimer = setTimeout(() => {
-				this.reconnectTimer = null;
-				this.connect();
-			}, RECONNECT_DELAY_MS);
+			this.scheduleReconnect();
 		};
 
 		socket.onmessage = (event) => {
 			const data = JSON.parse(event.data);
+			connectionState.noteFrame(serverHost);
 			this.commSwitch(data);
 		};
+	}
 
-		socket.onerror = (error) => {
-			console.error('WebSocket error:', error);
-		};
+	private scheduleReconnect() {
+		if (!this.outageLogged) console.info('WebSocket lost, reconnecting');
+		this.outageLogged = true;
+		this.reconnecting = true;
+		connectionState.setStatus(serverHost, 'reconnecting');
+		const delay =
+			RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+		this.reconnectAttempt++;
+		this.reconnectTimer = setTimeout(() => {
+			this.reconnectTimer = null;
+			this.connect();
+		}, delay);
+	}
+
+	private retryNow() {
+		if (!this.reconnecting || this.socket) return;
+		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+		this.reconnectTimer = null;
+		this.connect();
+	}
+
+	private startHeartbeat() {
+		this.stopHeartbeat();
+		this.heartbeatUnsupported = false;
+		this.pingTimer = setInterval(() => this.sendPing(), PING_INTERVAL_MS);
+		this.sendPing();
+	}
+
+	private stopHeartbeat() {
+		if (this.pingTimer) clearInterval(this.pingTimer);
+		if (this.pongTimer) clearTimeout(this.pongTimer);
+		this.pingTimer = null;
+		this.pongTimer = null;
+		this.outstandingPing = null;
+		this.missedPongs = 0;
+	}
+
+	private sendPing() {
+		if (this.heartbeatUnsupported || this.outstandingPing != null || document.hidden) return;
+		if (this.socket?.readyState !== WebSocket.OPEN) return;
+
+		const t = performance.now();
+		this.outstandingPing = t;
+		this.socket.send(JSON.stringify({ type: 'ping', t }));
+		this.pongTimer = setTimeout(() => this.pongTimedOut(t), PONG_TIMEOUT_MS);
+	}
+
+	private pongTimedOut(t: number) {
+		if (this.outstandingPing !== t) return;
+		this.outstandingPing = null;
+		// A background tab's timers are throttled, so a late pong proves nothing.
+		if (document.hidden) return;
+
+		this.missedPongs++;
+		connectionState.resetRtt(serverHost);
+		if (this.missedPongs < MAX_MISSED_PONGS) return;
+
+		const socket = this.socket;
+		this.socket = null;
+		this.connected = false;
+		this.stopHeartbeat();
+		socket?.close();
+		this.scheduleReconnect();
+	}
+
+	private handlePong(t: number) {
+		if (t !== this.outstandingPing) return;
+		connectionState.addRttSample(serverHost, performance.now() - t);
+		this.outstandingPing = null;
+		this.missedPongs = 0;
+		if (this.pongTimer) clearTimeout(this.pongTimer);
+		this.pongTimer = null;
 	}
 
 	private sendActivity(state: ActivityState) {
@@ -136,6 +233,10 @@ class SocketState {
 		this.socket = null;
 		this.connected = false;
 		this.reconnecting = false;
+		this.reconnectAttempt = 0;
+		this.outageLogged = false;
+		this.stopHeartbeat();
+		connectionState.setStatus(serverHost, 'disconnected');
 		socket?.close();
 	}
 
@@ -524,7 +625,19 @@ class SocketState {
 			case 'read_state':
 				this.handleReadState(message);
 				break;
+			case 'pong':
+				this.handlePong(message.t);
+				break;
 			case 'error':
+				if (
+					message.code === 'invalid_frame' &&
+					message.ref == null &&
+					this.outstandingPing != null
+				) {
+					this.stopHeartbeat();
+					this.heartbeatUnsupported = true;
+					break;
+				}
 				if (message.code === 'invalid_attachments' && message.ref) {
 					// Nothing was stored server-side, so drop the optimistic copy.
 					this.handleMessageDeleted({ id: message.ref });
