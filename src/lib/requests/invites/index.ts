@@ -13,8 +13,13 @@ export const createInvite = async (data: InviteCreate): Promise<InviteResponse> 
 	return response.data;
 };
 
-export const listServerInvites = async (serverId: number): Promise<InviteResponse[]> => {
-	const response = await axiosClient.get<InviteResponse[]>(`/invites/server/${serverId}`);
+export const listServerInvites = async (
+	serverId: number,
+	options: { mine?: boolean } = {}
+): Promise<InviteResponse[]> => {
+	const response = await axiosClient.get<InviteResponse[]>(`/invites/server/${serverId}`, {
+		params: options.mine ? { mine: true } : undefined
+	});
 	return response.data;
 };
 
