@@ -2,6 +2,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
+	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { Hash, Volume2, Users, UserPlus, Settings } from 'lucide-svelte';
@@ -12,6 +13,8 @@
 	};
 
 	let { membersOpen = true, onToggleMembers }: Props = $props();
+
+	let inviteOpen = $state(false);
 
 	const channel = $derived(serversState.selectedChannel);
 	const topic = $derived(channel?.topic ?? '');
@@ -45,12 +48,7 @@
 			</button>
 		{/if}
 		{#if serversState.canInvite}
-			<Button
-				variant="secondary"
-				size="sm"
-				onclick={() =>
-					overlayState.open(SettingsModal, { category: 'server', tab: 'server-invites' })}
-			>
+			<Button variant="secondary" size="sm" onclick={() => (inviteOpen = true)}>
 				<UserPlus size={16} strokeWidth={1.75} />
 				Invite
 			</Button>
@@ -68,3 +66,5 @@
 		</button>
 	</div>
 </header>
+
+<InviteDialog bind:open={inviteOpen} />

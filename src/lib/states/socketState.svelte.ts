@@ -12,10 +12,13 @@ import {
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
 import { notificationsState } from './notificationsState.svelte';
+import { documentFocusState, type ActivityState } from '$lib/utils/documentFocus.svelte';
+import { reportActivity } from '$lib/utils/push';
 import { voicePresenceState } from './voicePresenceState.svelte';
 import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound';
-import { notifyChannelMessage, notifyDirectMessage } from '$lib/utils/desktopNotification';
-import { messageMentionsUser } from '$lib/utils/messageContent';
+import { notifyChannelMessage, showThreadNotification } from '$lib/utils/desktopNotification';
+import { channelTag, dmTag } from '$lib/utils/notificationTags';
+import { messageMentionsUser, messagePreviewText } from '$lib/utils/messageContent';
 import { db } from '$lib/utils/db';
 import { channelRemoved } from '$lib/utils/channelRemoved';
 import { serverRemoved } from '$lib/utils/serverRemoved';
@@ -38,6 +41,7 @@ class SocketState {
 	/** The connection dropped and a reconnect is pending. */
 	reconnecting: boolean = $state(false);
 	private hasConnected = false;
+	private activitySubscribed = false;
 
 	/**
 	 * Open the socket. The server identifies us from the session cookie during
@@ -45,6 +49,15 @@ class SocketState {
 	 */
 	connect() {
 		if (this.socket) return;
+
+		if (!this.activitySubscribed) {
+			this.activitySubscribed = true;
+			documentFocusState.attach();
+			documentFocusState.onActivity((state) => {
+				this.sendActivity(state);
+				reportActivity(state);
+			});
+		}
 
 		const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 		const host = window.location.host;
@@ -64,6 +77,8 @@ class SocketState {
 			const serverId = serversState.selectedServerId;
 			if (this.hasConnected && serverId != null) voicePresenceState.load(serverId);
 			this.hasConnected = true;
+
+			this.sendActivity(documentFocusState.active ? 'active' : 'idle');
 		};
 
 		socket.onclose = (event) => {
@@ -101,6 +116,11 @@ class SocketState {
 		socket.onerror = (error) => {
 			console.error('WebSocket error:', error);
 		};
+	}
+
+	private sendActivity(state: ActivityState) {
+		if (this.socket?.readyState !== WebSocket.OPEN) return;
+		this.socket.send(JSON.stringify({ type: 'activity', state }));
 	}
 
 	/** Close the socket and stay closed (e.g. on logout). Call connect() to reopen. */
@@ -231,7 +251,8 @@ class SocketState {
 			senderId: message.user_id,
 			content: message.content,
 			attachments: message.attachments,
-			mentionsMe
+			mentionsMe,
+			messageUuid: message.id
 		});
 	}
 
@@ -260,7 +281,8 @@ class SocketState {
 			senderId: message.user_id,
 			content: message.content,
 			attachments: message.attachments,
-			mentionsMe: false
+			mentionsMe: false,
+			messageUuid: message.id
 		});
 	}
 
@@ -276,6 +298,7 @@ class SocketState {
 					content: unknown;
 					attachments?: Attachment[];
 					mentionsMe: boolean;
+					messageUuid: string;
 			  }
 			| {
 					kind: 'direct';
@@ -284,6 +307,7 @@ class SocketState {
 					content: unknown;
 					attachments?: Attachment[];
 					mentionsMe: boolean;
+					messageUuid: string;
 			  }
 	) {
 		if (notificationsState.sound) {
@@ -296,21 +320,41 @@ class SocketState {
 		notificationsState.refreshPermission();
 		if (!notificationsState.desktop || notificationsState.permission !== 'granted') return;
 
+		// Pushes for these share the page's tag and message id, so showing both
+		// never duplicates; only a window the user is working in stays quiet.
+		const pushedByServer = args.kind === 'direct' || args.mentionsMe;
+		if (notificationsState.push === 'on' && pushedByServer && documentFocusState.active) return;
+
 		const sender = usersState.users[args.senderId];
 		const senderUsername = sender?.username ?? 'Someone';
 
+		const body = messagePreviewText(args.content, args.attachments);
+
 		if (args.kind === 'direct') {
-			notifyDirectMessage({
-				tag: directThreadKey(args.conversationId),
-				senderUsername,
-				content: args.content,
-				attachments: args.attachments,
-				href: `/app/direct/${args.conversationId}/`
+			void showThreadNotification({
+				tag: dmTag(args.conversationId),
+				title: senderUsername,
+				body,
+				url: `/app/direct/${args.conversationId}/`,
+				messageUuid: args.messageUuid,
+				noun: 'messages'
 			});
 			return;
 		}
 
 		const server = serversState.servers[args.serverId];
+		if (args.mentionsMe) {
+			void showThreadNotification({
+				tag: channelTag(args.channelId),
+				title: `${senderUsername} in #${unreadState.channelName(args.channelId)}`,
+				body,
+				url: `/app/server/${args.serverId}/channel/${args.channelId}/`,
+				messageUuid: args.messageUuid,
+				noun: 'mentions'
+			});
+			return;
+		}
+
 		notifyChannelMessage({
 			tag: channelThreadKey(args.channelId),
 			channelName: unreadState.channelName(args.channelId),

@@ -12,6 +12,7 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { safeNext } from '$lib/auth/session';
+	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
 
@@ -100,6 +101,7 @@
 </script>
 
 <svelte:head><link rel="icon" href={icon} /></svelte:head>
+{#if page.data.meta}<MetaTags meta={page.data.meta} />{/if}
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
 
