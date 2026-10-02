@@ -19,6 +19,8 @@
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { mentionCandidates } from '$lib/utils/mentions';
 	import { messagePreviewText } from '$lib/utils/messageContent';
+	import * as Popover from '$lib/components/ui/popover/index';
+	import EmojiPicker from '$lib/components/ui/emoji/EmojiPicker.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import { File as FileIcon, Paperclip, Smile, SendHorizontal, X } from 'lucide-svelte';
 
@@ -40,6 +42,8 @@
 	let pending = $state<PendingItem[]>([]);
 	let dragging = $state(false);
 	let dragDepth = 0;
+	let emojiOpen = $state(false);
+	let closedByEscape = false;
 
 	const controllers: Record<string, AbortController> = {};
 
@@ -197,6 +201,12 @@
 		dragDepth = 0;
 		dragging = false;
 		addFiles(Array.from(event.dataTransfer?.files ?? []));
+	}
+
+	function handleEmojiCloseFocus(event: Event) {
+		event.preventDefault();
+		if (closedByEscape) editor?.focus(null);
+		closedByEscape = false;
 	}
 
 	function handleSubmit(message: JSONContent) {
@@ -367,13 +377,32 @@
 				editorClass="prose prose-sm max-h-40 w-full max-w-none min-w-0 flex-1 self-center overflow-y-auto py-1.5 text-[15px] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 			/>
 
-			<button
-				type="button"
-				aria-label="Add emoji"
-				class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-			>
-				<Smile size={18} strokeWidth={1.75} />
-			</button>
+			<Popover.Root bind:open={emojiOpen}>
+				<Popover.Trigger disabled={!target}>
+					{#snippet child({ props })}
+						<button
+							{...props}
+							type="button"
+							aria-label="Add emoji"
+							disabled={!target}
+							class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40"
+						>
+							<Smile size={18} strokeWidth={1.75} />
+						</button>
+					{/snippet}
+				</Popover.Trigger>
+				<Popover.Content
+					class="w-auto p-0"
+					side="top"
+					align="end"
+					sideOffset={6}
+					onEscapeKeydown={() => (closedByEscape = true)}
+					onOpenAutoFocus={(event) => event.preventDefault()}
+					onCloseAutoFocus={handleEmojiCloseFocus}
+				>
+					<EmojiPicker onpick={(unicode) => editor?.insertText(unicode)} />
+				</Popover.Content>
+			</Popover.Root>
 
 			<button
 				type="button"
