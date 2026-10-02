@@ -24,7 +24,7 @@ import { channelRemoved } from '$lib/utils/channelRemoved';
 import { serverRemoved } from '$lib/utils/serverRemoved';
 import { getUser } from '$lib/requests/users/getUser';
 import { v4 as uuidv4 } from 'uuid';
-import type { MessageTarget, MessageType } from '$lib/types/messages.types';
+import type { Embed, MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
 import type { Attachment } from '$lib/types/attachment.types';
 import { toast } from 'svelte-sonner';
@@ -144,11 +144,13 @@ class SocketState {
 		target: MessageTarget,
 		message: JSONContent,
 		attachments: Attachment[] = [],
-		replyTo?: MessageType
+		replyTo?: MessageType,
+		embeds: Embed[] = []
 	): boolean {
 		if (!message) return false;
 		// Callers pass reactive state; IndexedDB can't store Svelte's proxies.
 		attachments = $state.snapshot(attachments);
+		embeds = $state.snapshot(embeds);
 		// A socket can still report OPEN for a while after the network is gone.
 		if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !navigator.onLine) {
 			return false;
@@ -172,7 +174,8 @@ class SocketState {
 						content: message,
 						timestamp,
 						attachments,
-						reply_to
+						reply_to,
+						embeds
 					}
 				: {
 						id,
@@ -181,7 +184,8 @@ class SocketState {
 						content: message,
 						timestamp,
 						attachments,
-						reply_to
+						reply_to,
+						embeds
 					};
 
 		const frame =
@@ -194,7 +198,8 @@ class SocketState {
 						content: message,
 						timestamp,
 						attachment_ids: attachmentIds,
-						reply_to: replyTo?.id
+						reply_to: replyTo?.id,
+						embeds
 					}
 				: {
 						type: 'direct_message',
@@ -203,7 +208,8 @@ class SocketState {
 						content: message,
 						timestamp,
 						attachment_ids: attachmentIds,
-						reply_to: replyTo?.id
+						reply_to: replyTo?.id,
+						embeds
 					};
 
 		this.socket.send(JSON.stringify(frame));

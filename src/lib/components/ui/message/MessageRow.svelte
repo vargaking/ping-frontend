@@ -4,6 +4,7 @@
 	import MessageNode from './MessageNode.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import MessageAttachments from './MessageAttachments.svelte';
+	import LinkEmbed from './LinkEmbed.svelte';
 	import MessageReactions from './MessageReactions.svelte';
 	import ReactionPicker from './ReactionPicker.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
@@ -31,6 +32,7 @@
 	const parsedContent = $derived(parseMessageContent(message.content));
 
 	const attachments = $derived(message.attachments ?? []);
+	const embeds = $derived(message.embeds ?? []);
 	const hasText = $derived(messagePlainText(message.content) !== '');
 
 	const hoverTime = $derived(
@@ -187,6 +189,11 @@
 				<span class="text-[11px] text-text-subtle select-none">(edited)</span>
 			{/if}
 		{/if}
+		{#each embeds as embed (embed.url)}
+			<div class="mt-1.5">
+				<LinkEmbed {embed} />
+			</div>
+		{/each}
 		<MessageReactions {message} />
 	{/if}
 </div>

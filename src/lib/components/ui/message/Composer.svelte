@@ -17,8 +17,10 @@
 		uploadAttachment
 	} from '$lib/requests/attachments/uploadAttachment';
 	import { getErrorMessage } from '$lib/requests/errors';
+	import { LinkPreview } from '$lib/utils/linkPreview.svelte';
 	import { mentionCandidates } from '$lib/utils/mentions';
-	import { messagePreviewText } from '$lib/utils/messageContent';
+	import { messagePlainText, messagePreviewText } from '$lib/utils/messageContent';
+	import LinkEmbed from './LinkEmbed.svelte';
 	import MessageEditor from './MessageEditor.svelte';
 	import { File as FileIcon, Paperclip, Smile, SendHorizontal, X } from 'lucide-svelte';
 
@@ -42,6 +44,7 @@
 	let dragDepth = 0;
 
 	const controllers: Record<string, AbortController> = {};
+	const linkPreview = new LinkPreview();
 
 	const doneAttachments = $derived(
 		pending.flatMap((p) => (p.status === 'done' && p.attachment ? [p.attachment] : []))
@@ -77,9 +80,13 @@
 		if (targetKey === lastTargetKey) return;
 		lastTargetKey = targetKey;
 		untrack(clearPending);
+		untrack(() => linkPreview.reset());
 	});
 
-	onDestroy(clearPending);
+	onDestroy(() => {
+		clearPending();
+		linkPreview.reset();
+	});
 
 	function clearPending() {
 		for (const id of Object.keys(controllers)) {
@@ -201,11 +208,20 @@
 
 	function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
-		if (!socketState.sendMessage(target, message, doneAttachments, replyTarget)) {
+		const embed = linkPreview.embedFor(messagePlainText(message));
+		const sent = socketState.sendMessage(
+			target,
+			message,
+			doneAttachments,
+			replyTarget,
+			embed ? [embed] : []
+		);
+		if (!sent) {
 			toast.error("You're offline. Your message wasn't sent.");
 			return;
 		}
 		editor?.clear();
+		linkPreview.reset();
 		clearPending();
 		cancelReply();
 		editor?.focus();
@@ -265,6 +281,20 @@
 		ondragleave={handleDragLeave}
 		ondropcapture={handleDrop}
 	>
+		{#if linkPreview.embed}
+			<div class="flex items-start gap-1 px-2.5 pt-2.5">
+				<LinkEmbed embed={linkPreview.embed} compact />
+				<button
+					type="button"
+					aria-label="Remove link preview"
+					onclick={() => linkPreview.dismiss()}
+					class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					<X size={16} strokeWidth={1.75} />
+				</button>
+			</div>
+		{/if}
+
 		{#if pending.length > 0}
 			<ul class="flex flex-wrap gap-2 px-2.5 pt-2.5">
 				{#each pending as item (item.localId)}
@@ -357,6 +387,7 @@
 				bind:isEmpty
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
+				onChange={(json) => linkPreview.update(messagePlainText(json))}
 				onArrowUp={editLastOwnMessage}
 				onCancel={replyTarget ? cancelReply : undefined}
 				mentionCandidates={() =>

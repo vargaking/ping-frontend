@@ -18,6 +18,7 @@
 		editorClass = '',
 		mentionCandidates,
 		onSubmit,
+		onChange,
 		onCancel,
 		onArrowUp
 	}: {
@@ -31,6 +32,8 @@
 		/** Who the @mention list can suggest; without it there are no suggestions. */
 		mentionCandidates?: () => User[];
 		onSubmit: (json: JSONContent) => void;
+		/** Called after every edit to the content. */
+		onChange?: (json: JSONContent) => void;
 		onCancel?: () => void;
 		onArrowUp?: () => void;
 	} = $props();
@@ -92,6 +95,7 @@
 			onCreate: ({ editor }) => {
 				isEmpty = editor.isEmpty;
 			},
+			onUpdate: ({ editor }) => onChange?.(editor.getJSON()),
 			onTransaction: ({ editor }) => {
 				// Removing a focused editor fires a blur transaction mid-teardown,
 				// where writing state throws; blur never changes emptiness. Read
