@@ -14,7 +14,23 @@
 	];
 	const DEFAULT_EXPIRY = '10080';
 	const DEFAULT_MAX_USES = 'unlimited';
+	const CURRENT_EXPIRY = 'current';
 	const COPIED_MS = 2000;
+	function timeLeft(validUntil: string): string {
+		const minutes = Math.max(1, Math.round((new Date(validUntil).getTime() - Date.now()) / 60_000));
+		const [amount, unit] =
+			minutes < 60
+				? [minutes, 'minute']
+				: minutes < 60 * 24
+					? [Math.round(minutes / 60), 'hour']
+					: [Math.round(minutes / (60 * 24)), 'day'];
+		return `${amount} ${unit}${amount === 1 ? '' : 's'} left`;
+	}
+
+	function isDefaultInvite(invite: InviteResponse): boolean {
+		return isInviteActive(invite) && !invite.has_password && invite.max_uses === null;
+	}
+
 	const fieldClass =
 		'h-10 w-full rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50';
 </script>
@@ -23,9 +39,15 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
-	import { createInvite, deleteInvite, updateInvite } from '$lib/requests/invites';
+	import {
+		createInvite,
+		deleteInvite,
+		listServerInvites,
+		updateInvite
+	} from '$lib/requests/invites';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import type { InviteResponse } from '$lib/types/invite.types';
+	import { inviteLink, isInviteActive } from '$lib/utils/inviteCode';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
@@ -50,7 +72,7 @@
 	// Bumped on every open/close so a slow request can't write into a later session.
 	let session = 0;
 
-	const link = $derived(invite ? `${window.location.origin}/invite/${invite.id}/` : '');
+	const link = $derived(invite ? inviteLink(invite.id) : '');
 	const hasPassword = $derived(invite?.has_password ?? false);
 	const canApplyPassword = $derived(
 		!busy && invite != null && (password.length > 0 || hasPassword)
@@ -58,6 +80,7 @@
 
 	function validUntil(): string | null {
 		if (expiry === 'never') return null;
+		if (expiry === CURRENT_EXPIRY) return invite?.valid_until ?? null;
 		return new Date(Date.now() + Number(expiry) * 60_000).toISOString();
 	}
 
@@ -84,11 +107,40 @@
 		}
 		untrack(() => {
 			reset();
-			void issue();
+			void start();
 		});
 	});
 
 	$effect(() => () => clearTimeout(copiedTimer));
+
+	/** Reuses the caller's newest default invite, creating one only when there is none. */
+	async function start() {
+		if (serverId == null) return;
+		const mine = session;
+		busy = true;
+		failed = false;
+		try {
+			const existing = (await listServerInvites(serverId, { mine: true })).find(isDefaultInvite);
+			if (mine !== session) return;
+			if (existing?.valid_until) {
+				expiry = appliedExpiry = CURRENT_EXPIRY;
+			} else if (existing) {
+				expiry = appliedExpiry = 'never';
+			}
+			if (existing) {
+				invite = existing;
+				busy = false;
+				return;
+			}
+		} catch (e) {
+			if (mine !== session) return;
+			busy = false;
+			failed = true;
+			toast.error(`Couldn't load the invite: ${getErrorMessage(e)}`);
+			return;
+		}
+		await issue();
+	}
 
 	/** Creates an invite with the current options, replacing `previous` when given. */
 	async function issue(previous?: InviteResponse) {
@@ -183,7 +235,7 @@
 			<ErrorState
 				title="Couldn’t create an invite"
 				description="There was a problem reaching the server."
-				onRetry={() => issue()}
+				onRetry={start}
 			/>
 		{:else}
 			<div class="flex flex-col gap-5">
@@ -232,6 +284,9 @@
 							disabled={busy || !invite}
 							onchange={applyOptions}
 						>
+							{#if expiry === CURRENT_EXPIRY && invite?.valid_until}
+								<option value={CURRENT_EXPIRY}>{timeLeft(invite.valid_until)}</option>
+							{/if}
 							{#each EXPIRY_OPTIONS as option (option.value)}
 								<option value={option.value}>{option.label}</option>
 							{/each}
