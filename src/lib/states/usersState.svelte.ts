@@ -19,7 +19,14 @@ class UsersState {
 		this.onlineUsers = new SvelteSet();
 	}
 
-	setLoggedInUser(user: User | null) {
+	/** Profile responses about us omit the admin flag; keep the one we already know. */
+	private keepAdminFlag(user: User): User {
+		if (user.is_platform_admin !== undefined || this.loggedInUser?.id !== user.id) return user;
+		return { ...user, is_platform_admin: this.loggedInUser.is_platform_admin };
+	}
+
+	setLoggedInUser(incoming: User | null) {
+		const user = incoming && this.keepAdminFlag(incoming);
 		this.loggedInUser = user;
 		if (user) {
 			this.users[user.id] = user;
@@ -29,7 +36,8 @@ class UsersState {
 	}
 
 	/** Store a fresh copy of a user without touching presence. */
-	applyUser(user: User) {
+	applyUser(incoming: User) {
+		const user = this.keepAdminFlag(incoming);
 		this.users[user.id] = user;
 		if (this.loggedInUser?.id === user.id) {
 			this.loggedInUser = user;

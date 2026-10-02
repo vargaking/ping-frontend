@@ -7,6 +7,7 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { serverRequestState } from '$lib/states/serverRequestState.svelte';
 	import { createServer } from '$lib/requests/servers/createServer';
 	import { uploadServerIcon } from '$lib/requests/servers/uploadServerIcon';
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
@@ -15,6 +16,9 @@
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import SettingsTextField from '$lib/components/settings/SettingsTextField.svelte';
+	import ServerRequestPanel from '$lib/components/servers/ServerRequestPanel.svelte';
+	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
+	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import { ImagePlus } from 'lucide-svelte';
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
 
@@ -59,6 +63,10 @@
 
 	$effect(() => {
 		if (!open) untrack(reset);
+	});
+
+	$effect(() => {
+		if (open) untrack(() => void serverRequestState.load());
 	});
 
 	function handleOpenChange(next: boolean) {
@@ -181,76 +189,90 @@
 			aria-labelledby="{uid}-tab-create"
 			hidden={tab !== 'create'}
 		>
-			<form
-				class="flex flex-col gap-5"
-				onsubmit={(e) => {
-					e.preventDefault();
-					create();
-				}}
-			>
-				<div class="flex items-center gap-4">
-					<div
-						class="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] text-2xl font-semibold {iconPreview ||
-						!name.trim()
-							? 'bg-card text-text-label'
-							: avatarToneClass(name.trim())}"
-					>
-						{#if iconPreview}
-							<img src={iconPreview} alt="Server icon preview" class="h-full w-full object-cover" />
-						{:else if name.trim()}
-							{initials(name)}
-						{:else}
-							<ImagePlus size={24} strokeWidth={1.5} class="text-text-subtle" />
-						{/if}
-					</div>
-					<div class="flex flex-col gap-1.5">
-						<div class="flex gap-2">
-							<Button
-								variant="secondary"
-								size="sm"
-								class="border border-input"
-								aria-describedby="{uid}-icon-hint"
-								onclick={() => fileInput?.click()}
-							>
-								{iconFile ? 'Change icon' : 'Add icon'}
-							</Button>
-							{#if iconFile}
-								<Button variant="ghost" size="sm" onclick={() => setIcon(null)}>Remove</Button>
+			{#if !serverRequestState.mine}
+				{#if serverRequestState.loadFailed}
+					<ErrorState onRetry={() => serverRequestState.load()} />
+				{:else}
+					<LoadingList rows={3} />
+				{/if}
+			{:else if serverRequestState.mine.can_create}
+				<form
+					class="flex flex-col gap-5"
+					onsubmit={(e) => {
+						e.preventDefault();
+						create();
+					}}
+				>
+					<div class="flex items-center gap-4">
+						<div
+							class="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] text-2xl font-semibold {iconPreview ||
+							!name.trim()
+								? 'bg-card text-text-label'
+								: avatarToneClass(name.trim())}"
+						>
+							{#if iconPreview}
+								<img
+									src={iconPreview}
+									alt="Server icon preview"
+									class="h-full w-full object-cover"
+								/>
+							{:else if name.trim()}
+								{initials(name)}
+							{:else}
+								<ImagePlus size={24} strokeWidth={1.5} class="text-text-subtle" />
 							{/if}
 						</div>
-						<input
-							bind:this={fileInput}
-							type="file"
-							accept={ICON_TYPES.join(',')}
-							class="hidden"
-							tabindex="-1"
-							aria-label="Server icon file"
-							onchange={handleFileSelect}
-						/>
-						{#if iconError}
-							<p id="{uid}-icon-hint" class="text-xs text-destructive">{iconError}</p>
-						{:else}
-							<p id="{uid}-icon-hint" class="text-xs text-text-subtle">
-								Optional. PNG, JPG, WebP or GIF, up to 5 MB.
-							</p>
-						{/if}
+						<div class="flex flex-col gap-1.5">
+							<div class="flex gap-2">
+								<Button
+									variant="secondary"
+									size="sm"
+									class="border border-input"
+									aria-describedby="{uid}-icon-hint"
+									onclick={() => fileInput?.click()}
+								>
+									{iconFile ? 'Change icon' : 'Add icon'}
+								</Button>
+								{#if iconFile}
+									<Button variant="ghost" size="sm" onclick={() => setIcon(null)}>Remove</Button>
+								{/if}
+							</div>
+							<input
+								bind:this={fileInput}
+								type="file"
+								accept={ICON_TYPES.join(',')}
+								class="hidden"
+								tabindex="-1"
+								aria-label="Server icon file"
+								onchange={handleFileSelect}
+							/>
+							{#if iconError}
+								<p id="{uid}-icon-hint" class="text-xs text-destructive">{iconError}</p>
+							{:else}
+								<p id="{uid}-icon-hint" class="text-xs text-text-subtle">
+									Optional. PNG, JPG, WebP or GIF, up to 5 MB.
+								</p>
+							{/if}
+						</div>
 					</div>
-				</div>
 
-				<SettingsTextField
-					id="{uid}-name"
-					label="Server name"
-					bind:value={name}
-					error={nameError}
-					oninput={() => (nameError = '')}
-					maxlength={100}
-				/>
+					<SettingsTextField
+						id="{uid}-name"
+						label="Server name"
+						bind:value={name}
+						error={nameError}
+						oninput={() => (nameError = '')}
+						maxlength={100}
+					/>
 
-				<Dialog.Footer>
-					<Button variant="secondary" onclick={() => handleOpenChange(false)}>Cancel</Button>
-					<Button type="submit" disabled={!canCreate}>{creating ? 'Creating…' : 'Create'}</Button>
-				</Dialog.Footer>
-			</form>
+					<Dialog.Footer>
+						<Button variant="secondary" onclick={() => handleOpenChange(false)}>Cancel</Button>
+						<Button type="submit" disabled={!canCreate}>{creating ? 'Creating…' : 'Create'}</Button>
+					</Dialog.Footer>
+				</form>
+			{:else}
+				<ServerRequestPanel {uid} onCancel={() => handleOpenChange(false)} />
+			{/if}
 		</div>
 
 		<div
