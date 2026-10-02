@@ -1,0 +1,112 @@
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ping
+          POSTGRES_PASSWORD: ping
+          POSTGRES_DB: ping_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ping -d ping_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_CONNECTION_STRING: postgres://ping:ping@localhost:5432/ping_e2e
+      DEBUG: 'true'
+      ALLOWED_ORIGINS: https://localhost:5173
+      AUTH_RATE_LIMIT: 10000/minute
+      INVITE_USE_RATE_LIMIT: 10000/minute
+      ATTACHMENT_URL_KEY: e2e-attachment-key-0123456789-abcdefghijklmnop
+      MEDIA_ROOT: /tmp/ping-e2e/media
+      ATTACHMENTS_ROOT: /tmp/ping-e2e/attachments
+      LOG_DIR: /tmp/ping-e2e/logs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vargaking/ping-server
+          ref: master
+          path: ping-server
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: ping-server/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r ping-server/requirements.txt
+
+      - name: Apply migrations
+        working-directory: ping-server
+        run: aerich upgrade
+
+      - name: Start backend
+        working-directory: ping-server
+        run: |
+          nohup uvicorn app.app:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/uvicorn.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/auth/me)" = "401" ]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/uvicorn.log"
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Seed public env
+        run: cp .env.example .env
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+          LOCAL_IP: 127.0.0.1
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+
+      - name: Upload backend log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uvicorn-log
+          path: |
+            ${{ runner.temp }}/uvicorn.log
+            /tmp/ping-e2e/logs/
+          if-no-files-found: ignore
