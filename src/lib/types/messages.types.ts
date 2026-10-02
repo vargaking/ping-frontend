@@ -14,7 +14,12 @@ export type MessageType = {
 	edited_at?: string | null;
 	attachments?: Attachment[];
 	reactions?: Reaction[];
+	reply_to?: ReplyRef | null;
 };
+
+export type ReplyRef =
+	| { id: string; user_id: number; preview: string; deleted?: false }
+	| { id: string; deleted: true };
 
 export type Reaction = { emoji: string; user_ids: number[] };
 

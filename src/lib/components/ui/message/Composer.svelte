@@ -9,6 +9,7 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { messagesState, threadKey } from '$lib/states/messagesState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
+	import { replyState } from '$lib/states/replyState.svelte';
 	import {
 		MAX_ATTACHMENTS_PER_MESSAGE,
 		MAX_ATTACHMENT_BYTES,
@@ -17,6 +18,7 @@
 	} from '$lib/requests/attachments/uploadAttachment';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { mentionCandidates } from '$lib/utils/mentions';
+	import { messagePreviewText } from '$lib/utils/messageContent';
 	import MessageEditor from './MessageEditor.svelte';
 	import { File as FileIcon, Paperclip, Smile, SendHorizontal, X } from 'lucide-svelte';
 
@@ -51,6 +53,24 @@
 	);
 
 	const targetKey = $derived(target ? threadKey(target) : null);
+
+	const replyTarget = $derived(targetKey ? replyState.target[targetKey] : undefined);
+	const replyAuthor = $derived(
+		replyTarget ? (usersState.users[replyTarget.user_id]?.username ?? 'someone') : ''
+	);
+
+	function cancelReply() {
+		if (targetKey) replyState.cancel(targetKey);
+		editor?.focus();
+	}
+
+	let lastFocusRequest = replyState.focusRequest;
+	$effect(() => {
+		const request = replyState.focusRequest;
+		if (request === lastFocusRequest) return;
+		lastFocusRequest = request;
+		untrack(() => editor?.focus());
+	});
 
 	let lastTargetKey: string | null | undefined;
 	$effect(() => {
@@ -181,12 +201,13 @@
 
 	function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
-		if (!socketState.sendMessage(target, message, doneAttachments)) {
+		if (!socketState.sendMessage(target, message, doneAttachments, replyTarget)) {
 			toast.error("You're offline. Your message wasn't sent.");
 			return;
 		}
 		editor?.clear();
 		clearPending();
+		cancelReply();
 		editor?.focus();
 	}
 
@@ -212,6 +233,26 @@
 	>
 		{#if socketState.reconnecting}Reconnecting — you can keep typing.{/if}
 	</p>
+	{#if replyTarget}
+		<div
+			class="mb-1.5 flex items-center gap-2 rounded-lg border border-input bg-card py-1 pr-1 pl-3 text-xs"
+		>
+			<span class="min-w-0 flex-1 truncate text-text-subtle">
+				<span class="text-muted-foreground">Replying to <strong>{replyAuthor}</strong></span>
+				<span class="ml-1.5"
+					>{messagePreviewText(replyTarget.content, replyTarget.attachments)}</span
+				>
+			</span>
+			<button
+				type="button"
+				aria-label="Cancel reply"
+				onclick={cancelReply}
+				class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				<X size={16} strokeWidth={1.75} />
+			</button>
+		</div>
+	{/if}
 	<div
 		role="group"
 		aria-label="Message composer"
@@ -317,6 +358,7 @@
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
 				onArrowUp={editLastOwnMessage}
+				onCancel={replyTarget ? cancelReply : undefined}
 				mentionCandidates={() =>
 					mentionCandidates({
 						serverId: target?.kind === 'channel' ? target.serverId : null,

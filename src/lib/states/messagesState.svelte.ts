@@ -1,4 +1,4 @@
-import type { MessageTarget, MessageType, Reaction } from '$lib/types/messages.types';
+import type { MessageTarget, MessageType, Reaction, ReplyRef } from '$lib/types/messages.types';
 
 /** Idempotent: adding an existing reaction or removing a missing one returns the input unchanged. */
 export function reactionsWith(
@@ -120,6 +120,19 @@ class MessagesState {
 				return;
 			}
 		}
+	}
+
+	/** Point every loaded reply to *originalId* at *ref*; returns the replies' ids. */
+	updateReplyQuotes(originalId: string, ref: ReplyRef): string[] {
+		const updated: string[] = [];
+		for (const thread of Object.values(this.threads)) {
+			for (const message of thread.messages) {
+				if (message.reply_to?.id !== originalId) continue;
+				message.reply_to = { ...ref };
+				updated.push(message.id);
+			}
+		}
+		return updated;
 	}
 
 	removeMessage(id: string) {

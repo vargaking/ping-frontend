@@ -10,16 +10,18 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
-	import { messagesState } from '$lib/states/messagesState.svelte';
+	import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
+	import { replyState } from '$lib/states/replyState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { editMessage } from '$lib/requests/messages/editMessage';
 	import { deleteMessage } from '$lib/requests/messages/deleteMessage';
 	import { db } from '$lib/utils/db';
+	import { markRepliesDeleted, refreshReplyQuotes } from '$lib/utils/replies';
 	import { mentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
-	import { Pencil, SmilePlus, Trash2 } from 'lucide-svelte';
+	import { Pencil, Reply, SmilePlus, Trash2 } from 'lucide-svelte';
 
 	// The first row in a group already shows the timestamp in the group header,
 	// so the hover-gutter time is only rendered on continuation rows.
@@ -52,6 +54,7 @@
 			messagesState.updateMessage(message.id, changes);
 			conversationsState.messageEdited(message.id, changes);
 			await db.messages.update(message.id, changes);
+			await refreshReplyQuotes(updated);
 			messageEditState.stop();
 		} catch (e) {
 			// Keep the editor open so the edit isn't lost.
@@ -71,6 +74,8 @@
 					messagesState.removeMessage(message.id);
 					conversationsState.messageDeleted(message.id);
 					await db.messages.delete(message.id);
+					replyState.cancelFor(message.id);
+					await markRepliesDeleted(message.id);
 				} catch (e) {
 					console.error('Failed to delete message', e);
 				}
@@ -79,7 +84,7 @@
 	}
 </script>
 
-<div class="group/row relative">
+<div class="group/row relative" data-message-id={message.id}>
 	{#if editing}
 		<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
 			<MessageEditor
@@ -132,6 +137,14 @@
 					</button>
 				{/snippet}
 			</ReactionPicker>
+			<button
+				type="button"
+				aria-label="Reply"
+				onclick={() => replyState.start(messageThreadKey(message), message)}
+				class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				<Reply size={16} strokeWidth={1.75} />
+			</button>
 			{#if canEdit}
 				<button
 					type="button"
