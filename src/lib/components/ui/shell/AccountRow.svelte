@@ -3,7 +3,7 @@
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-	import { Settings } from 'lucide-svelte';
+	import { Settings, Shield } from 'lucide-svelte';
 </script>
 
 <div class="flex items-center gap-2.5 border-t border-border px-3 py-2.5">
@@ -12,6 +12,15 @@
 		<span class="truncate text-[13px] font-medium">{usersState.loggedInUser?.username ?? '—'}</span>
 		<span class="text-xs text-text-subtle">Online</span>
 	</div>
+	{#if usersState.loggedInUser?.is_platform_admin}
+		<a
+			href="/admin/"
+			aria-label="Admin"
+			class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		>
+			<Shield size={18} strokeWidth={1.75} />
+		</a>
+	{/if}
 	<button
 		type="button"
 		aria-label="Account settings"

@@ -2,6 +2,7 @@ import { PUBLIC_WS_URL } from '$env/static/public';
 import type { JSONContent } from '@tiptap/core';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
+import { serverRequestState } from './serverRequestState.svelte';
 import { voiceState } from './voiceState.svelte';
 import { connectionState, serverHost } from './connectionState.svelte';
 import {
@@ -29,6 +30,9 @@ import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
 import type { Attachment } from '$lib/types/attachment.types';
 import { toast } from 'svelte-sonner';
+import { goto } from '$app/navigation';
+import type { Server } from '$lib/types/server.types';
+import type { ServerRequest } from '$lib/types/serverRequest.types';
 import { applyReaction } from '$lib/utils/reactions';
 import { markRepliesDeleted, refreshReplyQuotes, replyRefFor } from '$lib/utils/replies';
 import { replyState } from './replyState.svelte';
@@ -497,6 +501,26 @@ class SocketState {
 		await markRepliesDeleted(message.id);
 	}
 
+	handleServerAdded(server: Server) {
+		serversState.addServer(server);
+		if (server.id == null) return;
+		serversState
+			.fetchServerChannels(server.id)
+			.catch((e) => console.warn('Failed to load channels for added server', e));
+	}
+
+	handleServerRequestUpdated(request: ServerRequest) {
+		serverRequestState.apply(request);
+		if (request.status === 'approved' && request.server_id != null) {
+			const serverId = request.server_id;
+			toast(`Your server “${request.name}” was approved`, {
+				action: { label: 'Open', onClick: () => goto(`/app/server/${serverId}/`) }
+			});
+		} else if (request.status === 'declined') {
+			toast('Your server request was declined');
+		}
+	}
+
 	handleUserUpdate(user: User) {
 		usersState.applyUser(user);
 	}
@@ -607,6 +631,12 @@ class SocketState {
 				break;
 			case 'server_deleted':
 				serverRemoved(message.server_id, 'deleted');
+				break;
+			case 'server_added':
+				this.handleServerAdded(message.server);
+				break;
+			case 'server_request_updated':
+				this.handleServerRequestUpdated(message.request);
 				break;
 			case 'member_joined':
 				usersState.users[message.member.id] = message.member;

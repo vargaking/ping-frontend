@@ -4,6 +4,7 @@ import { serversState } from '$lib/states/serversState.svelte';
 import { messagesState } from '$lib/states/messagesState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { unreadState } from '$lib/states/unreadState.svelte';
+import { serverRequestState } from '$lib/states/serverRequestState.svelte';
 import { notificationsState } from '$lib/states/notificationsState.svelte';
 import { socketState } from '$lib/states/socketState.svelte';
 import { clearLocalCache } from '$lib/utils/db';
@@ -22,6 +23,7 @@ export async function clearSession(): Promise<void> {
 	usersState.reset();
 
 	serversState.reset();
+	serverRequestState.reset();
 
 	messagesState.clearAll();
 	conversationsState.reset();

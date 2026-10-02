@@ -3,4 +3,6 @@ export type User = {
 	username: string;
 	public_key: string;
 	profile: Record<string, any>;
+	/** Only present on the logged-in user's own profile. */
+	is_platform_admin?: boolean;
 };
