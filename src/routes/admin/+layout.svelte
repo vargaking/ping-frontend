@@ -13,7 +13,10 @@
 		if (!isAdmin) goto('/app/', { replaceState: true });
 	});
 
-	const nav = [{ href: '/admin/waitlist/', label: 'Waitlist' }];
+	const nav = [
+		{ href: '/admin/', label: 'Overview' },
+		{ href: '/admin/waitlist/', label: 'Waitlist' }
+	];
 </script>
 
 <svelte:head><title>Admin · zeta</title></svelte:head>
