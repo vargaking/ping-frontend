@@ -5,15 +5,12 @@
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
-	import { createChannel } from '$lib/requests/channels/createChannel';
 	import type { Channel } from '$lib/types/channel.types';
 	import SidebarRow from './SidebarRow.svelte';
 	import PresenceParticipant from './PresenceParticipant.svelte';
-	import * as Dialog from '$lib/components/ui/dialog/index';
+	import CreateChannelDialog from '$lib/components/servers/CreateChannelDialog.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
-	import Input from '$lib/components/ui/input/input.svelte';
-	import Button from '$lib/components/ui/button/button.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
@@ -22,7 +19,6 @@
 	import { serverRemoved } from '$lib/utils/serverRemoved';
 	import { toast } from 'svelte-sonner';
 	import { mergeProps } from 'bits-ui';
-	import { goto } from '$app/navigation';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { Hash, Volume2, ChevronDown, Plus, Settings, LogOut } from 'lucide-svelte';
 
@@ -49,10 +45,7 @@
 		});
 	}
 
-	let channelName = $state('');
-	let channelType: 'text' | 'voice' = $state('text');
 	let createOpen = $state(false);
-	let creating = $state(false);
 
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 
@@ -118,24 +111,6 @@
 		dragType = null;
 		dragIndex = null;
 		hoverIndex = null;
-	}
-
-	async function submitCreateChannel() {
-		const serverId = serversState.selectedServer?.id;
-		if (!serverId || !channelName.trim() || creating) return;
-		creating = true;
-		try {
-			const channel = await createChannel(serverId, channelName.trim(), channelType);
-			serversState.addChannel(serverId, channel);
-			channelName = '';
-			channelType = 'text';
-			createOpen = false;
-			await goto(channel.type === 'text' ? channelHref(channel) : voiceHref(channel));
-		} catch (e) {
-			toast.error(`Couldn't create channel: ${getErrorMessage(e)}`);
-		} finally {
-			creating = false;
-		}
 	}
 
 	function openChannelSettings(channel: Channel) {
@@ -242,49 +217,14 @@
 			<div class="flex h-6 items-center justify-between px-2">
 				<span class="text-xs font-medium tracking-[0.02em] text-text-subtle">Channels</span>
 				{#if canManageChannels}
-					<Dialog.Root bind:open={createOpen}>
-						<Dialog.Trigger
-							aria-label="Create channel"
-							class="flex h-5 w-5 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-						>
-							<Plus size={16} strokeWidth={1.75} />
-						</Dialog.Trigger>
-						<Dialog.Content>
-							<Dialog.Header><Dialog.Title>Create a channel</Dialog.Title></Dialog.Header>
-							<div class="flex flex-col gap-4 py-2">
-								<Input placeholder="Channel name" maxlength={100} bind:value={channelName} />
-								<div class="flex gap-4">
-									<label class="flex cursor-pointer items-center gap-2 text-sm">
-										<input
-											type="radio"
-											name="channelType"
-											value="text"
-											checked={channelType === 'text'}
-											onchange={() => (channelType = 'text')}
-											class="accent-primary"
-										/>
-										Text
-									</label>
-									<label class="flex cursor-pointer items-center gap-2 text-sm">
-										<input
-											type="radio"
-											name="channelType"
-											value="voice"
-											checked={channelType === 'voice'}
-											onchange={() => (channelType = 'voice')}
-											class="accent-primary"
-										/>
-										Voice
-									</label>
-								</div>
-							</div>
-							<Dialog.Footer>
-								<Button onclick={submitCreateChannel} disabled={!channelName.trim() || creating}>
-									{creating ? 'Creating…' : 'Create'}
-								</Button>
-							</Dialog.Footer>
-						</Dialog.Content>
-					</Dialog.Root>
+					<button
+						type="button"
+						aria-label="Create channel"
+						onclick={() => (createOpen = true)}
+						class="flex h-5 w-5 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					>
+						<Plus size={16} strokeWidth={1.75} />
+					</button>
 				{/if}
 			</div>
 
@@ -357,3 +297,5 @@
 		{/if}
 	</div>
 </div>
+
+<CreateChannelDialog bind:open={createOpen} />

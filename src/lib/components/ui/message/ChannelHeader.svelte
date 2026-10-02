@@ -2,17 +2,11 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
+	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { Hash, Volume2, Users, UserPlus, Settings } from 'lucide-svelte';
-
-	type Props = {
-		membersOpen?: boolean;
-		onToggleMembers?: () => void;
-	};
-
-	let { membersOpen = true, onToggleMembers }: Props = $props();
 
 	let inviteOpen = $state(false);
 
@@ -56,9 +50,9 @@
 		<button
 			type="button"
 			aria-label="Toggle member list"
-			aria-pressed={membersOpen}
-			onclick={onToggleMembers}
-			class="flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {membersOpen
+			aria-pressed={membersPanelState.open}
+			onclick={() => membersPanelState.toggle()}
+			class="flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {membersPanelState.open
 				? 'bg-accent text-foreground'
 				: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 		>
