@@ -60,7 +60,10 @@
 
 	const nameChanged = $derived(baselineName !== null && name !== baselineName);
 	const textChanged = $derived(baselineText !== null && iconText !== baselineText);
-	const toneChanged = $derived(baselineTone !== null && iconTone !== baselineTone);
+	// The colour only applies to a text icon.
+	const toneChanged = $derived(
+		baselineTone !== null && iconText !== '' && iconTone !== baselineTone
+	);
 	// Picking Text means the rail shows the text, so a stored image has to go.
 	const dropsImage = $derived(
 		savedIcon !== null && iconFile === null && (removeImage || iconMode === 'text')
@@ -356,25 +359,27 @@
 					hint="Up to 2 characters"
 					oninput={() => (errors.iconText = undefined)}
 				/>
-				<div role="radiogroup" aria-label="Icon colour" class="flex items-center gap-2">
-					{#each TONES as tone (tone)}
-						<button
-							type="button"
-							role="radio"
-							aria-checked={iconTone === tone}
-							aria-label={TONE_NAMES[tone - 1]}
-							onclick={() => (iconTone = tone)}
-							class="flex h-8 w-8 items-center justify-center rounded-full {toneClass(
+				{#if iconText}
+					<div role="radiogroup" aria-label="Icon colour" class="flex items-center gap-2">
+						{#each TONES as tone (tone)}
+							<button
+								type="button"
+								role="radio"
+								aria-checked={iconTone === tone}
+								aria-label={TONE_NAMES[tone - 1]}
+								onclick={() => (iconTone = tone)}
+								class="flex h-8 w-8 items-center justify-center rounded-full {toneClass(
+									tone
+								)} focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none {iconTone ===
 								tone
-							)} focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none {iconTone ===
-							tone
-								? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
-								: ''}"
-						>
-							{#if iconTone === tone}<Check size={16} aria-hidden="true" />{/if}
-						</button>
-					{/each}
-				</div>
+									? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+									: ''}"
+							>
+								{#if iconTone === tone}<Check size={16} aria-hidden="true" />{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		</div>
 
