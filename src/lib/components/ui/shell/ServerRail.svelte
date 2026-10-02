@@ -71,6 +71,8 @@
 					serverId={server.id ?? server.name}
 					href={`/app/server/${server.id}/`}
 					iconUrl={server.server_profile?.icon ?? null}
+					iconText={server.icon_text}
+					iconTone={server.icon_tone}
 					active={server.id === activeServerId}
 					unread={serverUnread?.unread ?? false}
 					mentions={serverUnread?.mentions ?? 0}

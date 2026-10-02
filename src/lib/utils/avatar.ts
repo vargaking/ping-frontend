@@ -1,5 +1,5 @@
 const SEPARATORS = /[\s_\-.]+/;
-const TONE_COUNT = 6;
+export const TONE_COUNT = 6;
 
 const TONE_CLASSES = [
 	'bg-avatar-1 text-avatar-1-fg',
@@ -34,6 +34,25 @@ export function avatarTone(id: number | string): number {
 	return (hash % TONE_COUNT) + 1;
 }
 
+export function toneClass(tone: number): string {
+	return TONE_CLASSES[tone - 1] ?? TONE_CLASSES[0];
+}
+
 export function avatarToneClass(id: number | string): string {
-	return TONE_CLASSES[avatarTone(id) - 1];
+	return toneClass(avatarTone(id));
+}
+
+/** Tone classes of a server's text icon, or of its initials when it has none. */
+export function serverToneClass(
+	id: number | string,
+	iconText?: string | null,
+	iconTone?: number | null
+): string {
+	return iconText ? toneClass(iconTone ?? avatarTone(id)) : avatarToneClass(id);
+}
+
+/** Split into user-perceived characters, so an emoji sequence counts once. */
+export function graphemes(text: string): string[] {
+	if (segmenter) return Array.from(segmenter.segment(text), ({ segment }) => segment);
+	return Array.from(text);
 }

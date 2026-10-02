@@ -5,6 +5,7 @@
 	import NotificationSettings from './NotificationSettings.svelte';
 	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
+	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import ServerInvites from './ServerInvites.svelte';
 	import ServerMembers from './ServerMembers.svelte';
@@ -172,11 +173,14 @@
 					<h2
 						class="flex items-center gap-2 px-2 pb-1 text-xs font-medium tracking-[0.02em] text-text-subtle"
 					>
-						{#if section.scope === 'server' && server?.server_profile?.icon}
-							<img
-								src={server.server_profile.icon}
-								alt=""
-								class="h-4 w-4 shrink-0 rounded object-cover"
+						{#if section.scope === 'server' && server}
+							<ServerIcon
+								name={server.name}
+								serverId={server.id ?? server.name}
+								iconUrl={server.server_profile?.icon ?? null}
+								iconText={server.icon_text}
+								iconTone={server.icon_tone}
+								class="h-4 w-4 rounded text-[8px]"
 							/>
 						{/if}
 						<span class="truncate">{section.label}</span>

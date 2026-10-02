@@ -4,7 +4,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
-	import { avatarToneClass, initials } from '$lib/utils/avatar';
+	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
 
 	type ConnState = 'connected' | 'reconnecting' | 'disconnected';
 
@@ -34,19 +34,23 @@
 	const identityHost = $derived(env.PUBLIC_IDENTITY_URL ? hostOf(env.PUBLIC_IDENTITY_URL) : null);
 </script>
 
-{#snippet row(name: string, host: string, toneKey: number | string, iconUrl: string | null)}
+{#snippet row(
+	name: string,
+	host: string,
+	toneKey: number | string,
+	iconUrl: string | null,
+	iconText: string | null = null,
+	iconTone: number | null = null
+)}
 	<div class="flex h-12 items-center gap-3 px-4">
-		<span
-			class="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg text-xs font-semibold {avatarToneClass(
-				toneKey
-			)}"
-		>
-			{#if iconUrl}
-				<img src={iconUrl} alt="" class="h-full w-full object-cover" />
-			{:else}
-				{initials(name)}
-			{/if}
-		</span>
+		<ServerIcon
+			{name}
+			serverId={toneKey}
+			{iconUrl}
+			{iconText}
+			{iconTone}
+			class="h-7 w-7 rounded-lg text-xs"
+		/>
 		<div class="flex min-w-0 flex-1 flex-col">
 			<span class="truncate text-[13px] font-medium">{name}</span>
 			<span class="truncate font-mono text-[11px] text-text-subtle">{host}</span>
@@ -78,7 +82,9 @@
 			server.name,
 			serverHost,
 			server.id ?? server.name,
-			server.server_profile?.icon ?? null
+			server.server_profile?.icon ?? null,
+			server.icon_text,
+			server.icon_tone
 		)}
 	{/each}
 	{#if serversState.serversList.length === 0}

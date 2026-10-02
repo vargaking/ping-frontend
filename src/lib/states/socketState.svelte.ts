@@ -497,6 +497,8 @@ class SocketState {
 				serversState.patchServer(message.server.id, {
 					name: message.server.name,
 					server_profile: message.server.server_profile,
+					icon_text: message.server.icon_text ?? null,
+					icon_tone: message.server.icon_tone ?? null,
 					...(message.server.server_settings && {
 						server_settings: message.server.server_settings
 					})

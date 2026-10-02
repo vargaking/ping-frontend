@@ -11,6 +11,8 @@ export type Server = {
 	created_at?: string;
 	server_profile?: Record<string, any>;
 	server_settings?: ServerSettings;
+	icon_text?: string | null;
+	icon_tone?: number | null;
 	owner_id?: number | null;
 	members?: User[];
 	/** The caller's effective permission mask for this server, as a decimal string. */
