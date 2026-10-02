@@ -2,6 +2,14 @@ import type { User } from './auth.types';
 
 export type ServerSettings = {
 	channel_order: number[];
+	/** Text channel that opening the server lands in; absent shows the welcome screen. */
+	default_channel_id?: number | null;
+	[key: string]: any;
+};
+
+export type ServerProfile = {
+	icon?: string;
+	welcome_message?: string | null;
 	[key: string]: any;
 };
 
@@ -9,7 +17,7 @@ export type Server = {
 	id?: number;
 	name: string;
 	created_at?: string;
-	server_profile?: Record<string, any>;
+	server_profile?: ServerProfile;
 	server_settings?: ServerSettings;
 	icon_text?: string | null;
 	icon_tone?: number | null;

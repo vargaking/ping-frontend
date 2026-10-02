@@ -4,6 +4,7 @@
 	import { untrack } from 'svelte';
 	import ChannelHeader from '$lib/components/ui/message/ChannelHeader.svelte';
 	import UsersSidebar from '$lib/components/ui/sidebar/UsersSidebar.svelte';
+	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import PresenceTile from '$lib/components/ui/voice/PresenceTile.svelte';
@@ -13,8 +14,6 @@
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
 	import { Volume2, Maximize2, Minimize2, EyeOff } from 'lucide-svelte';
-
-	let membersOpen = $state(true);
 
 	const channelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 	const channel = $derived(
@@ -85,7 +84,7 @@
 
 <div class="flex h-full min-h-0">
 	<div class="flex min-w-0 flex-1 flex-col">
-		<ChannelHeader {membersOpen} onToggleMembers={() => (membersOpen = !membersOpen)} />
+		<ChannelHeader />
 
 		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6 scrollbar-stable">
 			{#if !channel}
@@ -169,7 +168,7 @@
 		</div>
 	</div>
 
-	{#if membersOpen}
+	{#if membersPanelState.open}
 		<UsersSidebar />
 	{/if}
 </div>
