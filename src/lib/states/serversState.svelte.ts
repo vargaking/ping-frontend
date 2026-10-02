@@ -63,11 +63,8 @@ export class ServersState {
 			this.selectedServer.owner_id === usersState.loggedInUser?.id
 	);
 
-	/** Whether they can create their own invites or manage everyone's. */
-	readonly canInvite: boolean = $derived(
-		has(this.selectedPermissions, Permission.CREATE_INVITE) ||
-			has(this.selectedPermissions, Permission.MANAGE_INVITES)
-	);
+	/** Whether they can create invites; managing others' invites is a separate permission. */
+	readonly canInvite: boolean = $derived(has(this.selectedPermissions, Permission.CREATE_INVITE));
 
 	can(perm: bigint, serverId: number | null | undefined = this.selectedServer?.id): boolean {
 		return serverId != null && has(this.permissions[serverId], perm);

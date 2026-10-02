@@ -4,7 +4,10 @@
 	import AccountRow from './AccountRow.svelte';
 </script>
 
-<aside class="flex w-[248px] shrink-0 flex-col border-r border-border bg-sidebar">
+<aside
+	aria-label="Conversations"
+	class="flex w-[248px] shrink-0 flex-col border-r border-border bg-sidebar"
+>
 	<ConversationList />
 	<VoiceDock />
 	<AccountRow />

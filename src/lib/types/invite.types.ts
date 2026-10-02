@@ -14,9 +14,13 @@ export type InviteUpdate = {
 	is_active?: boolean | null;
 };
 
-export type InviteResponse = InviteBase & {
+export type InviteResponse = {
+	server_id: number;
+	valid_until: string | null;
+	max_uses: number | null;
 	id: string;
 	created_by_id: number;
+	created_by_username: string;
 	created_at: string;
 	use_count: number;
 	is_active: boolean;
@@ -30,6 +34,7 @@ export type InvitePublicResponse = {
 	server_icon: string | null;
 	server_icon_text?: string | null;
 	server_icon_tone?: number | null;
+	member_count: number;
 	is_valid: boolean;
 	has_password: boolean;
 };

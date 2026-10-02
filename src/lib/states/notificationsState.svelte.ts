@@ -1,5 +1,6 @@
 import {
 	currentSubscription,
+	ensureSubscriptionKey,
 	disablePush,
 	enablePush,
 	getPushConfig,
@@ -85,11 +86,23 @@ class NotificationsState {
 				this.push = 'disabled';
 				return;
 			}
-			const subscription = await currentSubscription();
+			let subscription = await currentSubscription();
+			let swapped = false;
+			if (subscription && config.public_key && Notification.permission === 'granted') {
+				try {
+					const checked = await ensureSubscriptionKey(subscription, config.public_key);
+					swapped = checked !== subscription;
+					subscription = checked;
+				} catch (e) {
+					console.warn('[push] re-subscribe failed', e);
+					this.push = 'off';
+					return;
+				}
+			}
 			this.push = subscription ? 'on' : 'off';
 			// Another account may have used this browser since it subscribed, so
 			// hand the subscription to whoever is signed in now.
-			if (subscription && !this.subscriptionClaimed) {
+			if (subscription && (swapped || !this.subscriptionClaimed)) {
 				this.subscriptionClaimed = true;
 				registerSubscription(subscription).catch(() => {
 					this.subscriptionClaimed = false;

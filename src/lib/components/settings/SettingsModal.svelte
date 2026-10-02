@@ -6,6 +6,7 @@
 	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
+	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import ServerInvites from './ServerInvites.svelte';
 	import ServerMembers from './ServerMembers.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
@@ -74,7 +75,7 @@
 					render: serverOverview
 				});
 			}
-			if (serversState.canInvite) {
+			if (serversState.can(Permission.MANAGE_INVITES)) {
 				tabs.push({
 					id: 'server-invites',
 					label: 'Invites',
@@ -124,6 +125,7 @@
 	const tabs = $derived(sections.flatMap((s) => s.tabs));
 
 	let activeTabId = $state('');
+	let inviteOpen = $state(false);
 
 	// Land on the first tab of the requested scope, and fall back whenever the
 	// active tab disappears (e.g. the channel was deleted).
@@ -149,9 +151,7 @@
 	<ServerInvites />
 {/snippet}
 {#snippet serverMembers()}
-	<ServerMembers
-		onInvite={serversState.canInvite ? () => (activeTabId = 'server-invites') : undefined}
-	/>
+	<ServerMembers onInvite={serversState.canInvite ? () => (inviteOpen = true) : undefined} />
 {/snippet}
 {#snippet account()}
 	<AccountSettings />
@@ -232,3 +232,5 @@
 		{/if}
 	</div>
 </div>
+
+<InviteDialog bind:open={inviteOpen} />

@@ -5,6 +5,8 @@
 
 // Push only: no fetch handler and no caching, so the app's network behaviour is untouched.
 import { PUBLIC_BASE_URL } from '$env/static/public';
+import { urlBase64ToBytes } from '$lib/utils/base64url';
+import type { NotificationData } from '$lib/utils/notificationTags';
 import { readPushPrefs } from '$lib/utils/pushPrefs';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
@@ -17,9 +19,8 @@ type PushPayload = {
 	body?: string;
 	url?: string;
 	count?: number;
+	message_uuid?: string;
 };
-
-type NotificationData = { url: string; count: number };
 
 type SubscriptionChangeEvent = ExtendableEvent & {
 	oldSubscription?: PushSubscription | null;
@@ -28,14 +29,32 @@ type SubscriptionChangeEvent = ExtendableEvent & {
 
 const ICON = '/icon-192.png';
 
-function readPayload(event: PushEvent): PushPayload | null {
+type ParsedPayload = { ok: true; payload: PushPayload } | { ok: false; reason: string };
+
+function parsePayload(event: PushEvent): ParsedPayload {
+	const text = event.data?.text();
+	if (!text) return { ok: false, reason: 'empty' };
+	let payload;
 	try {
-		const payload = event.data?.json();
-		if (payload?.v !== 1 || typeof payload.tag !== 'string') return null;
-		return payload;
+		payload = JSON.parse(text);
 	} catch {
-		return null;
+		return { ok: false, reason: 'bad JSON' };
 	}
+	if (payload?.v !== 1) return { ok: false, reason: 'wrong v' };
+	if (typeof payload.tag !== 'string' || !payload.tag) return { ok: false, reason: 'no tag' };
+	if (!['dm', 'mention', 'read'].includes(payload.kind))
+		return { ok: false, reason: 'unknown kind' };
+	return { ok: true, payload };
+}
+
+async function showGeneric() {
+	await sw.registration.showNotification('New activity on Zeta', {
+		body: '',
+		tag: 'zeta-generic',
+		icon: ICON,
+		data: { url: '/app/', count: 1 } satisfies NotificationData
+	});
+	console.debug('[push] shown: zeta-generic');
 }
 
 function safePath(url: unknown): string {
@@ -43,28 +62,55 @@ function safePath(url: unknown): string {
 	return url;
 }
 
-async function hasFocusedWindow(): Promise<boolean> {
+const activity = new Map<string, 'active' | 'idle'>();
+
+sw.addEventListener('message', (event) => {
+	const source = event.source;
+	if (!source || !('id' in source)) return;
+	const { type, state } = event.data ?? {};
+	if (type !== 'activity' || (state !== 'active' && state !== 'idle')) return;
+	activity.set(source.id, state);
+});
+
+async function hasActiveWindow(): Promise<boolean> {
 	const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
-	return windows.some((client) => client.visibilityState === 'visible' && client.focused);
+	return windows.some(
+		(client) =>
+			client.visibilityState === 'visible' && client.focused && activity.get(client.id) === 'active'
+	);
 }
 
 async function handlePush(event: PushEvent) {
-	const payload = readPayload(event);
-	if (!payload) return;
+	console.debug(`[push] received (payload: ${event.data ? 'yes' : 'no'})`);
+	const parsed = parsePayload(event);
+	if (!parsed.ok) {
+		console.debug(`[push] rejected: ${parsed.reason}`);
+		await showGeneric();
+		return;
+	}
+	const { payload } = parsed;
 
 	if (payload.kind === 'read') {
 		const shown = await sw.registration.getNotifications({ tag: payload.tag });
 		shown.forEach((notification) => notification.close());
+		console.debug(`[push] closed: ${payload.tag}`);
 		return;
 	}
-	if (payload.kind !== 'dm' && payload.kind !== 'mention') return;
 
-	// The open tab shows its own notifications.
-	if (await hasFocusedWindow()) return;
+	// A window the user is working in shows its own notifications.
+	if (await hasActiveWindow()) {
+		console.debug('[push] skipped: active window');
+		return;
+	}
 
 	const [existing] = await sw.registration.getNotifications({ tag: payload.tag });
-	const previous = (existing?.data as NotificationData | undefined)?.count ?? 0;
-	const count = Math.max(payload.count ?? 1, previous + 1);
+	const previousData = existing?.data as NotificationData | undefined;
+	const messageUuid = typeof payload.message_uuid === 'string' ? payload.message_uuid : undefined;
+	if (messageUuid && previousData?.messageUuid === messageUuid) {
+		console.debug(`[push] skipped: already shown ${payload.tag}`);
+		return;
+	}
+	const count = Math.max(payload.count ?? 1, (previousData?.count ?? 0) + 1);
 	const noun = payload.kind === 'dm' ? 'messages' : 'mentions';
 	const prefs = await readPushPrefs();
 
@@ -73,10 +119,11 @@ async function handlePush(event: PushEvent) {
 		tag: payload.tag,
 		icon: ICON,
 		silent: !prefs.sound,
-		data: { url: safePath(payload.url), count } satisfies NotificationData,
+		data: { url: safePath(payload.url), count, messageUuid } satisfies NotificationData,
 		// Not in the DOM typings yet, but Chrome and Firefox honour it.
 		...({ renotify: true } as object)
 	});
+	console.debug(`[push] shown: ${payload.tag}`);
 }
 
 async function openThread(path: string) {
@@ -91,22 +138,36 @@ async function openThread(path: string) {
 	target.postMessage({ type: 'navigate', url: path });
 }
 
+async function applicationServerKey(event: SubscriptionChangeEvent) {
+	const old = event.oldSubscription?.options.applicationServerKey;
+	if (old) return old;
+	const res = await fetch(`${PUBLIC_BASE_URL}/api/push/config`, {
+		credentials: 'include',
+		headers: { 'ngrok-skip-browser-warning': 'true' }
+	});
+	if (!res.ok) throw new Error(`config request returned ${res.status}`);
+	const { public_key } = await res.json();
+	if (typeof public_key !== 'string') throw new Error('config has no public key');
+	return urlBase64ToBytes(public_key);
+}
+
 async function resubscribe(event: SubscriptionChangeEvent) {
 	try {
 		const subscription =
 			event.newSubscription ??
 			(await sw.registration.pushManager.subscribe({
 				userVisibleOnly: true,
-				applicationServerKey: event.oldSubscription?.options.applicationServerKey
+				applicationServerKey: await applicationServerKey(event)
 			}));
-		await fetch(`${PUBLIC_BASE_URL}/api/push/subscriptions`, {
+		const res = await fetch(`${PUBLIC_BASE_URL}/api/push/subscriptions`, {
 			method: 'POST',
 			credentials: 'include',
-			headers: { 'Content-Type': 'application/json' },
+			headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
 			body: JSON.stringify(subscription.toJSON())
 		});
-	} catch {
-		// Best effort: the app re-registers the subscription the next time it opens.
+		if (!res.ok) console.warn('[push] resubscribe failed', res.status);
+	} catch (e) {
+		console.warn('[push] resubscribe failed', e);
 	}
 }
 
@@ -118,7 +179,7 @@ let pushQueue: Promise<void> = Promise.resolve();
 
 sw.addEventListener('push', (event) => {
 	const run = pushQueue.then(() => handlePush(event));
-	pushQueue = run.catch(() => {});
+	pushQueue = run.catch((e) => console.warn('[push] handler failed', e));
 	event.waitUntil(run);
 });
 
