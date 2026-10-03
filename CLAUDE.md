@@ -23,6 +23,7 @@
 - No ticket ids in code, comments, or docs.
 - Docs stay short and plain.
 - Run the repo's tests, lint, and type checks before pushing.
+- A PR that ships something listed on the landing page roadmap moves that item in the same PR.
 
 ## Cross-repo changes
 
