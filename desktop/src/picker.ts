@@ -1,28 +1,15 @@
-import { BrowserWindow, desktopCapturer, ipcMain, type DesktopCapturerSource } from 'electron';
+import { BrowserWindow, ipcMain, type DesktopCapturerSource } from 'electron';
 import path from 'node:path';
+import { listSources, toScreenSource } from './sources';
 
 let open = false;
-
-function toSource(source: DesktopCapturerSource) {
-	return {
-		id: source.id,
-		name: source.name,
-		kind: source.id.startsWith('screen:') ? ('screen' as const) : ('window' as const),
-		thumbnail: source.thumbnail.toDataURL(),
-		icon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : undefined
-	};
-}
 
 /** Resolves to the chosen source, or null when cancelled or another picker is already open. */
 export async function pickSource(parent: BrowserWindow): Promise<DesktopCapturerSource | null> {
 	if (open) return null;
 	open = true;
 	try {
-		const sources = await desktopCapturer.getSources({
-			types: ['screen', 'window'],
-			thumbnailSize: { width: 320, height: 180 },
-			fetchWindowIcons: true
-		});
+		const sources = await listSources(parent.getMediaSourceId());
 
 		const win = new BrowserWindow({
 			parent,
@@ -67,7 +54,7 @@ export async function pickSource(parent: BrowserWindow): Promise<DesktopCapturer
 			win.on('closed', () => finish(null));
 
 			win.webContents.once('did-finish-load', () => {
-				win.webContents.send('picker:sources', sources.map(toSource));
+				win.webContents.send('picker:sources', sources.map(toScreenSource));
 				win.show();
 			});
 			void win.loadFile(path.join(__dirname, '..', 'static', 'picker.html'));

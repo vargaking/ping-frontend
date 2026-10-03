@@ -16,6 +16,13 @@
 				color: #8ab4d8;
 				font-family: system-ui, sans-serif;
 			}
+			.drag {
+				position: fixed;
+				inset: 0 0 auto 0;
+				height: 44px;
+				background: #0d0f11;
+				-webkit-app-region: drag;
+			}
 			main {
 				height: 100%;
 				display: flex;
@@ -47,6 +54,7 @@
 		</style>
 	</head>
 	<body>
+		<div class="drag"></div>
 		<main>
 			<svg viewBox="0 0 512 512" aria-hidden="true">
 				<g

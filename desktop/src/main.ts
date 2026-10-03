@@ -5,6 +5,7 @@ import {
 	Menu,
 	session,
 	shell,
+	type DesktopCapturerSource,
 	type IpcMainEvent,
 	type IpcMainInvokeEvent
 } from 'electron';
@@ -13,6 +14,7 @@ import { assetPath } from './assets';
 import { appUrl } from './config';
 import { getLaunchAtLogin, setLaunchAtLogin } from './login';
 import { pickSource } from './picker';
+import { listSources, toScreenSource } from './sources';
 import { createTray, rebuildTrayMenu } from './tray';
 import { applyUnread, parseUnread } from './unread';
 
@@ -32,6 +34,13 @@ const SAFE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
+
+let pageHasPicker = false;
+let sharePending = false;
+let nextRequestId = 1;
+let pendingPick: { requestId: number; settle: (result: PickResult) => void } | null = null;
+
+type PickResult = { handled: boolean; id: string | null };
 
 function originOf(url: string | undefined): string | null {
 	if (!url) return null;
@@ -87,9 +96,50 @@ function registerIpc() {
 		return result;
 	});
 
+	ipcMain.on('shell:picker-handler', (event, registered) => {
+		if (fromApp(event) && typeof registered === 'boolean') pageHasPicker = registered;
+	});
+
+	ipcMain.on('shell:picked', (event, reply) => {
+		if (!fromApp(event) || !pendingPick) return;
+		const { requestId, id, handled } = reply ?? {};
+		if (requestId !== pendingPick.requestId || typeof handled !== 'boolean') return;
+		if (id !== null && typeof id !== 'string') return;
+		pendingPick.settle({ handled, id });
+	});
+
 	ipcMain.on('shell:retry', (event) => {
 		if (fromOfflinePage(event)) void mainWindow?.loadURL(startUrl.href);
 	});
+}
+
+function resetPagePicker() {
+	pageHasPicker = false;
+	pendingPick?.settle({ handled: true, id: null });
+}
+
+function askPage(win: BrowserWindow, sources: DesktopCapturerSource[]): Promise<PickResult> {
+	return new Promise((resolve) => {
+		const requestId = nextRequestId++;
+		const pick = {
+			requestId,
+			settle: (result: PickResult) => {
+				if (pendingPick !== pick) return;
+				pendingPick = null;
+				resolve(result);
+			}
+		};
+		pendingPick = pick;
+		win.webContents.send('shell:pick-source', { requestId, sources: sources.map(toScreenSource) });
+	});
+}
+
+async function chooseSource(win: BrowserWindow): Promise<DesktopCapturerSource | null> {
+	if (!pageHasPicker) return pickSource(win);
+	const sources = await listSources(win.getMediaSourceId());
+	const result = await askPage(win, sources);
+	if (!result.handled) return pickSource(win);
+	return sources.find((source) => source.id === result.id) ?? null;
 }
 
 function registerSession() {
@@ -108,7 +158,16 @@ function registerSession() {
 			callback({});
 			return;
 		}
-		const source = await pickSource(mainWindow).catch(() => null);
+		if (sharePending) {
+			callback({});
+			return;
+		}
+		sharePending = true;
+		const source = await chooseSource(mainWindow)
+			.catch(() => null)
+			.finally(() => {
+				sharePending = false;
+			});
 		if (!source) {
 			callback({});
 			return;
@@ -120,6 +179,15 @@ function registerSession() {
 	});
 }
 
+function titleBarOptions(): Electron.BrowserWindowConstructorOptions {
+	if (process.platform === 'darwin') return { titleBarStyle: 'hiddenInset' };
+	return {
+		titleBarStyle: 'hidden',
+		// One pixel short of the web top bar so its bottom border stays visible.
+		titleBarOverlay: { color: '#0d0f11', symbolColor: '#e6e8ea', height: 43 }
+	};
+}
+
 function createWindow() {
 	const win = new BrowserWindow({
 		width: 1280,
@@ -129,6 +197,7 @@ function createWindow() {
 		backgroundColor: '#0d0f11',
 		icon: assetPath('icon.png'),
 		autoHideMenuBar: true,
+		...titleBarOptions(),
 		show: false,
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),
@@ -156,6 +225,9 @@ function createWindow() {
 	});
 
 	const { webContents } = win;
+
+	webContents.on('did-navigate', resetPagePicker);
+	webContents.on('render-process-gone', resetPagePicker);
 
 	webContents.on('did-fail-load', (_event, errorCode, _description, validatedUrl, isMainFrame) => {
 		if (!isMainFrame || errorCode === -3 || validatedUrl.startsWith('file:')) return;
