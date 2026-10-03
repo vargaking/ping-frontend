@@ -46,11 +46,14 @@ export type AdminErrors = {
 	since: string;
 };
 
+export type AdminVoiceStatus = 'ok' | 'unconfigured' | 'unreachable';
+
 /** A section is null when the server could not read its source. */
 export type AdminStats = {
 	generated_at: string;
 	load: AdminLoad | null;
 	voice: AdminVoice | null;
+	voice_status?: AdminVoiceStatus;
 	users: AdminUsers | null;
 	servers: AdminServers | null;
 	errors: AdminErrors | null;
