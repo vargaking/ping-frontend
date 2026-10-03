@@ -37,4 +37,7 @@ test('a direct message arrives as unread for a user elsewhere in the app', async
 	await expect(b.page.getByRole('link', { name: a.user.username })).toBeVisible();
 	await expect(b.page.getByRole('paragraph').filter({ hasText: 'psst, over here' })).toBeVisible();
 	await expect(directLink).toHaveAccessibleName('Direct messages');
+	await expect(b.page.getByRole('button', { name: /^Connection status/ })).toContainText(
+		'Zeta DM server'
+	);
 });

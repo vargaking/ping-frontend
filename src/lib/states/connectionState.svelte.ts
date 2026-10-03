@@ -1,6 +1,7 @@
 import { PUBLIC_WS_URL } from '$env/static/public';
 import { env } from '$env/dynamic/public';
 import { hostOf } from '$lib/utils/host';
+import { SITE_NAME } from '$lib/meta';
 import { voiceState } from './voiceState.svelte';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
@@ -31,6 +32,9 @@ const IDENTITY_TIMEOUT_MS = 5000;
 
 /** The host the WebSocket connects to. */
 export const serverHost = hostOf(PUBLIC_WS_URL);
+
+/** DMs aren't tied to a joined server, so their link gets its own name. */
+export const DM_SERVER_NAME = `${SITE_NAME} DM server`;
 
 export function median(values: number[]): number {
 	const sorted = [...values].sort((a, b) => a - b);
