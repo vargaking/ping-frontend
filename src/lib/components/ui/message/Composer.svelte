@@ -216,6 +216,11 @@
 		closedByEscape = false;
 	}
 
+	function handleChange(json: JSONContent) {
+		linkPreview.update(messagePlainText(json));
+		if (target && !isEmpty) socketState.sendTyping(target);
+	}
+
 	function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
 		const embed = linkPreview.embedFor(messagePlainText(message));
@@ -397,7 +402,7 @@
 				bind:isEmpty
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
-				onChange={(json) => linkPreview.update(messagePlainText(json))}
+				onChange={handleChange}
 				onArrowUp={editLastOwnMessage}
 				onCancel={replyTarget ? cancelReply : undefined}
 				mentionCandidates={() =>

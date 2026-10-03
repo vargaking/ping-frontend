@@ -7,6 +7,7 @@
 	import TypingIndicator from '$lib/components/ui/message/TypingIndicator.svelte';
 	import type { MessageTarget } from '$lib/types/messages.types';
 	import { directThreadKey } from '$lib/states/messagesState.svelte';
+	import { typingState } from '$lib/states/typingState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { getConversationMessages } from '$lib/requests/conversations/getConversationMessages';
@@ -57,6 +58,8 @@
 		/>
 	{/if}
 
-	<TypingIndicator names={[]} />
+	<TypingIndicator
+		names={conversationId != null ? typingState.names(directThreadKey(conversationId)) : []}
+	/>
 	<Composer {target} />
 </div>

@@ -3,6 +3,7 @@
 	import {
 		connectionState,
 		serverHost,
+		DM_SERVER_NAME,
 		type ConnectionStatus,
 		type VoiceLink,
 		type VoiceQuality
@@ -89,6 +90,15 @@
 	>
 		Servers
 	</div>
+	{@render row(
+		DM_SERVER_NAME,
+		serverHost,
+		connectionState.get(serverHost)?.status ?? 'connecting',
+		connectionState.get(serverHost)?.rttMs ?? null,
+		DM_SERVER_NAME,
+		null,
+		'DM'
+	)}
 	{#each serversState.serversList as server (server.id)}
 		{@render row(
 			server.name,
@@ -102,7 +112,4 @@
 			connectionState.voice?.serverId === server.id ? connectionState.voice : null
 		)}
 	{/each}
-	{#if serversState.serversList.length === 0}
-		<p class="px-4 py-2 text-[13px] text-text-subtle">You haven't joined any servers yet.</p>
-	{/if}
 </div>

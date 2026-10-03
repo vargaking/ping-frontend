@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import * as Popover from '$lib/components/ui/popover/index';
 	import ConnectionsPopover from './ConnectionsPopover.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import {
 		connectionState,
 		serverHost,
+		DM_SERVER_NAME,
 		type ConnectionStatus
 	} from '$lib/states/connectionState.svelte';
 	import { formatRtt } from '$lib/utils/formatRtt';
@@ -24,7 +26,11 @@
 
 	const info = $derived(connectionState.get(serverHost));
 	const status = $derived(info?.status ?? 'connecting');
-	const serverName = $derived(serversState.selectedServer?.name ?? 'No server');
+	// The selected server lingers after leaving it, so DMs are detected by route.
+	const inDirect = $derived(page.route.id?.startsWith('/app/direct') ?? false);
+	const serverName = $derived(
+		inDirect ? DM_SERVER_NAME : (serversState.selectedServer?.name ?? serverHost)
+	);
 </script>
 
 <Popover.Root>
