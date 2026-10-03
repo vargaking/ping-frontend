@@ -3,7 +3,7 @@
 	import { getAdminStats } from '$lib/requests/admin/getAdminStats';
 	import { formatBytes } from '$lib/requests/attachments/uploadAttachment';
 	import { timeAgo } from '$lib/utils/timeAgo';
-	import type { AdminStats } from '$lib/types/admin.types';
+	import type { AdminServer, AdminStats } from '$lib/types/admin.types';
 	import * as Card from '$lib/components/ui/card/index';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
 
@@ -54,6 +54,19 @@
 			document.removeEventListener('visibilitychange', onVisibility);
 		};
 	});
+
+	type ServerSort = 'messages_24h' | 'members' | 'name';
+	let serverSort = $state<ServerSort>('messages_24h');
+
+	const SERVER_ORDER: Record<ServerSort, (a: AdminServer, b: AdminServer) => number> = {
+		messages_24h: (a, b) => b.messages_24h - a.messages_24h || a.name.localeCompare(b.name),
+		members: (a, b) => b.members - a.members || a.name.localeCompare(b.name),
+		name: (a, b) => a.name.localeCompare(b.name)
+	};
+
+	const sortedServers = $derived(
+		stats?.servers?.list ? [...stats.servers.list].sort(SERVER_ORDER[serverSort]) : []
+	);
 
 	const DASH = '—';
 
@@ -111,6 +124,19 @@
 
 {#snippet unavailable(text: string)}
 	<p class="text-sm text-text-subtle">{text}</p>
+{/snippet}
+
+{#snippet sortButton(key: ServerSort, label: string)}
+	<button
+		type="button"
+		onclick={() => (serverSort = key)}
+		class="rounded-sm underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {serverSort ===
+		key
+			? 'text-foreground'
+			: ''}"
+	>
+		{label}
+	</button>
 {/snippet}
 
 <div class="mx-auto flex max-w-5xl flex-col gap-4">
@@ -249,25 +275,53 @@
 								</dd>
 							</div>
 						</dl>
-						{#if stats.servers.top.length === 0}
-							{@render unavailable('No messages in the last 24 hours')}
+						{#if sortedServers.length === 0}
+							{@render unavailable('No servers yet')}
 						{:else}
 							<div class="overflow-x-auto rounded-xl border border-border">
 								<table class="w-full text-left text-sm">
 									<thead class="border-b border-border text-xs text-text-subtle">
 										<tr>
-											<th scope="col" class="px-4 py-2.5 font-medium">Server</th>
-											<th scope="col" class="px-4 py-2.5 text-right font-medium">Members</th>
-											<th scope="col" class="px-4 py-2.5 text-right font-medium">Msgs / 24h</th>
+											<th
+												scope="col"
+												class="px-4 py-2.5 font-medium"
+												aria-sort={serverSort === 'name' ? 'ascending' : 'none'}
+											>
+												{@render sortButton('name', 'Server')}
+											</th>
+											<th
+												scope="col"
+												class="px-4 py-2.5 text-right font-medium"
+												aria-sort={serverSort === 'members' ? 'descending' : 'none'}
+											>
+												{@render sortButton('members', 'Members')}
+											</th>
+											<th
+												scope="col"
+												class="px-4 py-2.5 text-right font-medium"
+												aria-sort={serverSort === 'messages_24h' ? 'descending' : 'none'}
+											>
+												{@render sortButton('messages_24h', 'Msgs / 24h')}
+											</th>
+											<th scope="col" class="px-4 py-2.5 text-right font-medium">Msgs total</th>
+											<th scope="col" class="px-4 py-2.5 text-right font-medium">In voice</th>
+											<th scope="col" class="px-4 py-2.5 text-right font-medium">Created</th>
 										</tr>
 									</thead>
 									<tbody>
-										{#each stats.servers.top as server (server.id)}
+										{#each sortedServers as server (server.id)}
 											<tr class="border-b border-border last:border-b-0">
 												<td class="max-w-0 truncate px-4 py-2.5 font-medium">{server.name}</td>
 												<td class="px-4 py-2.5 text-right tabular-nums">{num(server.members)}</td>
 												<td class="px-4 py-2.5 text-right tabular-nums">
 													{num(server.messages_24h)}
+												</td>
+												<td class="px-4 py-2.5 text-right tabular-nums">
+													{num(server.messages_total)}
+												</td>
+												<td class="px-4 py-2.5 text-right tabular-nums">{num(server.in_voice)}</td>
+												<td class="px-4 py-2.5 text-right whitespace-nowrap text-text-subtle">
+													{new Date(server.created_at).toLocaleDateString()}
 												</td>
 											</tr>
 										{/each}
