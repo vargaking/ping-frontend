@@ -191,7 +191,7 @@
 
 	function applyPage(key: string, messages: MessageType[], hasMore: boolean) {
 		messagesState.set(key, messages, hasMore);
-		autoScrollAnchorId = messages.at(-1)?.id ?? null;
+		autoScrollAnchorId = messagesState.messages(key).at(-1)?.id ?? null;
 		stickToBottom = true;
 
 		// Pin the unread divider to the message right after the boundary, once. If
