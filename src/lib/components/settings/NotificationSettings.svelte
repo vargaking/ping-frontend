@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { desktop } from '$lib/desktop';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { testPush } from '$lib/requests/push/testPush';
@@ -13,7 +14,15 @@
 		notificationsState.refreshPermission();
 		notificationsState.attachPermissionListeners();
 		void notificationsState.refreshPush();
+		void desktop?.getLaunchAtLogin().then((value) => (launchAtLogin = value));
 	});
+
+	let launchAtLogin = $state<boolean | null>(null);
+
+	async function toggleLaunchAtLogin() {
+		if (!desktop || launchAtLogin === null) return;
+		launchAtLogin = await desktop.setLaunchAtLogin(!launchAtLogin);
+	}
 
 	const desktopDisabled = $derived(
 		notificationsState.permission === 'denied' || notificationsState.permission === 'unsupported'
@@ -170,5 +179,14 @@
 			checked={notificationsState.sound}
 			onclick={toggleSound}
 		/>
+
+		{#if launchAtLogin !== null}
+			<SettingsSwitch
+				label="Open Zet when your computer starts"
+				description="Starts in the tray, so you get notifications without opening it."
+				checked={launchAtLogin}
+				onclick={toggleLaunchAtLogin}
+			/>
+		{/if}
 	</div>
 </div>

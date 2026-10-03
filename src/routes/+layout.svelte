@@ -14,7 +14,9 @@
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
+	import { desktop } from '$lib/desktop';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
+	import { SITE_NAME } from '$lib/meta';
 
 	let { children } = $props();
 
@@ -64,9 +66,47 @@
 	// a logged-in user never sees /login before bouncing to /app.
 	let ready = $state(false);
 
+	let unreachable = $state(false);
+
+	// When the server can't be reached, stay on the loading screen and keep trying
+	// instead of treating the user as logged out.
 	onMount(() => {
-		initializeAppData().finally(() => {
-			authChecked = true;
+		const retryDelays = [2000, 4000, 8000, 10000];
+		let attempt = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let running = false;
+		let finished = false;
+
+		async function load() {
+			if (running || finished) return;
+			running = true;
+			clearTimeout(timer);
+			const result = await initializeAppData();
+			running = false;
+			if (finished) return;
+			if (result === 'ok') {
+				finished = true;
+				unreachable = false;
+				authChecked = true;
+				return;
+			}
+			unreachable = true;
+			timer = setTimeout(load, retryDelays[Math.min(attempt++, retryDelays.length - 1)]);
+		}
+
+		window.addEventListener('online', load);
+		void load();
+		return () => {
+			finished = true;
+			clearTimeout(timer);
+			window.removeEventListener('online', load);
+		};
+	});
+
+	$effect(() => {
+		desktop?.setUnread({
+			count: loggedIn ? unreadState.badgeTotal : 0,
+			unread: loggedIn && unreadState.anyUnread
 		});
 	});
 
@@ -111,7 +151,11 @@
 	<div class="flex h-screen w-screen items-center justify-center bg-background">
 		<div class="flex flex-col items-center gap-3">
 			<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
-			<span class="sr-only">Loading…</span>
+			{#if unreachable}
+				<span class="text-sm text-muted-foreground">Can't reach {SITE_NAME}. Reconnecting…</span>
+			{:else}
+				<span class="sr-only">Loading…</span>
+			{/if}
 		</div>
 	</div>
 {/if}
