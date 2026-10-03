@@ -2,8 +2,10 @@ name: E2E
 
 on:
   pull_request:
+    paths-ignore: ['desktop/**']
   push:
     branches: [master]
+    paths-ignore: ['desktop/**']
 
 permissions:
   contents: read
