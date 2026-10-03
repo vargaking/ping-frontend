@@ -55,3 +55,25 @@ export type AdminStats = {
 	servers: AdminServers | null;
 	errors: AdminErrors | null;
 };
+
+export type AdminErrorSource = 'client' | 'server';
+
+export type AdminErrorGroup = {
+	source: AdminErrorSource;
+	kind: string;
+	message: string;
+	method: string | null;
+	path: string | null;
+	count: number;
+	first_at: string;
+	last_at: string;
+	user_id: number | null;
+	request_id: string | null;
+	stack: string | null;
+};
+
+export type AdminErrorList = {
+	since: string;
+	limit: number;
+	groups: AdminErrorGroup[];
+};
