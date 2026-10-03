@@ -18,6 +18,10 @@ class VoicePresenceState {
 		return this.channels.get(channelId)?.participants ?? [];
 	}
 
+	serverOf(channelId: number): number | null {
+		return this.channels.get(channelId)?.serverId ?? null;
+	}
+
 	apply(serverId: number, channelId: number, participants: VoicePresenceParticipant[]) {
 		for (const fresh of this.pendingLoads) fresh.add(channelId);
 		this.set(serverId, channelId, participants);

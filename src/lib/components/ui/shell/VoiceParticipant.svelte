@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { MicOff, HeadphoneOff } from 'lucide-svelte';
+	import { MicOff, HeadphoneOff, VolumeX } from 'lucide-svelte';
 
 	type Props = {
 		name: string;
@@ -13,6 +13,8 @@
 		speaking?: boolean;
 		muted?: boolean;
 		deafened?: boolean;
+		serverMuted?: boolean;
+		localMuted?: boolean;
 		streaming?: boolean;
 	} & HTMLAttributes<HTMLDivElement>;
 
@@ -24,11 +26,16 @@
 		speaking = false,
 		muted = false,
 		deafened = false,
+		serverMuted = false,
+		localMuted = false,
 		streaming = false,
 		...rest
 	}: Props = $props();
 
-	const stateLabel = $derived(deafened ? ', deafened' : muted ? ', muted' : '');
+	const stateLabel = $derived(
+		(serverMuted ? ', server muted' : deafened ? ', deafened' : muted ? ', muted' : '') +
+			(localMuted ? ', muted for you' : '')
+	);
 </script>
 
 <div class="flex h-7 items-center gap-2 pl-[34px]" {...rest}>
@@ -55,7 +62,12 @@
 			LIVE
 		</span>
 	{/if}
-	{#if muted || deafened}
+	{#if localMuted}
+		<VolumeX size={14} strokeWidth={1.75} class="shrink-0 text-text-subtle" aria-hidden="true" />
+	{/if}
+	{#if serverMuted}
+		<MicOff size={14} strokeWidth={1.75} class="shrink-0 text-destructive" aria-hidden="true" />
+	{:else if muted || deafened}
 		<MicOff size={14} strokeWidth={1.75} class="shrink-0 text-text-subtle" aria-hidden="true" />
 	{/if}
 	{#if deafened}
