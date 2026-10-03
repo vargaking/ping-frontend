@@ -16,7 +16,7 @@ win:
 nsis:
   oneClick: true
   perMachine: false
-  artifactName: Zet-Setup-${version}.${ext}
+  artifactName: Zet-Setup.${ext}
 mac:
   target: dmg
   icon: assets/icon.png
