@@ -75,7 +75,7 @@
 					render: serverOverview
 				});
 			}
-			if (serversState.can(Permission.MANAGE_INVITES)) {
+			if (serversState.can(Permission.MANAGE_INVITES) || serversState.canInvite) {
 				tabs.push({
 					id: 'server-invites',
 					label: 'Invites',

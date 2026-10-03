@@ -1,5 +1,6 @@
 <script lang="ts" module>
-	const COLUMNS = 'grid-cols-[88px_1fr_72px_112px_72px_72px]';
+	const MANAGER_COLUMNS = 'grid-cols-[88px_1fr_72px_112px_72px_72px]';
+	const OWN_COLUMNS = 'grid-cols-[1fr_72px_112px_72px_72px]';
 	const COPIED_MS = 2000;
 	const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
@@ -21,6 +22,8 @@
 	import { fade } from 'svelte/transition';
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { listServerInvites, deleteInvite } from '$lib/requests/invites';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import type { InviteResponse } from '$lib/types/invite.types';
@@ -44,6 +47,8 @@
 	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const serverId = $derived(serversState.selectedServer?.id);
+	const canManage = $derived(serversState.can(Permission.MANAGE_INVITES));
+	const columns = $derived(canManage ? MANAGER_COLUMNS : OWN_COLUMNS);
 	const active = $derived(invites.filter(isInviteActive));
 	const expired = $derived(invites.filter((i) => !isInviteActive(i)));
 
@@ -100,7 +105,7 @@
 {#snippet inviteRow(invite: InviteResponse, dimmed: boolean)}
 	<div
 		role="row"
-		class="grid h-12 {COLUMNS} items-center gap-3 rounded-lg px-3 focus-within:bg-card hover:bg-card {dimmed
+		class="grid h-12 {columns} items-center gap-3 rounded-lg px-3 focus-within:bg-card hover:bg-card {dimmed
 			? 'text-text-subtle'
 			: ''}"
 	>
@@ -118,7 +123,9 @@
 				{codeOf(invite)}
 			{/if}
 		</span>
-		<span role="cell" class="truncate text-sm">{invite.created_by_username}</span>
+		{#if canManage}
+			<span role="cell" class="truncate text-sm">{invite.created_by_username}</span>
+		{/if}
 		<span role="cell" class="font-mono text-xs">
 			{invite.use_count} / {invite.max_uses ?? '∞'}
 		</span>
@@ -140,22 +147,28 @@
 					{/if}
 				</Button>
 			{/if}
-			<Button
-				variant="ghost"
-				size="icon-sm"
-				class="rounded-lg text-muted-foreground hover:text-destructive"
-				aria-label="Revoke invite {codeOf(invite)}"
-				onclick={() => (revokeTarget = invite)}
-			>
-				<X size={16} strokeWidth={1.75} />
-			</Button>
+			{#if canManage || (serversState.canInvite && invite.created_by_id === usersState.loggedInUser?.id)}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="rounded-lg text-muted-foreground hover:text-destructive"
+					aria-label="Revoke invite {codeOf(invite)}"
+					onclick={() => (revokeTarget = invite)}
+				>
+					<X size={16} strokeWidth={1.75} />
+				</Button>
+			{/if}
 		</span>
 	</div>
 {/snippet}
 
 <div class="flex flex-col gap-4" in:fade={{ duration: 150 }}>
 	<div class="flex items-center justify-between gap-3">
-		<p class="text-sm text-muted-foreground">Invite links for this server.</p>
+		<p class="text-sm text-muted-foreground">
+			{canManage
+				? 'Invite links for this server.'
+				: 'Invites you created. Members with Manage Invites can see all of them.'}
+		</p>
 		{#if serversState.canInvite}
 			<Button variant="secondary" onclick={() => (createOpen = true)}>Create invite</Button>
 		{/if}
@@ -171,7 +184,10 @@
 		/>
 	{:else}
 		{#if active.length === 0}
-			<EmptyState title="No active invites" description="Create a link to invite people.">
+			<EmptyState
+				title={canManage ? 'No active invites' : "You haven't created any invites"}
+				description="Create a link to invite people."
+			>
 				{#snippet icon()}
 					<Ticket size={20} strokeWidth={1.75} />
 				{/snippet}
@@ -185,10 +201,12 @@
 			<div role="table" aria-label="Active invites" class="flex flex-col">
 				<div
 					role="row"
-					class="grid {COLUMNS} gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle"
+					class="grid {columns} gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle"
 				>
 					<span role="columnheader">Code</span>
-					<span role="columnheader">Created by</span>
+					{#if canManage}
+						<span role="columnheader">Created by</span>
+					{/if}
 					<span role="columnheader">Uses</span>
 					<span role="columnheader">Expires</span>
 					<span role="columnheader">Password</span>
