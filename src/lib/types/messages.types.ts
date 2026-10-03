@@ -15,6 +15,16 @@ export type MessageType = {
 	attachments?: Attachment[];
 	reactions?: Reaction[];
 	reply_to?: ReplyRef | null;
+	embeds?: Embed[];
+};
+
+/** Link preview. Sender-provided, so only `url` says where the card really goes. */
+export type Embed = {
+	url: string;
+	site_name: string | null;
+	title: string | null;
+	description: string | null;
+	image_url: string | null;
 };
 
 export type ReplyRef =

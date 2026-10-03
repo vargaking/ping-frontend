@@ -18,9 +18,9 @@
 		editorClass = '',
 		mentionCandidates,
 		onSubmit,
+		onChange,
 		onCancel,
-		onArrowUp,
-		onInput
+		onArrowUp
 	}: {
 		content?: JSONContent | string;
 		placeholder?: string;
@@ -32,10 +32,10 @@
 		/** Who the @mention list can suggest; without it there are no suggestions. */
 		mentionCandidates?: () => User[];
 		onSubmit: (json: JSONContent) => void;
+		/** Called after every edit to the content. */
+		onChange?: (json: JSONContent) => void;
 		onCancel?: () => void;
 		onArrowUp?: () => void;
-		/** The document changed (typing, paste, programmatic edits). */
-		onInput?: () => void;
 	} = $props();
 
 	let element: HTMLElement;
@@ -99,13 +99,13 @@
 			onCreate: ({ editor }) => {
 				isEmpty = editor.isEmpty;
 			},
-			onTransaction: ({ editor, transaction }) => {
+			onUpdate: ({ editor }) => onChange?.(editor.getJSON()),
+			onTransaction: ({ editor }) => {
 				// Removing a focused editor fires a blur transaction mid-teardown,
 				// where writing state throws; blur never changes emptiness. Read
 				// untracked: this also runs inside the creating effect (autofocus),
 				// and tracking isEmpty there would rebuild the editor.
 				if (editor.isEmpty !== untrack(() => isEmpty)) isEmpty = editor.isEmpty;
-				if (transaction.docChanged) untrack(() => onInput?.());
 			},
 			extensions: [
 				StarterKit,

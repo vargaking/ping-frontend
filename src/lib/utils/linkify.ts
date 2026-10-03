@@ -62,3 +62,9 @@ export function linkify(text: string): Segment[] {
 	pushText(segments, text.slice(cursor));
 	return segments;
 }
+
+/** The first link `linkify` would make in `text`, as an absolute URL. */
+export function firstLinkHref(text: string): string | null {
+	const first = linkify(text).find((segment) => segment.kind === 'link');
+	return first?.kind === 'link' ? first.href : null;
+}

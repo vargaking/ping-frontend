@@ -17,6 +17,7 @@ export default defineConfig({
 			'/channels': `http://${process.env.LOCAL_IP}:8000`,
 			'/conversations': `http://${process.env.LOCAL_IP}:8000`,
 			'/messages': `http://${process.env.LOCAL_IP}:8000`,
+			'/unfurl': `http://${process.env.LOCAL_IP}:8000`,
 			'/invites': `http://${process.env.LOCAL_IP}:8000`,
 			'/server-requests': `http://${process.env.LOCAL_IP}:8000`,
 			'/media': `http://${process.env.LOCAL_IP}:8000`,
