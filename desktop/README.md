@@ -16,4 +16,14 @@ ZET_URL=https://preview.example.com npm start
 
 `npm run icons` regenerates `assets/` from the web app's logo files.
 
-`npm run dist:win` builds the Windows installer into `release/`. Pushing a `desktop-v<version>` tag, matching the version in `package.json`, builds it in CI and attaches it to a GitHub Release.
+`npm run dist:win` builds the Windows installer into `release/Zet-Setup.exe`.
+
+## Releasing
+
+Nobody pushes tags. To release a new shell version, bump `version` in `package.json` in your PR.
+
+- Pull requests that touch `desktop/` build the installer and upload it as the `zet-windows` artifact (kept 7 days). A PR that changes what ships in the installer without a version bump fails once that version is released.
+- On master, the Desktop workflow reads the version. If `desktop-v<version>` doesn't exist yet, it builds the installer, creates the tag and a GitHub Release at that commit, and attaches `Zet-Setup.exe`. If it exists, the run is skipped and says so.
+- Run it manually from the Actions tab with "Run workflow". Manual runs only release from master.
+
+The landing page links to `/download/windows`, which redirects to `releases/latest/download/Zet-Setup.exe`. GitHub's "latest" is per repo, so only desktop releases may be marked latest in this repo.

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArrowRight } from 'lucide-svelte';
 	import Logo from '$lib/components/brand/Logo.svelte';
+	import { desktop } from '$lib/desktop';
 
 	const roadmap = [
 		{
@@ -95,7 +96,22 @@
 				>
 					Create account
 				</a>
+				{#if !desktop}
+					<a
+						href="/download/windows"
+						data-sveltekit-reload
+						class="inline-flex h-11 items-center rounded-[10px] border border-input bg-accent px-5 text-sm font-medium text-foreground transition-colors hover:bg-accent/70"
+					>
+						Download for Windows
+					</a>
+				{/if}
 			</div>
+			{#if !desktop}
+				<p class="mt-3 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+					The installer isn't signed yet, so Windows warns about an unknown publisher. Choose "More
+					info", then "Run anyway".
+				</p>
+			{/if}
 		</section>
 
 		<section class="relative z-[1] mt-24">
