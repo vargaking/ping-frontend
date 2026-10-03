@@ -5,14 +5,13 @@
 	import MessageList from '$lib/components/ui/message/MessageList.svelte';
 	import TypingIndicator from '$lib/components/ui/message/TypingIndicator.svelte';
 	import UsersSidebar from '$lib/components/ui/sidebar/UsersSidebar.svelte';
+	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import type { MessageTarget } from '$lib/types/messages.types';
 	import { channelThreadKey } from '$lib/states/messagesState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { db } from '$lib/utils/db';
 	import { untrack } from 'svelte';
-
-	let membersOpen = $state(true);
 
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 	const serverId = $derived(page.params.serverId ? parseInt(page.params.serverId) : null);
@@ -31,7 +30,7 @@
 
 <div class="flex h-full min-h-0">
 	<div class="flex min-w-0 flex-1 flex-col">
-		<ChannelHeader {membersOpen} onToggleMembers={() => (membersOpen = !membersOpen)} />
+		<ChannelHeader />
 
 		{#if currentChannelId != null}
 			{@const channelId = currentChannelId}
@@ -50,7 +49,7 @@
 		<Composer {target} />
 	</div>
 
-	{#if membersOpen}
+	{#if membersPanelState.open}
 		<UsersSidebar />
 	{/if}
 </div>

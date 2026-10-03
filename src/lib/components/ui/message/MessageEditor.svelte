@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Editor, Extension, type JSONContent } from '@tiptap/core';
+	import { Editor, Extension, type FocusPosition, type JSONContent } from '@tiptap/core';
 	import StarterKit from '@tiptap/starter-kit';
 	import Mention from '@tiptap/extension-mention';
 	import Placeholder from '@tiptap/extension-placeholder';
@@ -50,8 +50,12 @@
 		editor?.commands.clearContent();
 	}
 
-	export function focus() {
-		editor?.commands.focus('end');
+	export function insertText(text: string) {
+		editor?.chain().focus().insertContent(text).run();
+	}
+
+	export function focus(position: FocusPosition = 'end') {
+		editor?.commands.focus(position);
 	}
 
 	$effect(() => {

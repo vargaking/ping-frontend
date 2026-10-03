@@ -1,12 +1,7 @@
 <script lang="ts" module>
-	const COLUMNS = 'grid-cols-[88px_1fr_72px_112px_72px_36px]';
+	const COLUMNS = 'grid-cols-[88px_1fr_72px_112px_72px_72px]';
+	const COPIED_MS = 2000;
 	const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-
-	function isActive(invite: InviteResponse): boolean {
-		if (!invite.is_active) return false;
-		if (invite.valid_until && new Date(invite.valid_until).getTime() <= Date.now()) return false;
-		return invite.max_uses === null || invite.use_count < invite.max_uses;
-	}
 
 	function codeOf(invite: InviteResponse): string {
 		return invite.id.slice(0, 8);
@@ -29,13 +24,14 @@
 	import { listServerInvites, deleteInvite } from '$lib/requests/invites';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import type { InviteResponse } from '$lib/types/invite.types';
+	import { inviteLink, isInviteActive } from '$lib/utils/inviteCode';
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
-	import { ChevronDown, Ticket, X } from 'lucide-svelte';
+	import { Check, ChevronDown, Copy, Ticket, X } from 'lucide-svelte';
 
 	let invites = $state<InviteResponse[]>([]);
 	let isLoading = $state(true);
@@ -44,10 +40,12 @@
 	let showExpired = $state(false);
 	let revokeTarget = $state<InviteResponse | null>(null);
 	let revoking = $state(false);
+	let copiedId = $state<string | null>(null);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const serverId = $derived(serversState.selectedServer?.id);
-	const active = $derived(invites.filter(isActive));
-	const expired = $derived(invites.filter((i) => !isActive(i)));
+	const active = $derived(invites.filter(isInviteActive));
+	const expired = $derived(invites.filter((i) => !isInviteActive(i)));
 
 	$effect(() => {
 		if (serverId != null) fetchInvites(serverId, true);
@@ -66,6 +64,20 @@
 		} finally {
 			isLoading = false;
 		}
+	}
+
+	$effect(() => () => clearTimeout(copiedTimer));
+
+	async function copyLink(invite: InviteResponse) {
+		try {
+			await navigator.clipboard.writeText(inviteLink(invite.id));
+		} catch {
+			toast.error("Couldn't copy the link. Select it and copy manually.");
+			return;
+		}
+		copiedId = invite.id;
+		clearTimeout(copiedTimer);
+		copiedTimer = setTimeout(() => (copiedId = null), COPIED_MS);
 	}
 
 	async function revoke() {
@@ -92,14 +104,42 @@
 			? 'text-text-subtle'
 			: ''}"
 	>
-		<span role="cell" class="font-mono text-xs">{codeOf(invite)}</span>
+		<span role="cell" class="font-mono text-xs">
+			{#if isInviteActive(invite)}
+				<button
+					type="button"
+					title="Copy invite link"
+					class="rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					onclick={() => copyLink(invite)}
+				>
+					{codeOf(invite)}
+				</button>
+			{:else}
+				{codeOf(invite)}
+			{/if}
+		</span>
 		<span role="cell" class="truncate text-sm">{invite.created_by_username}</span>
 		<span role="cell" class="font-mono text-xs">
 			{invite.use_count} / {invite.max_uses ?? '∞'}
 		</span>
 		<span role="cell" class="text-[13px]">{expiresIn(invite.valid_until)}</span>
 		<span role="cell" class="text-[13px]">{invite.has_password ? 'Yes' : 'No'}</span>
-		<span role="cell">
+		<span role="cell" class="flex items-center justify-end">
+			{#if isInviteActive(invite)}
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="rounded-lg text-muted-foreground"
+					aria-label="Copy invite link"
+					onclick={() => copyLink(invite)}
+				>
+					{#if copiedId === invite.id}
+						<Check size={16} strokeWidth={1.75} />
+					{:else}
+						<Copy size={16} strokeWidth={1.75} />
+					{/if}
+				</Button>
+			{/if}
 			<Button
 				variant="ghost"
 				size="icon-sm"

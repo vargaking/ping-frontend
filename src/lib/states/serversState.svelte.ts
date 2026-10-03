@@ -254,7 +254,9 @@ export class ServersState {
 				this.reorderTimeouts.delete(serverId);
 				try {
 					await updateServer(serverId, {
-						server_settings: this.servers[serverId].server_settings
+						server_settings: {
+							channel_order: this.servers[serverId].server_settings!.channel_order
+						}
 					});
 				} catch (e) {
 					console.error('Failed to persist channel order:', e);

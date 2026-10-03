@@ -8,6 +8,7 @@
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
 	import { ICON_TYPES, iconProblem } from '$lib/utils/serverIcon';
 	import { avatarTone, graphemes, toneClass, TONE_COUNT } from '$lib/utils/avatar';
+	import type { ServerSettings } from '$lib/types/server.types';
 	import { Check } from 'lucide-svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
@@ -21,6 +22,20 @@
 	const savedText = $derived(server?.icon_text ?? '');
 	const savedTone = $derived(server?.icon_tone ?? avatarTone(server?.id ?? ''));
 
+	const savedWelcome = $derived(server?.server_profile?.welcome_message ?? '');
+	const textChannels = $derived(
+		serversState.selectedServerChannelsList.filter((c) => c.type === 'text')
+	);
+	// A default that points at a deleted channel behaves like the welcome screen.
+	const savedLanding = $derived.by(() => {
+		const id = server?.server_settings?.default_channel_id;
+		return id != null && textChannels.some((c) => c.id === id) ? String(id) : WELCOME_SCREEN;
+	});
+
+	const WELCOME_SCREEN = '';
+	const WELCOME_MAX = 1000;
+	const selectClass =
+		'h-11 w-full rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 	const ICON_TEXT_MAX = 2;
 	const TONE_NAMES = ['Blue', 'Green', 'Yellow', 'Purple', 'Teal', 'Grey'];
 	const TONES = Array.from({ length: TONE_COUNT }, (_, i) => i + 1);
@@ -35,19 +50,34 @@
 	let baselineText = $state<string | null>(null);
 	let baselineTone = $state<number | null>(null);
 	let removeImage = $state(false);
-	let errors = $state<{ name?: string; icon?: string; iconText?: string }>({});
+	let welcome = $state('');
+	let baselineWelcome = $state<string | null>(null);
+	let landing = $state(WELCOME_SCREEN);
+	let baselineLanding = $state<string | null>(null);
+	let errors = $state<{ name?: string; icon?: string; iconText?: string; welcome?: string }>({});
 	let saving = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
 
 	const nameChanged = $derived(baselineName !== null && name !== baselineName);
 	const textChanged = $derived(baselineText !== null && iconText !== baselineText);
-	const toneChanged = $derived(baselineTone !== null && iconTone !== baselineTone);
+	// The colour only applies to a text icon.
+	const toneChanged = $derived(
+		baselineTone !== null && iconText !== '' && iconTone !== baselineTone
+	);
 	// Picking Text means the rail shows the text, so a stored image has to go.
 	const dropsImage = $derived(
 		savedIcon !== null && iconFile === null && (removeImage || iconMode === 'text')
 	);
+	const welcomeChanged = $derived(baselineWelcome !== null && welcome !== baselineWelcome);
+	const landingChanged = $derived(baselineLanding !== null && landing !== baselineLanding);
 	const dirty = $derived(
-		nameChanged || iconFile !== null || textChanged || toneChanged || dropsImage
+		nameChanged ||
+			iconFile !== null ||
+			textChanged ||
+			toneChanged ||
+			dropsImage ||
+			welcomeChanged ||
+			landingChanged
 	);
 
 	// While the name is untouched, follow the saved value (e.g. a rename that
@@ -74,6 +104,26 @@
 			if (baselineTone === null || iconTone === baselineTone) {
 				iconTone = nextTone;
 				baselineTone = nextTone;
+			}
+		});
+	});
+
+	$effect(() => {
+		const next = savedWelcome;
+		untrack(() => {
+			if (baselineWelcome === null || welcome === baselineWelcome) {
+				welcome = next;
+				baselineWelcome = next;
+			}
+		});
+	});
+
+	$effect(() => {
+		const next = savedLanding;
+		untrack(() => {
+			if (baselineLanding === null || landing === baselineLanding) {
+				landing = next;
+				baselineLanding = next;
 			}
 		});
 	});
@@ -119,6 +169,10 @@
 		iconTone = savedTone;
 		baselineTone = savedTone;
 		iconMode = !savedIcon && savedText ? 'text' : 'image';
+		welcome = savedWelcome;
+		baselineWelcome = savedWelcome;
+		landing = savedLanding;
+		baselineLanding = savedLanding;
 		removeImage = false;
 		setIcon(null);
 		errors = {};
@@ -170,6 +224,31 @@
 			} catch (e) {
 				failed = true;
 				errors.iconText = fieldErrorsFrom(e).icon_text ?? getErrorMessage(e);
+			}
+		}
+
+		if (welcomeChanged || landingChanged) {
+			try {
+				const updated = await updateServer(serverId, {
+					...(welcomeChanged && { server_profile: { welcome_message: welcome.trim() || null } }),
+					...(landingChanged && {
+						server_settings: { default_channel_id: landing ? Number(landing) : null }
+					})
+				});
+				const settings = { ...server?.server_settings } as ServerSettings;
+				if (landing) settings.default_channel_id = Number(landing);
+				else delete settings.default_channel_id;
+				serversState.patchServer(serverId, {
+					server_profile: updated.server_profile,
+					server_settings: settings
+				});
+				welcome = updated.server_profile?.welcome_message ?? '';
+				baselineWelcome = welcome;
+				baselineLanding = landing;
+			} catch (e) {
+				failed = true;
+				errors.welcome = fieldErrorsFrom(e).welcome_message ?? getErrorMessage(e);
+				toast.error(`Couldn't save the welcome settings: ${getErrorMessage(e)}`);
 			}
 		}
 
@@ -280,25 +359,27 @@
 					hint="Up to 2 characters"
 					oninput={() => (errors.iconText = undefined)}
 				/>
-				<div role="radiogroup" aria-label="Icon colour" class="flex items-center gap-2">
-					{#each TONES as tone (tone)}
-						<button
-							type="button"
-							role="radio"
-							aria-checked={iconTone === tone}
-							aria-label={TONE_NAMES[tone - 1]}
-							onclick={() => (iconTone = tone)}
-							class="flex h-8 w-8 items-center justify-center rounded-full {toneClass(
+				{#if iconText}
+					<div role="radiogroup" aria-label="Icon colour" class="flex items-center gap-2">
+						{#each TONES as tone (tone)}
+							<button
+								type="button"
+								role="radio"
+								aria-checked={iconTone === tone}
+								aria-label={TONE_NAMES[tone - 1]}
+								onclick={() => (iconTone = tone)}
+								class="flex h-8 w-8 items-center justify-center rounded-full {toneClass(
+									tone
+								)} focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none {iconTone ===
 								tone
-							)} focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none {iconTone ===
-							tone
-								? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
-								: ''}"
-						>
-							{#if iconTone === tone}<Check size={16} aria-hidden="true" />{/if}
-						</button>
-					{/each}
-				</div>
+									? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+									: ''}"
+							>
+								{#if iconTone === tone}<Check size={16} aria-hidden="true" />{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		</div>
 
@@ -310,6 +391,32 @@
 			oninput={() => (errors.name = undefined)}
 			maxlength={100}
 		/>
+
+		<div class="flex max-w-md flex-col gap-5">
+			<h3 class="text-sm font-semibold">Welcome</h3>
+			<SettingsTextField
+				id="server-welcome"
+				label="Welcome message"
+				bind:value={welcome}
+				multiline
+				maxlength={WELCOME_MAX}
+				placeholder="Say hello to new members"
+				error={errors.welcome}
+				hint="{welcome.length} / {WELCOME_MAX}"
+				oninput={() => (errors.welcome = undefined)}
+			/>
+			<div class="flex flex-col gap-1.5">
+				<label for="server-landing" class="text-[13px] font-medium text-text-label">
+					When members open the server
+				</label>
+				<select id="server-landing" bind:value={landing} class={selectClass}>
+					<option value={WELCOME_SCREEN}>Show the welcome screen</option>
+					{#each textChannels as channel (channel.id)}
+						<option value={String(channel.id)}>Open #{channel.name}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
 
 		{#if serversState.isSelectedServerOwner}
 			<DeleteServerZone />

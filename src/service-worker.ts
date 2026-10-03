@@ -13,7 +13,7 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 
 type PushPayload = {
 	v: number;
-	kind: 'dm' | 'mention' | 'read';
+	kind: 'dm' | 'mention' | 'server_request' | 'read';
 	tag: string;
 	title?: string;
 	body?: string;
@@ -42,7 +42,7 @@ function parsePayload(event: PushEvent): ParsedPayload {
 	}
 	if (payload?.v !== 1) return { ok: false, reason: 'wrong v' };
 	if (typeof payload.tag !== 'string' || !payload.tag) return { ok: false, reason: 'no tag' };
-	if (!['dm', 'mention', 'read'].includes(payload.kind))
+	if (!['dm', 'mention', 'server_request', 'read'].includes(payload.kind))
 		return { ok: false, reason: 'unknown kind' };
 	return { ok: true, payload };
 }
@@ -112,10 +112,11 @@ async function handlePush(event: PushEvent) {
 	}
 	const count = Math.max(payload.count ?? 1, (previousData?.count ?? 0) + 1);
 	const noun = payload.kind === 'dm' ? 'messages' : 'mentions';
+	const summarize = count > 1 && payload.kind !== 'server_request';
 	const prefs = await readPushPrefs();
 
 	await sw.registration.showNotification(payload.title ?? 'zeta', {
-		body: count > 1 ? `${count} new ${noun}` : (payload.body ?? ''),
+		body: summarize ? `${count} new ${noun}` : (payload.body ?? ''),
 		tag: payload.tag,
 		icon: ICON,
 		silent: !prefs.sound,

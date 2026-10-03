@@ -19,6 +19,7 @@ export default defineConfig({
 			'/messages': `http://${process.env.LOCAL_IP}:8000`,
 			'/unfurl': `http://${process.env.LOCAL_IP}:8000`,
 			'/invites': `http://${process.env.LOCAL_IP}:8000`,
+			'/server-requests': `http://${process.env.LOCAL_IP}:8000`,
 			'/media': `http://${process.env.LOCAL_IP}:8000`,
 			'/attachments': `http://${process.env.LOCAL_IP}:8000`,
 			'/ws': { target: `ws://${process.env.LOCAL_IP}:8000`, ws: true }
