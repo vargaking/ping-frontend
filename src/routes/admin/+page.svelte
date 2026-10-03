@@ -251,6 +251,12 @@
 								Counted since restart {timeAgo(stats.errors.since)}
 							</p>
 						{/if}
+						<a
+							href="/admin/errors/"
+							class="w-fit text-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						>
+							View errors
+						</a>
 					{:else}
 						{@render unavailable('Error counts unavailable')}
 					{/if}

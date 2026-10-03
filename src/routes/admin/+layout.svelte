@@ -15,6 +15,7 @@
 
 	const nav = [
 		{ href: '/admin/', label: 'Overview' },
+		{ href: '/admin/errors/', label: 'Errors' },
 		{ href: '/admin/waitlist/', label: 'Waitlist' }
 	];
 </script>
