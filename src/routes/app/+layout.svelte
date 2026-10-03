@@ -7,11 +7,14 @@
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
+	import ScreenSourcePicker from '$lib/components/voice/ScreenSourcePicker.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
+	import { desktop } from '$lib/desktop';
+	import { screenPickerState } from '$lib/states/screenPickerState.svelte';
 
 	let { children } = $props();
 
@@ -24,6 +27,16 @@
 		notificationsState.refreshPermission();
 		notificationsState.attachPermissionListeners();
 		void notificationsState.refreshPush();
+	});
+
+	onMount(() => {
+		const unsubscribe = desktop?.onPickScreenSource?.((sources) =>
+			screenPickerState.request(sources)
+		);
+		return () => {
+			unsubscribe?.();
+			screenPickerState.choose(null);
+		};
 	});
 
 	$effect(() => {
@@ -54,3 +67,4 @@
 <Overlay />
 <PushPrompt />
 <MicPrompt />
+<ScreenSourcePicker />

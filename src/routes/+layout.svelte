@@ -14,7 +14,8 @@
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
-	import { desktop } from '$lib/desktop';
+	import { desktop, frameless } from '$lib/desktop';
+	import DesktopTitleBar from '$lib/components/ui/shell/DesktopTitleBar.svelte';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
 	import { SITE_NAME } from '$lib/meta';
 
@@ -26,6 +27,10 @@
 	onMount(() => {
 		window.addEventListener('pointerdown', primeNotificationSound, { once: true });
 		window.addEventListener('keydown', primeNotificationSound, { once: true });
+	});
+
+	onMount(() => {
+		if (frameless) document.documentElement.dataset.frameless = '';
 	});
 
 	// A push notification click asks an already-open tab to move to its thread.
@@ -67,6 +72,8 @@
 	let ready = $state(false);
 
 	let unreachable = $state(false);
+
+	const inApp = $derived(page.route.id?.startsWith('/app') ?? false);
 
 	// When the server can't be reached, stay on the loading screen and keep trying
 	// instead of treating the user as logged out.
@@ -128,14 +135,14 @@
 			return;
 		}
 
-		if (isPublicPath(path)) {
+		if (isPublicPath(path) && !(desktop && path === '/')) {
 			ready = true;
 			return;
 		}
 
 		// Protected route while logged out: remember where they were headed.
 		ready = false;
-		const target = safeNext(path + url.search);
+		const target = path === '/' ? null : safeNext(path + url.search);
 		goto(target ? `/login?next=${encodeURIComponent(target)}` : '/login', { replaceState: true });
 	});
 </script>
@@ -145,17 +152,30 @@
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
 
-{#if ready}
-	{@render children()}
-{:else}
-	<div class="flex h-screen w-screen items-center justify-center bg-background">
-		<div class="flex flex-col items-center gap-3">
-			<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
-			{#if unreachable}
-				<span class="text-sm text-muted-foreground">Can't reach {SITE_NAME}. Reconnecting…</span>
-			{:else}
-				<span class="sr-only">Loading…</span>
-			{/if}
+{#snippet content()}
+	{#if ready}
+		{@render children()}
+	{:else}
+		<div class="flex h-screen w-screen items-center justify-center bg-background">
+			<div class="flex flex-col items-center gap-3">
+				<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
+				{#if unreachable}
+					<span class="text-sm text-muted-foreground">Can't reach {SITE_NAME}. Reconnecting…</span>
+				{:else}
+					<span class="sr-only">Loading…</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#if frameless && !(ready && inApp)}
+	<div class="flex h-screen w-screen flex-col">
+		<DesktopTitleBar />
+		<div class="desktop-page relative min-h-0 flex-1 overflow-auto">
+			{@render content()}
 		</div>
 	</div>
+{:else}
+	{@render content()}
 {/if}

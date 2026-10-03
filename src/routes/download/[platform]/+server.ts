@@ -4,7 +4,8 @@ import type { RequestHandler } from './$types';
 const REPO = 'vargaking/ping-frontend';
 
 const downloads: Record<string, string> = {
-	windows: `https://github.com/${REPO}/releases/latest/download/Zet-Setup.exe`
+	windows: `https://github.com/${REPO}/releases/latest/download/Zet-Setup.exe`,
+	linux: `https://github.com/${REPO}/releases/latest/download/Zet.AppImage`
 };
 
 export const GET: RequestHandler = ({ params }) => {
