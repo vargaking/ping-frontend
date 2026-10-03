@@ -740,6 +740,11 @@ class SocketState {
 					this.outbox.fail(message.ref);
 					break;
 				}
+				if (message.code === 'invalid_content' && message.ref) {
+					this.outbox.fail(message.ref);
+					toast.error("Couldn't send that message.");
+					break;
+				}
 				if (message.code === 'invalid_attachments' && message.ref) {
 					// Nothing was stored server-side, so drop the optimistic copy.
 					this.outbox.drop(message.ref);

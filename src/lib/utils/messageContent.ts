@@ -8,17 +8,7 @@ export function parseMessageContent(raw: unknown): JSONContent | string {
 	try {
 		return JSON.parse(raw);
 	} catch {
-		try {
-			// Fallback for Python-style stringified dicts (single quotes / None).
-			const fixed = raw
-				.replace(/'/g, '"')
-				.replace(/False/g, 'false')
-				.replace(/True/g, 'true')
-				.replace(/None/g, 'null');
-			return JSON.parse(fixed);
-		} catch {
-			return raw; // legacy plain-string message
-		}
+		return raw; // legacy plain-string message
 	}
 }
 
@@ -67,8 +57,7 @@ export function messagePreviewText(content: unknown, attachments: Attachment[] =
 	return attachments[0].kind === 'image' ? 'Sent an image' : 'Sent a file';
 }
 
-/** Whether a message's content mentions the given user (client-side only — the
- *  server doesn't count mentions since stored content isn't normalised yet). */
+/** Whether a message's content mentions the given user. */
 export function messageMentionsUser(raw: unknown, userId: number): boolean {
 	const parsed = parseMessageContent(raw);
 	if (typeof parsed !== 'object' || parsed === null) return false;
