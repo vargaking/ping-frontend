@@ -7,21 +7,27 @@
 			tier: 'Now',
 			note: 'live',
 			dot: 'now',
-			items: [{ label: 'Text channels' }, { label: 'Voice channels' }, { label: 'Direct messages' }]
+			items: [
+				{ label: 'Text channels', detail: 'replies, reactions, attachments, link previews' },
+				{
+					label: 'Voice channels',
+					detail: "mute, deafen, device settings, who's in a call at a glance"
+				},
+				{ label: 'Screen sharing', detail: 'up to 1080p' },
+				{ label: 'Direct messages' },
+				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
+				{ label: 'Servers', detail: 'invites, roles, member management' }
+			]
 		},
 		{
 			tier: 'Next up',
 			note: 'in progress',
 			dot: 'next',
 			items: [
-				{ label: 'A cleaner, calmer interface' },
-				{ label: 'Solid login & registration' },
-				{
-					label: 'Richer messaging',
-					detail: 'edit, delete, attachments, reactions, unread, typing'
-				},
-				{ label: 'Voice controls', detail: "mute, deafen, and who's in a call at a glance" },
-				{ label: 'Server & member management', detail: 'roles, invites, kicks' }
+				{ label: 'Desktop app' },
+				{ label: 'Mobile apps', detail: 'iOS and Android' },
+				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' },
+				{ label: 'More voice controls', detail: 'per-person volume' }
 			]
 		},
 		{
@@ -29,10 +35,12 @@
 			note: 'where this is going',
 			dot: 'later',
 			items: [
+				{ label: 'Self-hosting', detail: 'run your own server' },
+				{ label: 'One account across every server' },
 				{ label: 'End-to-end encryption' },
-				{ label: 'Desktop & mobile apps' },
 				{ label: 'Workspaces', detail: 'personal, work and university, on one account' },
-				{ label: 'Self-hosting & custom frontends' },
+				{ label: 'Moving from Discord', detail: "import your server's history" },
+				{ label: 'Custom frontends' },
 				{ label: 'An automations / bot API' }
 			]
 		}
