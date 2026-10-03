@@ -75,9 +75,13 @@ class MessagesState {
 		return this.threads[key]?.hasMore ?? false;
 	}
 
-	/** Replace a thread's list with a freshly loaded newest page. */
+	/** Replace a thread's list with a freshly loaded newest page. Our unsent
+	 *  messages aren't on the server yet, so they stay after it. */
 	set(key: string, messages: MessageType[], hasMore: boolean) {
-		this.threads[key] = { messages, hasMore };
+		const unsent = (this.threads[key]?.messages ?? []).filter(
+			(m) => m.status && !messages.some((loaded) => loaded.id === m.id)
+		);
+		this.threads[key] = { messages: [...messages, ...unsent], hasMore };
 	}
 
 	/** Prepend an older page (oldest first) ahead of what's already loaded. */

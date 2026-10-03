@@ -38,6 +38,7 @@ import type { ServerRequest } from '$lib/types/serverRequest.types';
 import { applyReaction } from '$lib/utils/reactions';
 import { markRepliesDeleted, refreshReplyQuotes, replyRefFor } from '$lib/utils/replies';
 import { replyState } from './replyState.svelte';
+import { Outbox } from './outboxState.svelte';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -65,6 +66,11 @@ class SocketState {
 	/** The server answered a ping with invalid_frame: it predates the heartbeat. */
 	private heartbeatUnsupported = false;
 	private lastTypingSent = new Map<string, number>();
+	private outbox = new Outbox({
+		// A socket can still report OPEN for a while after the network is gone.
+		ready: () => this.socket?.readyState === WebSocket.OPEN && navigator.onLine,
+		send: (frame) => this.socket?.send(JSON.stringify(frame))
+	});
 
 	/**
 	 * Open the socket. The server identifies us from the session cookie during
@@ -89,7 +95,10 @@ class SocketState {
 				if (this.reconnecting) this.retryNow();
 				else this.sendPing();
 			});
-			window.addEventListener('online', () => this.retryNow());
+			window.addEventListener('online', () => {
+				this.retryNow();
+				this.outbox.flush();
+			});
 		}
 
 		connectionState.setStatus(serverHost, this.reconnecting ? 'reconnecting' : 'connecting');
@@ -119,6 +128,7 @@ class SocketState {
 			this.hasConnected = true;
 
 			this.sendActivity(documentFocusState.active ? 'active' : 'idle');
+			this.outbox.flush();
 		};
 
 		socket.onclose = (event) => {
@@ -130,6 +140,7 @@ class SocketState {
 			this.connected = false;
 			this.stopHeartbeat();
 			typingState.clearAll();
+			this.outbox.connectionLost();
 
 			if (event.code === WS_CLOSE_UNAUTHENTICATED) {
 				connectionState.setStatus(serverHost, 'disconnected');
@@ -215,6 +226,7 @@ class SocketState {
 		this.stopHeartbeat();
 		socket?.close();
 		typingState.clearAll();
+		this.outbox.connectionLost();
 		this.scheduleReconnect();
 	}
 
@@ -247,6 +259,7 @@ class SocketState {
 		this.outageLogged = false;
 		this.stopHeartbeat();
 		typingState.clearAll();
+		this.outbox.clear();
 		connectionState.setStatus(serverHost, 'disconnected');
 		socket?.close();
 	}
@@ -270,7 +283,11 @@ class SocketState {
 		);
 	}
 
-	/** Returns false when the message could not go out, so the caller keeps it. */
+	/**
+	 * Queues the message and shows it as pending until the server acks it, so it
+	 * goes out whenever the socket is up. Returns false only when there is
+	 * nothing to send or nobody logged in.
+	 */
 	sendMessage(
 		target: MessageTarget,
 		message: JSONContent,
@@ -282,11 +299,6 @@ class SocketState {
 		// Callers pass reactive state; IndexedDB can't store Svelte's proxies.
 		attachments = $state.snapshot(attachments);
 		embeds = $state.snapshot(embeds);
-		// A socket can still report OPEN for a while after the network is gone.
-		if (!this.socket || this.socket.readyState !== WebSocket.OPEN || !navigator.onLine) {
-			return false;
-		}
-
 		const user = usersState.loggedInUser;
 		if (!user) return false;
 
@@ -343,19 +355,24 @@ class SocketState {
 						embeds
 					};
 
-		this.socket.send(JSON.stringify(frame));
 		// Recipients drop our indicator when the message lands, so the next
 		// keystroke should announce again right away.
 		this.lastTypingSent.delete(threadKey(target));
 
-		messagesState.addMessage(local);
+		messagesState.addMessage({ ...local, status: 'pending' });
 		if (target.kind === 'direct') conversationsState.noteMessage(local, { mine: true });
 		else unreadState.noteChannelMessage(target.channelId, target.serverId, id, { mine: true });
 
-		// put, not add: the server can echo this same message to our other tabs
-		// (or a retry could replay it), and a second add() would throw ConstraintError.
-		db.messages.put(local).catch((err) => console.warn('Could not cache sent message:', err));
+		this.outbox.enqueue(local, frame);
 		return true;
+	}
+
+	retryMessage(id: string) {
+		this.outbox.retry(id);
+	}
+
+	discardMessage(id: string) {
+		this.outbox.discard(id);
 	}
 
 	async handleIncomingMessage(message: MessageType) {
@@ -706,6 +723,9 @@ class SocketState {
 			case 'pong':
 				this.handlePong(message.t);
 				break;
+			case 'message_ack':
+				this.outbox.acknowledge(message.id);
+				break;
 			case 'error':
 				if (
 					message.code === 'invalid_frame' &&
@@ -716,20 +736,23 @@ class SocketState {
 					this.heartbeatUnsupported = true;
 					break;
 				}
+				if ((message.code === 'forbidden' || message.code === 'duplicate_id') && message.ref) {
+					this.outbox.fail(message.ref);
+					break;
+				}
 				if (message.code === 'invalid_attachments' && message.ref) {
 					// Nothing was stored server-side, so drop the optimistic copy.
+					this.outbox.drop(message.ref);
 					this.handleMessageDeleted({ id: message.ref });
 					toast.error("Couldn't send the attachment. Try uploading it again.");
 					break;
 				}
 				if (message.code === 'invalid_reply' && message.ref) {
+					this.outbox.drop(message.ref);
 					this.handleMessageDeleted({ id: message.ref });
 					toast.error("Couldn't send the reply. The original message is no longer there.");
 					break;
 				}
-				// e.g. { code: 'forbidden', ref: <message id> } when posting to a
-				// server/channel we have no access to. Surfacing this in the UI
-				// (failed-message state) is tracked separately.
 				console.warn('Server rejected a frame:', message.code, message.ref);
 				break;
 			default:

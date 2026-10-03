@@ -224,17 +224,7 @@
 	function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
 		const embed = linkPreview.embedFor(messagePlainText(message));
-		const sent = socketState.sendMessage(
-			target,
-			message,
-			doneAttachments,
-			replyTarget,
-			embed ? [embed] : []
-		);
-		if (!sent) {
-			toast.error("You're offline. Your message wasn't sent.");
-			return;
-		}
+		socketState.sendMessage(target, message, doneAttachments, replyTarget, embed ? [embed] : []);
 		editor?.clear();
 		linkPreview.reset();
 		clearPending();
@@ -249,7 +239,7 @@
 
 		const messages = messagesState.messages(threadKey(target));
 		for (let i = messages.length - 1; i >= 0; i--) {
-			if (messages[i].user_id === me.id) {
+			if (messages[i].user_id === me.id && !messages[i].status) {
 				messageEditState.start(messages[i].id);
 				return;
 			}

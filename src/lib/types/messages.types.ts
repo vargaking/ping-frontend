@@ -16,6 +16,8 @@ export type MessageType = {
 	reactions?: Reaction[];
 	reply_to?: ReplyRef | null;
 	embeds?: Embed[];
+	/** Only set on our own unsent messages; undefined means the server has it. */
+	status?: 'pending' | 'failed';
 };
 
 /** Link preview. Sender-provided, so only `url` says where the card really goes. */
