@@ -24,17 +24,20 @@ export type AdminUsers = {
 	wau: number;
 };
 
-export type AdminTopServer = {
+export type AdminServer = {
 	id: number;
 	name: string;
 	members: number;
 	messages_24h: number;
+	messages_total: number;
+	in_voice: number;
+	created_at: string;
 };
 
 export type AdminServers = {
 	total: number;
 	pending_requests: number;
-	top: AdminTopServer[];
+	list: AdminServer[];
 };
 
 export type AdminErrors = {

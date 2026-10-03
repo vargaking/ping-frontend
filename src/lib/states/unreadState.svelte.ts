@@ -194,6 +194,21 @@ class UnreadState {
 		this.channels[channelId] = { ...existing, lastReadId: messageId, mentions: 0 };
 	}
 
+	/** Mark a channel read up to its newest message and persist it. */
+	markChannelRead(channelId: number) {
+		const messageId = this.channels[channelId]?.lastMessageId;
+		if (!messageId) return;
+		this.markChannelReadLocally(channelId, messageId);
+		void this.persistChannelRead(channelId, messageId);
+	}
+
+	/** Mark every unread text channel of a server read. */
+	markServerRead(serverId: number) {
+		for (const [id, c] of Object.entries(this.channels)) {
+			if (c.serverId === serverId && this.isChannelUnread(c)) this.markChannelRead(Number(id));
+		}
+	}
+
 	/** The newest message of a channel was deleted: we can't know the one before
 	 *  it locally, so refetch that server's markers. */
 	async messageDeleted(messageId: string) {

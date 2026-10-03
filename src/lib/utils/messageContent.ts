@@ -40,6 +40,24 @@ export function messagePlainText(raw: unknown): string {
 	return parts.join('').replace(/\s+/g, ' ').trim();
 }
 
+const INLINE_NODES = new Set(['text', 'mention', 'hardBreak']);
+
+/** The message's text with its line and paragraph breaks kept, for copying. */
+export function messageClipboardText(raw: unknown): string {
+	const parsed = parseMessageContent(raw);
+	if (typeof parsed !== 'object' || parsed === null) return String(raw ?? '');
+
+	const render = (node: JSONContent): string => {
+		if (node.type === 'text') return node.text ?? '';
+		if (node.type === 'mention') return `@${node.attrs?.label ?? node.attrs?.id ?? ''}`;
+		if (node.type === 'hardBreak') return '\n';
+		const children = node.content ?? [];
+		const inline = children.every((child) => INLINE_NODES.has(child.type ?? ''));
+		return children.map(render).join(inline ? '' : '\n');
+	};
+	return render(parsed).trim();
+}
+
 /** A one-line preview: the text, or a description of the attachments when
  *  the message has none. */
 export function messagePreviewText(content: unknown, attachments: Attachment[] = []): string {
