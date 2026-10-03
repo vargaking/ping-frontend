@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
+	import type { HTMLAttributes } from 'svelte/elements';
 	import { MicOff, HeadphoneOff } from 'lucide-svelte';
 
 	type Props = {
@@ -13,7 +14,7 @@
 		muted?: boolean;
 		deafened?: boolean;
 		streaming?: boolean;
-	};
+	} & HTMLAttributes<HTMLDivElement>;
 
 	let {
 		name,
@@ -23,13 +24,14 @@
 		speaking = false,
 		muted = false,
 		deafened = false,
-		streaming = false
+		streaming = false,
+		...rest
 	}: Props = $props();
 
 	const stateLabel = $derived(deafened ? ', deafened' : muted ? ', muted' : '');
 </script>
 
-<div class="flex h-7 items-center gap-2 pl-[34px]">
+<div class="flex h-7 items-center gap-2 pl-[34px]" {...rest}>
 	<span
 		class="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold {avatar
 			? 'bg-accent'

@@ -1,13 +1,12 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { toast } from 'svelte-sonner';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
+	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
+	import ActionDropdownItems from '$lib/components/ui/dropdown-menu/ActionDropdownItems.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
-	import { conversationsState } from '$lib/states/conversationsState.svelte';
-	import { getErrorMessage } from '$lib/requests/errors';
+	import { serversState } from '$lib/states/serversState.svelte';
+	import { memberActions } from '$lib/utils/menuActions';
 	import type { User } from '$lib/types/auth.types';
-	import { MessageSquare } from 'lucide-svelte';
 
 	type Props = {
 		user: User;
@@ -18,15 +17,7 @@
 	let { user, online = false, role }: Props = $props();
 
 	const isMe = $derived(usersState.loggedInUser?.id === user.id);
-
-	async function message() {
-		try {
-			const conversation = await conversationsState.openWith(user.id);
-			await goto(`/app/direct/${conversation.id}/`);
-		} catch (e) {
-			toast.error(getErrorMessage(e));
-		}
-	}
+	const actions = $derived(memberActions(serversState.selectedServerId, user));
 </script>
 
 {#snippet row()}
@@ -47,22 +38,25 @@
 	{/if}
 {/snippet}
 
-{#if isMe}
-	<div class="flex h-10 items-center gap-2.5 rounded-lg px-2 hover:bg-accent">
-		{@render row()}
-	</div>
-{:else}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger
-			class="flex h-10 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent"
-		>
-			{@render row()}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content side="left" align="start" class="w-44">
-			<DropdownMenu.Item onclick={message}>
-				<MessageSquare size={16} strokeWidth={1.75} />
-				Message
-			</DropdownMenu.Item>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
-{/if}
+<ActionContextMenu {actions}>
+	{#snippet children(menuProps)}
+		{#if isMe}
+			<div {...menuProps} class="flex h-10 items-center gap-2.5 rounded-lg px-2 hover:bg-accent">
+				{@render row()}
+			</div>
+		{:else}
+			<div {...menuProps}>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class="flex h-10 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent"
+					>
+						{@render row()}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content side="left" align="start" class="w-48">
+						<ActionDropdownItems {actions} />
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
+		{/if}
+	{/snippet}
+</ActionContextMenu>

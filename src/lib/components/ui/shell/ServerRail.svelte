@@ -6,6 +6,8 @@
 	import ServerRailItem from './ServerRailItem.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import AddServerDialog from '$lib/components/servers/AddServerDialog.svelte';
+	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
+	import { serverActions } from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
 	import { MessagesSquare, Plus } from 'lucide-svelte';
 
@@ -13,6 +15,7 @@
 	const directActive = $derived(page.route.id?.startsWith('/app/direct') ?? false);
 
 	let addOpen = $state(false);
+	let inviteOpen = $state(false);
 
 	const dmUnreadTotal = $derived(conversationsState.unreadTotal);
 	const directLabel = $derived(
@@ -76,6 +79,7 @@
 					active={server.id === activeServerId}
 					unread={serverUnread?.unread ?? false}
 					mentions={serverUnread?.mentions ?? 0}
+					actions={serverActions(server, { onInvite: () => (inviteOpen = true) })}
 				/>
 			{/each}
 		</div>
@@ -101,3 +105,4 @@
 </nav>
 
 <AddServerDialog bind:open={addOpen} />
+<InviteDialog bind:open={inviteOpen} />
