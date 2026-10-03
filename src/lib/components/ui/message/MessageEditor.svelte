@@ -19,7 +19,8 @@
 		mentionCandidates,
 		onSubmit,
 		onCancel,
-		onArrowUp
+		onArrowUp,
+		onInput
 	}: {
 		content?: JSONContent | string;
 		placeholder?: string;
@@ -33,6 +34,8 @@
 		onSubmit: (json: JSONContent) => void;
 		onCancel?: () => void;
 		onArrowUp?: () => void;
+		/** The document changed (typing, paste, programmatic edits). */
+		onInput?: () => void;
 	} = $props();
 
 	let element: HTMLElement;
@@ -96,12 +99,13 @@
 			onCreate: ({ editor }) => {
 				isEmpty = editor.isEmpty;
 			},
-			onTransaction: ({ editor }) => {
+			onTransaction: ({ editor, transaction }) => {
 				// Removing a focused editor fires a blur transaction mid-teardown,
 				// where writing state throws; blur never changes emptiness. Read
 				// untracked: this also runs inside the creating effect (autofocus),
 				// and tracking isEmpty there would rebuild the editor.
 				if (editor.isEmpty !== untrack(() => isEmpty)) isEmpty = editor.isEmpty;
+				if (transaction.docChanged) untrack(() => onInput?.());
 			},
 			extensions: [
 				StarterKit,

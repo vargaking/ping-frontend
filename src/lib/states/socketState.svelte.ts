@@ -9,8 +9,10 @@ import {
 	messagesState,
 	messageThreadKey,
 	channelThreadKey,
-	directThreadKey
+	directThreadKey,
+	threadKey
 } from './messagesState.svelte';
+import { typingState } from './typingState.svelte';
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
 import { notificationsState } from './notificationsState.svelte';
@@ -43,6 +45,7 @@ const RECONNECT_DELAYS_MS = [2000, 4000, 8000, 10000];
 const PING_INTERVAL_MS = 10_000;
 const PONG_TIMEOUT_MS = 5_000;
 const MAX_MISSED_PONGS = 2;
+const TYPING_SEND_INTERVAL_MS = 3000;
 
 class SocketState {
 	private socket: WebSocket | null = null;
@@ -61,6 +64,7 @@ class SocketState {
 	private missedPongs = 0;
 	/** The server answered a ping with invalid_frame: it predates the heartbeat. */
 	private heartbeatUnsupported = false;
+	private lastTypingSent = new Map<string, number>();
 
 	/**
 	 * Open the socket. The server identifies us from the session cookie during
@@ -125,6 +129,7 @@ class SocketState {
 			this.socket = null;
 			this.connected = false;
 			this.stopHeartbeat();
+			typingState.clearAll();
 
 			if (event.code === WS_CLOSE_UNAUTHENTICATED) {
 				connectionState.setStatus(serverHost, 'disconnected');
@@ -209,6 +214,7 @@ class SocketState {
 		this.connected = false;
 		this.stopHeartbeat();
 		socket?.close();
+		typingState.clearAll();
 		this.scheduleReconnect();
 	}
 
@@ -240,8 +246,28 @@ class SocketState {
 		this.reconnectAttempt = 0;
 		this.outageLogged = false;
 		this.stopHeartbeat();
+		typingState.clearAll();
 		connectionState.setStatus(serverHost, 'disconnected');
 		socket?.close();
+	}
+
+	/** Announce that we're typing, at most once per interval per thread. */
+	sendTyping(target: MessageTarget) {
+		if (this.socket?.readyState !== WebSocket.OPEN) return;
+
+		const key = threadKey(target);
+		const now = Date.now();
+		const last = this.lastTypingSent.get(key);
+		if (last !== undefined && now - last < TYPING_SEND_INTERVAL_MS) return;
+		this.lastTypingSent.set(key, now);
+
+		this.socket.send(
+			JSON.stringify(
+				target.kind === 'channel'
+					? { type: 'typing', server_id: target.serverId, channel_id: target.channelId }
+					: { type: 'typing', conversation_id: target.conversationId }
+			)
+		);
 	}
 
 	/** Returns false when the message could not go out, so the caller keeps it. */
@@ -312,6 +338,9 @@ class SocketState {
 					};
 
 		this.socket.send(JSON.stringify(frame));
+		// Recipients drop our indicator when the message lands, so the next
+		// keystroke should announce again right away.
+		this.lastTypingSent.delete(threadKey(target));
 
 		messagesState.addMessage(local);
 		if (target.kind === 'direct') conversationsState.noteMessage(local, { mine: true });
@@ -328,6 +357,8 @@ class SocketState {
 		const mine = me != null && message.user_id === me.id;
 		const channelId = message.channel_id;
 		const serverId = message.server_id;
+
+		if (channelId != null) typingState.clear(channelThreadKey(channelId), message.user_id);
 
 		const isCurrentThread =
 			message.server_id == serversState.selectedServerId &&
@@ -373,6 +404,8 @@ class SocketState {
 		const me = usersState.loggedInUser;
 		const mine = me != null && message.user_id === me.id;
 		const conversationId = message.conversation_id;
+
+		if (conversationId != null) typingState.clear(directThreadKey(conversationId), message.user_id);
 
 		// Only append to threads already loaded; an unopened one fetches its
 		// history (including this message) when opened.
@@ -592,9 +625,18 @@ class SocketState {
 					usersState.setUserOnline(message.user_id);
 				} else if (message.user_id) {
 					usersState.setUserOffline(message.user_id);
+					typingState.clearUser(message.user_id);
 				}
 
 				console.log('Presence update:', message.user_id, message.online ? 'online' : 'offline');
+				break;
+			case 'typing':
+				typingState.note(
+					message.conversation_id != null
+						? directThreadKey(message.conversation_id)
+						: channelThreadKey(message.channel_id),
+					message.user_id
+				);
 				break;
 			case 'presence_init':
 				usersState.setOnlineUsers(message.user_ids);

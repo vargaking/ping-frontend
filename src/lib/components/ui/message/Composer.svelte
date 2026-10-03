@@ -209,6 +209,10 @@
 		closedByEscape = false;
 	}
 
+	function handleInput() {
+		if (target && !isEmpty) socketState.sendTyping(target);
+	}
+
 	function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
 		if (!socketState.sendMessage(target, message, doneAttachments, replyTarget)) {
@@ -368,6 +372,7 @@
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
 				onArrowUp={editLastOwnMessage}
+				onInput={handleInput}
 				onCancel={replyTarget ? cancelReply : undefined}
 				mentionCandidates={() =>
 					mentionCandidates({

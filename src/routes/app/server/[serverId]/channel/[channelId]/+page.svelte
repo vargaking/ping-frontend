@@ -8,6 +8,7 @@
 	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import type { MessageTarget } from '$lib/types/messages.types';
 	import { channelThreadKey } from '$lib/states/messagesState.svelte';
+	import { typingState } from '$lib/states/typingState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { db } from '$lib/utils/db';
@@ -45,7 +46,9 @@
 			/>
 		{/if}
 
-		<TypingIndicator names={[]} />
+		<TypingIndicator
+			names={currentChannelId != null ? typingState.names(channelThreadKey(currentChannelId)) : []}
+		/>
 		<Composer {target} />
 	</div>
 
