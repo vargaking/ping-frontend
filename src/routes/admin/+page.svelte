@@ -214,8 +214,15 @@
 								</ul>
 							{/if}
 						</div>
-					{:else}
+					{:else if !stats.voice_status || stats.voice_status === 'unconfigured'}
 						{@render unavailable('Voice not configured')}
+					{:else}
+						<div class="flex flex-col gap-1">
+							{@render unavailable("Can't reach LiveKit")}
+							<p class="text-xs text-text-subtle">
+								Check <code>LIVEKIT_API_URL</code> on the server.
+							</p>
+						</div>
 					{/if}
 				</Card.Content>
 			</Card.Root>
