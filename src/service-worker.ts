@@ -3,7 +3,8 @@
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
 
-// Push only: no fetch handler and no caching, so the app's network behaviour is untouched.
+// Push, plus a precached app shell so the app can start without a network.
+import { build, files, version } from '$service-worker';
 import { PUBLIC_BASE_URL } from '$env/static/public';
 import { urlBase64ToBytes } from '$lib/utils/base64url';
 import type { NotificationData } from '$lib/utils/notificationTags';
@@ -28,6 +29,11 @@ type SubscriptionChangeEvent = ExtendableEvent & {
 };
 
 const ICON = '/icon-192.png';
+
+const CACHE = `shell-${version}`;
+// Every app route has ssr off, so any app page's HTML is the same empty shell.
+const SHELL = '/app/';
+const PRECACHED = new Set([...build, ...files]);
 
 type ParsedPayload = { ok: true; payload: PushPayload } | { ok: false; reason: string };
 
@@ -172,7 +178,52 @@ async function resubscribe(event: SubscriptionChangeEvent) {
 	}
 }
 
-sw.addEventListener('install', () => void sw.skipWaiting());
+async function precache() {
+	const cache = await caches.open(CACHE);
+	// One failed file must not block the worker update; push depends on it.
+	await Promise.allSettled([SHELL, ...PRECACHED].map((path) => cache.add(path)));
+}
+
+async function dropOldCaches() {
+	const keys = await caches.keys();
+	await Promise.all(
+		keys.filter((key) => key.startsWith('shell-') && key !== CACHE).map((key) => caches.delete(key))
+	);
+}
+
+async function navigate(request: Request): Promise<Response> {
+	try {
+		return await fetch(request);
+	} catch (e) {
+		const shell = await caches.match(SHELL);
+		if (shell) return shell;
+		throw e;
+	}
+}
+
+async function cacheFirst(request: Request): Promise<Response> {
+	return (await caches.match(request)) ?? fetch(request);
+}
+
+sw.addEventListener('install', (event) => {
+	event.waitUntil(precache().then(() => sw.skipWaiting()));
+});
+
+sw.addEventListener('activate', (event) => event.waitUntil(dropOldCaches()));
+
+sw.addEventListener('fetch', (event) => {
+	const { request } = event;
+	if (request.method !== 'GET') return;
+	const url = new URL(request.url);
+	if (url.origin !== sw.location.origin) return;
+
+	if (request.mode === 'navigate') {
+		if (url.pathname.startsWith('/invite/')) return;
+		event.respondWith(navigate(request));
+	} else if (PRECACHED.has(url.pathname)) {
+		event.respondWith(cacheFirst(request));
+	}
+});
 
 // Pushes are handled one at a time so a burst merges into one notification
 // instead of each seeing an empty tray.
