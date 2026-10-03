@@ -80,3 +80,36 @@ export type AdminErrorList = {
 	limit: number;
 	groups: AdminErrorGroup[];
 };
+
+export type AdminHistoryRange = '1h' | '24h' | '7d' | '30d';
+
+export type AdminHistoryMetric =
+	| 'net_out_mbps'
+	| 'net_in_mbps'
+	| 'cpu_percent'
+	| 'ram_percent'
+	| 'online_users'
+	| 'active_users'
+	| 'voice_rooms'
+	| 'voice_participants'
+	| 'screenshares';
+
+export type AdminHistorySeries = {
+	avg: (number | null)[];
+	max: (number | null)[];
+};
+
+export type AdminHistoryPeak = { value: number; at: string };
+
+/** Series are aligned with `buckets`; an empty bucket is null. */
+export type AdminStatsHistory = {
+	range: AdminHistoryRange;
+	bucket_seconds: number;
+	from: string;
+	to: string;
+	uplink_mbps: number;
+	sampling: boolean;
+	buckets: string[];
+	series: Record<AdminHistoryMetric, AdminHistorySeries>;
+	peaks: Record<AdminHistoryMetric, AdminHistoryPeak | null>;
+};
