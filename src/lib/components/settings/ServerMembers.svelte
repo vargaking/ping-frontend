@@ -6,9 +6,9 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { removeServerMember } from '$lib/requests/servers/removeServerMember';
 	import { updateMemberRoles } from '$lib/requests/servers/updateMemberRoles';
-	import { has, Permission, rolesMask } from '$lib/permissions';
+	import { Permission } from '$lib/permissions';
+	import { canKickMember, kickMember } from '$lib/utils/kickMember';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import type { ServerMember } from '$lib/types/server.types';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
@@ -22,7 +22,6 @@
 	let { onInvite }: { onInvite?: () => void } = $props();
 
 	const serverId = $derived(serversState.selectedServer?.id);
-	const isOwner = $derived(serversState.isSelectedServerOwner);
 	const roles = $derived(serverId != null ? (serversState.roles[serverId] ?? []) : []);
 	const assignableRoles = $derived(roles.filter((r) => !r.is_default));
 	const myId = $derived(usersState.loggedInUser?.id);
@@ -75,10 +74,7 @@
 	type Row = (typeof rows)[number];
 
 	function canKick(member: Row) {
-		if (!serversState.can(Permission.KICK_MEMBERS) || member.user.id === myId || member.is_owner) {
-			return false;
-		}
-		return isOwner || !has(rolesMask(roles, member.roleIds), Permission.KICK_MEMBERS);
+		return serverId != null && canKickMember(serverId, member.user.id);
 	}
 
 	function canChangeRole(member: Row) {
@@ -119,13 +115,10 @@
 		if (!target || serverId == null || kicking) return;
 		kicking = true;
 		try {
-			await removeServerMember(serverId, target.user.id);
-			members = members.filter((m) => m.user.id !== target.user.id);
-			serversState.removeMember(serverId, target.user.id);
-			toast.success(`Kicked ${target.user.username}`);
-			kickTarget = null;
-		} catch (e) {
-			toast.error(`Couldn't kick ${target.user.username}: ${getErrorMessage(e)}`);
+			if (await kickMember(serverId, target.user)) {
+				members = members.filter((m) => m.user.id !== target.user.id);
+				kickTarget = null;
+			}
 		} finally {
 			kicking = false;
 		}

@@ -7,21 +7,22 @@
 	import LinkEmbed from './LinkEmbed.svelte';
 	import MessageReactions from './MessageReactions.svelte';
 	import ReactionPicker from './ReactionPicker.svelte';
-	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
-	import { usersState } from '$lib/states/usersState.svelte';
-	import { serversState } from '$lib/states/serversState.svelte';
-	import { Permission } from '$lib/permissions';
+	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
 	import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { replyState } from '$lib/states/replyState.svelte';
-	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { editMessage } from '$lib/requests/messages/editMessage';
-	import { deleteMessage } from '$lib/requests/messages/deleteMessage';
 	import { db } from '$lib/utils/db';
-	import { markRepliesDeleted, refreshReplyQuotes } from '$lib/utils/replies';
+	import { refreshReplyQuotes } from '$lib/utils/replies';
 	import { mentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
+	import {
+		canDeleteMessage,
+		canEditMessage,
+		messageActions,
+		promptDeleteMessage
+	} from '$lib/utils/menuActions';
 	import { Pencil, Reply, SmilePlus, Trash2 } from 'lucide-svelte';
 
 	// The first row in a group already shows the timestamp in the group header,
@@ -39,15 +40,11 @@
 		new Date(message.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 	);
 
-	const me = $derived(usersState.loggedInUser);
-	const isAuthor = $derived(me != null && me.id === message.user_id);
-	// A DM has no moderators, so only the author can delete there.
-	const isDirect = $derived(message.conversation_id != null);
-	const isModerator = $derived(serversState.can(Permission.MANAGE_MESSAGES, message.server_id));
-	const canEdit = $derived(isAuthor);
-	const canDelete = $derived(isAuthor || (isModerator && !isDirect));
+	const canEdit = $derived(canEditMessage(message));
+	const canDelete = $derived(canDeleteMessage(message));
 	let pickerOpen = $state(false);
 	const editing = $derived(messageEditState.isEditing(message.id));
+	const actions = $derived(messageActions(message, { onReact: () => (pickerOpen = true) }));
 
 	async function saveEdit(content: JSONContent) {
 		try {
@@ -63,137 +60,127 @@
 			console.error('Failed to edit message', e);
 		}
 	}
-
-	function promptDelete() {
-		overlayState.open(ConfirmDialog, {
-			title: 'Delete message',
-			description: 'This removes the message for everyone. This can’t be undone.',
-			confirmLabel: 'Delete',
-			destructive: true,
-			onConfirm: async () => {
-				try {
-					await deleteMessage(message.id);
-					messagesState.removeMessage(message.id);
-					conversationsState.messageDeleted(message.id);
-					await db.messages.delete(message.id);
-					replyState.cancelFor(message.id);
-					await markRepliesDeleted(message.id);
-				} catch (e) {
-					console.error('Failed to delete message', e);
-				}
-			}
-		});
-	}
 </script>
 
-<div class="group/row relative" data-message-id={message.id}>
-	{#if editing}
-		<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
-			<MessageEditor
-				content={parsedContent}
-				autofocus
-				allowEmpty={attachments.length > 0}
-				mentionCandidates={() =>
-					mentionCandidates({
-						serverId: message.server_id,
-						conversationId: message.conversation_id
-					})}
-				onSubmit={saveEdit}
-				onCancel={() => messageEditState.stop()}
-				editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
-			/>
-			<div class="mt-1 text-[11px] text-text-subtle">
-				escape to
-				<button
-					type="button"
-					class="underline hover:text-text-body"
-					onclick={() => messageEditState.stop()}>cancel</button
-				>
-				· enter to save
-			</div>
-		</div>
-	{:else}
-		{#if showHoverTime}
-			<span
-				class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block"
-				aria-hidden="true"
-			>
-				{hoverTime}
-			</span>
-		{/if}
-
+<ActionContextMenu {actions}>
+	{#snippet children(menuProps)}
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<!-- Focusable so Shift+F10 can open the row's menu. -->
 		<div
-			class="absolute -top-3 right-0 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex {pickerOpen
-				? 'flex'
-				: 'hidden'}"
+			{...menuProps}
+			class="group/row relative rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			tabindex="0"
+			data-message-id={message.id}
 		>
-			<ReactionPicker {message} bind:open={pickerOpen}>
-				{#snippet trigger(props)}
+			{#if editing}
+				<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
+					<MessageEditor
+						content={parsedContent}
+						autofocus
+						allowEmpty={attachments.length > 0}
+						mentionCandidates={() =>
+							mentionCandidates({
+								serverId: message.server_id,
+								conversationId: message.conversation_id
+							})}
+						onSubmit={saveEdit}
+						onCancel={() => messageEditState.stop()}
+						editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
+					/>
+					<div class="mt-1 text-[11px] text-text-subtle">
+						escape to
+						<button
+							type="button"
+							class="underline hover:text-text-body"
+							onclick={() => messageEditState.stop()}>cancel</button
+						>
+						· enter to save
+					</div>
+				</div>
+			{:else}
+				{#if showHoverTime}
+					<span
+						class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block"
+						aria-hidden="true"
+					>
+						{hoverTime}
+					</span>
+				{/if}
+
+				<div
+					class="absolute -top-3 right-0 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex {pickerOpen
+						? 'flex'
+						: 'hidden'}"
+				>
+					<ReactionPicker {message} bind:open={pickerOpen}>
+						{#snippet trigger(props)}
+							<button
+								{...props}
+								type="button"
+								aria-label="Add reaction"
+								class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+							>
+								<SmilePlus size={15} strokeWidth={1.75} />
+							</button>
+						{/snippet}
+					</ReactionPicker>
 					<button
-						{...props}
 						type="button"
-						aria-label="Add reaction"
+						aria-label="Reply"
+						onclick={() => replyState.start(messageThreadKey(message), message)}
 						class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					>
-						<SmilePlus size={15} strokeWidth={1.75} />
+						<Reply size={16} strokeWidth={1.75} />
 					</button>
-				{/snippet}
-			</ReactionPicker>
-			<button
-				type="button"
-				aria-label="Reply"
-				onclick={() => replyState.start(messageThreadKey(message), message)}
-				class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-			>
-				<Reply size={16} strokeWidth={1.75} />
-			</button>
-			{#if canEdit}
-				<button
-					type="button"
-					aria-label="Edit message"
-					onclick={() => messageEditState.start(message.id)}
-					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-				>
-					<Pencil size={15} strokeWidth={1.75} />
-				</button>
-			{/if}
-			{#if canDelete}
-				<button
-					type="button"
-					aria-label="Delete message"
-					onclick={promptDelete}
-					class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-				>
-					<Trash2 size={15} strokeWidth={1.75} />
-				</button>
+					{#if canEdit}
+						<button
+							type="button"
+							aria-label="Edit message"
+							onclick={() => messageEditState.start(message.id)}
+							class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						>
+							<Pencil size={15} strokeWidth={1.75} />
+						</button>
+					{/if}
+					{#if canDelete}
+						<button
+							type="button"
+							aria-label="Delete message"
+							onclick={() => promptDeleteMessage(message.id)}
+							class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						>
+							<Trash2 size={15} strokeWidth={1.75} />
+						</button>
+					{/if}
+				</div>
+
+				{#if hasText || attachments.length === 0}
+					<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
+					<div
+						class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert {message.edited_at
+							? '[&>p:nth-last-child(2)]:inline'
+							: ''}"
+					>
+						<MessageNode node={parsedContent} />{#if message.edited_at}<span
+								class="ml-1 align-baseline text-[11px] text-text-subtle select-none">(edited)</span
+							>{/if}
+					</div>
+				{/if}
+				{#if attachments.length > 0}
+					<div class={hasText ? 'mt-1.5' : ''}>
+						<MessageAttachments {attachments} />
+					</div>
+					{#if !hasText && message.edited_at}
+						<span class="text-[11px] text-text-subtle select-none">(edited)</span>
+					{/if}
+				{/if}
+				{#each embeds as embed (embed.url)}
+					<div class="mt-1.5">
+						<LinkEmbed {embed} />
+					</div>
+				{/each}
+				<MessageReactions {message} />
 			{/if}
 		</div>
-
-		{#if hasText || attachments.length === 0}
-			<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
-			<div
-				class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert {message.edited_at
-					? '[&>p:nth-last-child(2)]:inline'
-					: ''}"
-			>
-				<MessageNode node={parsedContent} />{#if message.edited_at}<span
-						class="ml-1 align-baseline text-[11px] text-text-subtle select-none">(edited)</span
-					>{/if}
-			</div>
-		{/if}
-		{#if attachments.length > 0}
-			<div class={hasText ? 'mt-1.5' : ''}>
-				<MessageAttachments {attachments} />
-			</div>
-			{#if !hasText && message.edited_at}
-				<span class="text-[11px] text-text-subtle select-none">(edited)</span>
-			{/if}
-		{/if}
-		{#each embeds as embed (embed.url)}
-			<div class="mt-1.5">
-				<LinkEmbed {embed} />
-			</div>
-		{/each}
-		<MessageReactions {message} />
-	{/if}
-</div>
+	{/snippet}
+</ActionContextMenu>

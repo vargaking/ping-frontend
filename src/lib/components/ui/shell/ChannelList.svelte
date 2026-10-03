@@ -11,43 +11,22 @@
 	import CreateChannelDialog from '$lib/components/servers/CreateChannelDialog.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
-	import { overlayState } from '$lib/states/overlayState.svelte';
-	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
-	import { removeServerMember } from '$lib/requests/servers/removeServerMember';
-	import { usersState } from '$lib/states/usersState.svelte';
-	import { serverRemoved } from '$lib/utils/serverRemoved';
-	import { toast } from 'svelte-sonner';
+	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
+	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
+	import ActionDropdownItems from '$lib/components/ui/dropdown-menu/ActionDropdownItems.svelte';
+	import { channelActions, openChannelSettings, serverActions } from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
-	import { getErrorMessage } from '$lib/requests/errors';
-	import { Hash, Volume2, ChevronDown, Plus, Settings, LogOut } from 'lucide-svelte';
-
-	function confirmLeave() {
-		const server = serversState.selectedServer;
-		const me = usersState.loggedInUser;
-		if (server?.id == null || !me) return;
-		const serverId = server.id;
-		overlayState.open(ConfirmDialog, {
-			title: `Leave ${server.name}?`,
-			description: "You won't be able to rejoin unless someone invites you again.",
-			confirmLabel: 'Leave server',
-			destructive: true,
-			onConfirm: async () => {
-				try {
-					await removeServerMember(serverId, me.id);
-				} catch (e) {
-					toast.error(`Couldn't leave the server: ${getErrorMessage(e)}`);
-					return;
-				}
-				await serverRemoved(serverId);
-				toast.success(`Left ${server.name}`);
-			}
-		});
-	}
+	import { Hash, Volume2, ChevronDown, Plus, Settings } from 'lucide-svelte';
 
 	let createOpen = $state(false);
+	let inviteOpen = $state(false);
 
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
+	const headerActions = $derived(
+		serversState.selectedServer
+			? serverActions(serversState.selectedServer, { onInvite: () => (inviteOpen = true) })
+			: []
+	);
 
 	const activeChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
@@ -113,8 +92,9 @@
 		hoverIndex = null;
 	}
 
-	function openChannelSettings(channel: Channel) {
-		overlayState.open(SettingsModal, { category: 'channel', channelId: channel.id });
+	function channelActionsFor(channel: Channel) {
+		const serverId = serversState.selectedServerId;
+		return serverId != null ? channelActions(serverId, channel) : [];
 	}
 
 	function channelHref(channel: Channel) {
@@ -132,7 +112,7 @@
 		<button
 			type="button"
 			aria-label="Settings for {channel.name}"
-			onclick={() => openChannelSettings(channel)}
+			onclick={() => openChannelSettings(channel.id)}
 			class="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-text-subtle opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 		>
 			<Settings size={14} strokeWidth={1.75} />
@@ -196,17 +176,7 @@
 			<ChevronDown size={16} strokeWidth={1.75} class="shrink-0 text-text-subtle" />
 		</DropdownMenu.Trigger>
 		<DropdownMenu.Content align="start" class="w-56">
-			<DropdownMenu.Item onclick={() => overlayState.open(SettingsModal, { category: 'server' })}>
-				<Settings size={16} strokeWidth={1.75} />
-				Server settings
-			</DropdownMenu.Item>
-			{#if !serversState.isSelectedServerOwner}
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={confirmLeave}>
-					<LogOut size={16} strokeWidth={1.75} />
-					Leave server
-				</DropdownMenu.Item>
-			{/if}
+			<ActionDropdownItems actions={headerActions} />
 		</DropdownMenu.Content>
 	</DropdownMenu.Root>
 
@@ -230,24 +200,30 @@
 
 			<div class="mt-1 flex flex-col gap-0.5">
 				{#each textChannels as channel, i (channel.id)}
+					{@const actions = channelActionsFor(channel)}
 					<div class="group/row relative">
-						<SidebarRow
-							label={channel.name}
-							href={channelHref(channel)}
-							active={channel.id === activeChannelId}
-							unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
-							mentions={unreadState.channelMentions(channel.id)}
-							dragging={dragType === 'text' && dragIndex === i}
-							draggable={canManageChannels}
-							ondragstart={() => handleDragStart('text', i)}
-							ondragover={(e) => handleDragOver(e, 'text', i)}
-							ondrop={() => handleDrop('text')}
-							ondragend={resetDrag}
-						>
-							{#snippet icon()}
-								<Hash size={16} strokeWidth={1.75} />
+						<ActionContextMenu {actions}>
+							{#snippet children(menuProps)}
+								<SidebarRow
+									{...menuProps}
+									label={channel.name}
+									href={channelHref(channel)}
+									active={channel.id === activeChannelId}
+									unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
+									mentions={unreadState.channelMentions(channel.id)}
+									dragging={dragType === 'text' && dragIndex === i}
+									draggable={canManageChannels}
+									ondragstart={() => handleDragStart('text', i)}
+									ondragover={(e) => handleDragOver(e, 'text', i)}
+									ondrop={() => handleDrop('text')}
+									ondragend={resetDrag}
+								>
+									{#snippet icon()}
+										<Hash size={16} strokeWidth={1.75} />
+									{/snippet}
+								</SidebarRow>
 							{/snippet}
-						</SidebarRow>
+						</ActionContextMenu>
 						{@render settingsButton(channel)}
 						{@render dropIndicator(dropEdge('text', i))}
 					</div>
@@ -267,19 +243,24 @@
 				<div class="mt-1 flex flex-col gap-0.5">
 					{#each voiceChannels as channel, i (channel.id)}
 						{@const topic = channel.topic?.trim()}
+						{@const actions = channelActionsFor(channel)}
 						<div class="group/row relative">
-							{#if topic}
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										{#snippet child({ props })}
-											{@render voiceRow(channel, i, props)}
-										{/snippet}
-									</Tooltip.Trigger>
-									<Tooltip.Content side="right" sideOffset={8}>{topic}</Tooltip.Content>
-								</Tooltip.Root>
-							{:else}
-								{@render voiceRow(channel, i)}
-							{/if}
+							<ActionContextMenu {actions}>
+								{#snippet children(menuProps)}
+									{#if topic}
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													{@render voiceRow(channel, i, mergeProps(props, menuProps))}
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content side="right" sideOffset={8}>{topic}</Tooltip.Content>
+										</Tooltip.Root>
+									{:else}
+										{@render voiceRow(channel, i, menuProps)}
+									{/if}
+								{/snippet}
+							</ActionContextMenu>
 							{@render settingsButton(channel)}
 							{@render dropIndicator(dropEdge('voice', i))}
 						</div>
@@ -299,3 +280,4 @@
 </div>
 
 <CreateChannelDialog bind:open={createOpen} />
+<InviteDialog bind:open={inviteOpen} />
