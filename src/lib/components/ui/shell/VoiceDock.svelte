@@ -55,7 +55,9 @@
 	}
 
 	// Muted by choice, or the mic can't run.
-	const micDown = $derived(voiceState.micOff || voiceState.micError != null);
+	const micDown = $derived(
+		voiceState.micOff || voiceState.micError != null || voiceState.serverMuted
+	);
 
 	const iconButton =
 		'flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
@@ -69,7 +71,8 @@
 	pressed: boolean,
 	onclick: () => void,
 	icon: Snippet,
-	tone: 'danger' | 'primary' = 'danger'
+	tone: 'danger' | 'primary' = 'danger',
+	disabled = false
 )}
 	<Tooltip.Root delayDuration={300}>
 		<Tooltip.Trigger>
@@ -81,7 +84,8 @@
 					aria-pressed={pressed}
 					aria-keyshortcuts={keys || undefined}
 					{onclick}
-					class="{iconButton} {pressed
+					{disabled}
+					class="{iconButton} disabled:cursor-not-allowed {pressed
 						? tone === 'primary'
 							? 'bg-primary/10 text-primary hover:bg-primary/20'
 							: 'text-destructive hover:bg-destructive/10'
@@ -166,11 +170,13 @@
 		<Tooltip.Provider>
 			<div class="flex items-center gap-2">
 				{@render control(
-					micDown ? 'Unmute' : 'Mute',
+					voiceState.serverMuted ? 'Server muted' : micDown ? 'Unmute' : 'Mute',
 					VOICE_SHORTCUTS.mute.keys,
 					micDown,
 					() => voiceState.toggleMute(),
-					micIcon
+					micIcon,
+					'danger',
+					voiceState.serverMuted
 				)}
 				{@render control(
 					voiceState.deafened ? 'Undeafen' : 'Deafen',

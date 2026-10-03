@@ -16,6 +16,7 @@
 				{ label: 'Screen sharing', detail: 'up to 1080p' },
 				{ label: 'Direct messages' },
 				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
+				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
 				{ label: 'Servers', detail: 'invites, roles, member management' }
 			]
 		},
@@ -26,8 +27,7 @@
 			items: [
 				{ label: 'Desktop app' },
 				{ label: 'Mobile apps', detail: 'iOS and Android' },
-				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' },
-				{ label: 'More voice controls', detail: 'per-person volume' }
+				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' }
 			]
 		},
 		{

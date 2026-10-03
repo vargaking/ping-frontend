@@ -6,15 +6,20 @@ import {
 	Link,
 	LogOut,
 	MessageSquare,
+	MicOff,
 	Pencil,
 	Reply,
 	Settings,
 	SmilePlus,
 	Trash2,
+	Unplug,
 	UserMinus,
-	UserPlus
+	UserPlus,
+	Volume2,
+	VolumeX
 } from 'lucide-svelte';
 import type { Icon } from 'lucide-svelte';
+import PeerVolumeDialog from '$lib/components/voice/PeerVolumeDialog.svelte';
 import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 import { Permission } from '$lib/permissions';
@@ -26,6 +31,7 @@ import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelt
 import { overlayState } from '$lib/states/overlayState.svelte';
 import { replyState } from '$lib/states/replyState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
+import { voiceState } from '$lib/states/voiceState.svelte';
 import { unreadState } from '$lib/states/unreadState.svelte';
 import { usersState } from '$lib/states/usersState.svelte';
 import type { VoiceMember } from '$lib/states/voiceRoster.svelte';
@@ -35,6 +41,8 @@ import type { MessageType } from '$lib/types/messages.types';
 import type { Server } from '$lib/types/server.types';
 import { db } from '$lib/utils/db';
 import { canKickMember, kickMember } from '$lib/utils/kickMember';
+import { canModerateMember } from '$lib/utils/memberModeration';
+import { disconnectMember, serverMuteMember } from '$lib/utils/voiceModeration';
 import { confirmLeaveServer } from '$lib/utils/leaveServer';
 import { messageClipboardText } from '$lib/utils/messageContent';
 import { markRepliesDeleted } from '$lib/utils/replies';
@@ -301,12 +309,62 @@ export function memberActions(serverId: number | null | undefined, user: User): 
 
 export function voiceParticipantActions(member: VoiceMember): MenuAction[] {
 	if (member.self) return [];
-	return [
+	const name = usersState.users[member.userId]?.username ?? member.fallbackName ?? 'this person';
+	const actions: MenuAction[] = [
 		{
 			id: 'message',
 			label: 'Message',
 			icon: MessageSquare,
+			group: 'user',
 			run: () => openDirectMessage(member.userId)
 		}
 	];
+	if (member.viewerInCall) {
+		actions.push(
+			{
+				id: 'volume',
+				label: 'Volume…',
+				icon: Volume2,
+				group: 'audio',
+				run: () => overlayState.open(PeerVolumeDialog, { userId: member.userId, name })
+			},
+			{
+				id: 'mute-for-me',
+				label: member.localMuted ? 'Unmute for me' : 'Mute for me',
+				icon: member.localMuted ? Volume2 : VolumeX,
+				group: 'audio',
+				run: () => voiceState.setPeerMuted(member.userId, !member.localMuted)
+			}
+		);
+	}
+
+	const serverId = member.serverId;
+	if (serverId == null) return actions;
+	if (canModerateMember(serverId, member.userId, Permission.MUTE_MEMBERS)) {
+		actions.push({
+			id: 'server-mute',
+			label: member.serverMuted ? 'Remove server mute' : 'Server mute',
+			icon: MicOff,
+			group: 'moderate',
+			run: () => serverMuteMember(serverId, member.userId, name, !member.serverMuted)
+		});
+	}
+	if (canModerateMember(serverId, member.userId, Permission.MOVE_MEMBERS)) {
+		actions.push({
+			id: 'disconnect',
+			label: 'Disconnect',
+			icon: Unplug,
+			group: 'danger',
+			destructive: true,
+			run: () =>
+				overlayState.open(ConfirmDialog, {
+					title: `Disconnect ${name}?`,
+					description: 'They’re removed from the call and can rejoin.',
+					confirmLabel: 'Disconnect',
+					destructive: true,
+					onConfirm: () => disconnectMember(serverId, member.userId, name)
+				})
+		});
+	}
+	return actions;
 }
