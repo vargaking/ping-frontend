@@ -13,6 +13,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
+	import { channelPath } from '$lib/utils/channelRoutes';
 	import { Volume2, Maximize2, Minimize2, EyeOff } from 'lucide-svelte';
 
 	const channelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
@@ -60,9 +61,8 @@
 		if (!channel) return;
 		if (channel.type !== 'voice') {
 			untrack(() =>
-				goto(`/app/server/${page.params.serverId}/channel/${id}/`, { replaceState: true })
+				goto(channelPath(Number(page.params.serverId), channel), { replaceState: true })
 			);
-			return;
 		}
 	});
 

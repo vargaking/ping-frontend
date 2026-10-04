@@ -154,8 +154,11 @@
 		<div class="flex flex-col gap-1.5">
 			<span class="text-[13px] font-medium text-text-label">Type</span>
 			<p class="text-sm text-muted-foreground">
-				{channel.type === 'voice' ? 'Voice channel' : 'Text channel'}. A channel's type can't be
-				changed.
+				{channel.type === 'voice'
+					? 'Voice channel'
+					: channel.type === 'forum'
+						? 'Forum channel'
+						: 'Text channel'}. A channel's type can't be changed.
 			</p>
 		</div>
 

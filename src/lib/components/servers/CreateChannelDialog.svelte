@@ -5,6 +5,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { createChannel } from '$lib/requests/channels/createChannel';
 	import { getErrorMessage } from '$lib/requests/errors';
+	import { channelPath } from '$lib/utils/channelRoutes';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
@@ -19,7 +20,7 @@
 	} = $props();
 
 	let channelName = $state('');
-	let channelType: 'text' | 'voice' = $state('text');
+	let channelType: 'text' | 'voice' | 'forum' = $state('text');
 	let creating = $state(false);
 	let selectedGroup = $state('');
 
@@ -48,8 +49,7 @@
 			channelName = '';
 			channelType = 'text';
 			open = false;
-			const route = channel.type === 'text' ? 'channel' : 'voice';
-			await goto(`/app/server/${serverId}/${route}/${channel.id}/`);
+			await goto(channelPath(serverId, channel));
 		} catch (e) {
 			toast.error(`Couldn't create channel: ${getErrorMessage(e)}`);
 		} finally {
@@ -85,6 +85,17 @@
 						class="accent-primary"
 					/>
 					Voice
+				</label>
+				<label class="flex cursor-pointer items-center gap-2 text-sm">
+					<input
+						type="radio"
+						name="channelType"
+						value="forum"
+						checked={channelType === 'forum'}
+						onchange={() => (channelType = 'forum')}
+						class="accent-primary"
+					/>
+					Forum
 				</label>
 			</div>
 			<div class="flex flex-col gap-1.5">

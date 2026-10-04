@@ -6,7 +6,7 @@
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import { Hash, Volume2, Users, UserPlus, Settings } from 'lucide-svelte';
+	import { Hash, MessagesSquare, Volume2, Users, UserPlus, Settings } from 'lucide-svelte';
 
 	let inviteOpen = $state(false);
 
@@ -18,6 +18,8 @@
 	<span class="text-text-subtle">
 		{#if channel?.type === 'voice'}
 			<Volume2 size={18} strokeWidth={1.75} />
+		{:else if channel?.type === 'forum'}
+			<MessagesSquare size={18} strokeWidth={1.75} />
 		{:else}
 			<Hash size={18} strokeWidth={1.75} />
 		{/if}
