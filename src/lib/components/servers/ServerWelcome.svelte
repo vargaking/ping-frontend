@@ -17,8 +17,7 @@
 
 	const server = $derived(serversState.selectedServer);
 	const channels = $derived(serversState.selectedServerChannelsList);
-	const textChannels = $derived(channels.filter((c) => c.type === 'text'));
-	const voiceChannels = $derived(channels.filter((c) => c.type === 'voice'));
+	const layout = $derived(serversState.selectedServerLayout);
 	const welcomeMessage = $derived(server?.server_profile?.welcome_message?.trim());
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 	const canManageServer = $derived(serversState.can(Permission.MANAGE_SERVER));
@@ -80,10 +79,12 @@
 	</li>
 {/snippet}
 
-{#snippet channelGroup(title: string, list: Channel[])}
+{#snippet channelGroup(title: string | null, list: Channel[])}
 	{#if list.length > 0}
-		<section aria-label={title}>
-			<h2 class="mb-1 px-3 text-xs font-medium tracking-[0.02em] text-text-subtle">{title}</h2>
+		<section aria-label={title ?? 'Channels'}>
+			{#if title}
+				<h2 class="mb-1 px-3 text-xs font-medium tracking-[0.02em] text-text-subtle">{title}</h2>
+			{/if}
 			<ul class="flex flex-col">
 				{#each list as channel (channel.id)}
 					{@render channelRow(channel)}
@@ -169,8 +170,10 @@
 			</EmptyState>
 		{:else}
 			<div class="flex flex-col gap-5">
-				{@render channelGroup('Text channels', textChannels)}
-				{@render channelGroup('Voice channels', voiceChannels)}
+				{@render channelGroup(null, layout.ungrouped)}
+				{#each layout.groups as { group, channels: list } (group.id)}
+					{@render channelGroup(group.name, list)}
+				{/each}
 			</div>
 		{/if}
 	</div>

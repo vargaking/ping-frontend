@@ -5,7 +5,15 @@
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
-	import type { Channel } from '$lib/types/channel.types';
+	import type { Channel, ChannelGroup, ChannelLayout } from '$lib/types/channel.types';
+	import { collapsedGroupsState } from '$lib/states/collapsedGroupsState.svelte';
+	import {
+		layoutIds,
+		moveChannel,
+		moveGroup,
+		type ChannelDrop,
+		type GroupDrop
+	} from '$lib/utils/channelGroups';
 	import SidebarRow from './SidebarRow.svelte';
 	import PresenceParticipant from './PresenceParticipant.svelte';
 	import CreateChannelDialog from '$lib/components/servers/CreateChannelDialog.svelte';
@@ -14,11 +22,17 @@
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
 	import ActionDropdownItems from '$lib/components/ui/dropdown-menu/ActionDropdownItems.svelte';
-	import { channelActions, openChannelSettings, serverActions } from '$lib/utils/menuActions';
+	import {
+		channelActions,
+		channelGroupActions,
+		openChannelSettings,
+		serverActions
+	} from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
-	import { Hash, Volume2, ChevronDown, Plus, Settings } from 'lucide-svelte';
+	import { Hash, Volume2, ChevronDown, ChevronRight, Plus, Settings } from 'lucide-svelte';
 
 	let createOpen = $state(false);
+	let createGroupId: number | undefined = $state(undefined);
 	let inviteOpen = $state(false);
 
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
@@ -30,66 +44,93 @@
 
 	const activeChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
-	const textChannels = $derived(
-		serversState.selectedServerChannelsList.filter((c) => c.type === 'text')
-	);
-	const voiceChannels = $derived(
-		serversState.selectedServerChannelsList.filter((c) => c.type === 'voice')
+	const layout = $derived(serversState.selectedServerLayout);
+	const hasChannels = $derived(
+		layout.ungrouped.length > 0 || layout.groups.some((g) => g.channels.length > 0)
 	);
 
-	// --- drag reorder (per section, preserving the other section's positions) ---
-	let dragType: 'text' | 'voice' | null = $state(null);
-	let dragIndex: number | null = $state(null);
-	let hoverIndex: number | null = $state(null);
-
-	function handleDragStart(type: 'text' | 'voice', index: number) {
-		dragType = type;
-		dragIndex = index;
-	}
-
-	function handleDragOver(e: DragEvent, type: 'text' | 'voice', index: number) {
-		if (dragType !== type) return;
-		e.preventDefault();
-		hoverIndex = index;
-	}
-
-	function handleDrop(type: 'text' | 'voice') {
-		if (
-			dragType !== type ||
-			dragIndex === null ||
-			hoverIndex === null ||
-			dragIndex === hoverIndex ||
-			!serversState.selectedServer?.id
-		) {
-			resetDrag();
-			return;
-		}
-
-		const section = (type === 'text' ? textChannels : voiceChannels).map((c) => c.id);
-		const [moved] = section.splice(dragIndex, 1);
-		section.splice(hoverIndex, 0, moved);
-
-		// Rebuild the full order, substituting this section's ids in their new order
-		// while keeping the other type's channels where they are.
-		let si = 0;
-		const full = serversState.selectedServerChannelsList.map((c) =>
-			c.type === type ? section[si++] : c.id
+	function visibleChannels(group: ChannelGroup, channels: Channel[]) {
+		if (!collapsedGroupsState.isCollapsed(group.id)) return channels;
+		return channels.filter(
+			(c) =>
+				c.id === activeChannelId ||
+				(c.type === 'text' &&
+					(unreadState.channelUnread(c.id) || unreadState.channelMentions(c.id) > 0)) ||
+				(c.type === 'voice' && voiceRoster(c.id).length > 0)
 		);
-		serversState.reorderChannels(serversState.selectedServer.id, full);
-		resetDrag();
 	}
 
-	function dropEdge(type: 'text' | 'voice', index: number): 'before' | 'after' | null {
-		if (dragType !== type || dragIndex === null || hoverIndex !== index || dragIndex === index) {
-			return null;
+	// --- drag and drop ---
+	let dragChannelId: number | null = $state(null);
+	let dragGroupId: number | null = $state(null);
+	let channelDrop: ChannelDrop | null = $state(null);
+	let groupDrop: GroupDrop | null = $state(null);
+
+	function edgeOf(e: DragEvent): 'before' | 'after' {
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+	}
+
+	function startDrag(e: DragEvent, channelId: number | null, groupId: number | null) {
+		e.stopPropagation();
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', '');
 		}
-		return dragIndex > index ? 'before' : 'after';
+		dragChannelId = channelId;
+		dragGroupId = groupId;
+	}
+
+	function overChannel(e: DragEvent, channel: Channel) {
+		if (dragChannelId === null) return;
+		e.preventDefault();
+		channelDrop = { kind: 'channel', id: channel.id, edge: edgeOf(e) };
+	}
+
+	function overGroup(e: DragEvent, group: ChannelGroup) {
+		if (dragChannelId !== null) {
+			e.preventDefault();
+			channelDrop = { kind: 'group', id: group.id };
+		} else if (dragGroupId !== null && dragGroupId !== group.id) {
+			e.preventDefault();
+			groupDrop = { id: group.id, edge: edgeOf(e) };
+		}
+	}
+
+	function overUngrouped(e: DragEvent) {
+		if (dragChannelId === null) return;
+		e.preventDefault();
+		channelDrop = { kind: 'ungrouped' };
+	}
+
+	function drop(e: DragEvent, target: 'channel' | 'group' | 'ungrouped') {
+		const serverId = serversState.selectedServerId;
+		const current = layoutIds(layout);
+		let next: ChannelLayout | null = null;
+		if (serverId != null && dragChannelId !== null && channelDrop) {
+			e.preventDefault();
+			next = moveChannel(current, dragChannelId, channelDrop);
+		} else if (serverId != null && dragGroupId !== null && groupDrop && target === 'group') {
+			e.preventDefault();
+			next = moveGroup(current, dragGroupId, groupDrop);
+		}
+		resetDrag();
+		if (serverId != null && next) serversState.setLayout(serverId, next);
 	}
 
 	function resetDrag() {
-		dragType = null;
-		dragIndex = null;
-		hoverIndex = null;
+		dragChannelId = null;
+		dragGroupId = null;
+		channelDrop = null;
+		groupDrop = null;
+	}
+
+	function channelEdge(channel: Channel): 'before' | 'after' | null {
+		return channelDrop?.kind === 'channel' &&
+			channelDrop.id === channel.id &&
+			dragChannelId !== channel.id
+			? channelDrop.edge
+			: null;
 	}
 
 	function channelActionsFor(channel: Channel) {
@@ -132,7 +173,7 @@
 	{/if}
 {/snippet}
 
-{#snippet voiceRow(channel: Channel, i: number, triggerProps: Record<string, unknown> = {})}
+{#snippet voiceRow(channel: Channel, triggerProps: Record<string, unknown> = {})}
 	<SidebarRow
 		{...mergeProps(triggerProps, {
 			// Screen readers get the topic even though the tooltip is visual.
@@ -149,11 +190,9 @@
 		label={channel.name}
 		href={voiceHref(channel)}
 		active={channel.id === activeChannelId}
-		dragging={dragType === 'voice' && dragIndex === i}
+		dragging={dragChannelId === channel.id}
 		draggable={canManageChannels}
-		ondragstart={() => handleDragStart('voice', i)}
-		ondragover={(e) => handleDragOver(e, 'voice', i)}
-		ondrop={() => handleDrop('voice')}
+		ondragstart={(e) => startDrag(e, channel.id, null)}
 		ondragend={resetDrag}
 	>
 		{#snippet icon()}
@@ -164,6 +203,120 @@
 			/>
 		{/snippet}
 	</SidebarRow>
+{/snippet}
+
+{#snippet channelItem(channel: Channel)}
+	{@const actions = channelActionsFor(channel)}
+	{@const topic = channel.topic?.trim()}
+	<div
+		role="presentation"
+		class="group/row relative"
+		ondragover={(e) => overChannel(e, channel)}
+		ondrop={(e) => drop(e, 'channel')}
+	>
+		<ActionContextMenu {actions}>
+			{#snippet children(menuProps)}
+				{#if channel.type === 'voice'}
+					{#if topic}
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									{@render voiceRow(channel, mergeProps(props, menuProps))}
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content side="right" sideOffset={8}>{topic}</Tooltip.Content>
+						</Tooltip.Root>
+					{:else}
+						{@render voiceRow(channel, menuProps)}
+					{/if}
+				{:else}
+					<SidebarRow
+						{...menuProps}
+						label={channel.name}
+						href={channelHref(channel)}
+						active={channel.id === activeChannelId}
+						unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
+						mentions={unreadState.channelMentions(channel.id)}
+						dragging={dragChannelId === channel.id}
+						draggable={canManageChannels}
+						ondragstart={(e) => startDrag(e, channel.id, null)}
+						ondragend={resetDrag}
+					>
+						{#snippet icon()}
+							<Hash size={16} strokeWidth={1.75} />
+						{/snippet}
+					</SidebarRow>
+				{/if}
+			{/snippet}
+		</ActionContextMenu>
+		{@render settingsButton(channel)}
+		{@render dropIndicator(channelEdge(channel))}
+	</div>
+	{#if channel.type === 'voice'}
+		{@const roster = voiceRoster(channel.id)}
+		{#if roster.length > 0}
+			<div class="mt-0.5 flex flex-col gap-0.5">
+				{#each roster as member (member.userId)}
+					<PresenceParticipant {member} />
+				{/each}
+			</div>
+		{/if}
+	{/if}
+{/snippet}
+
+{#snippet groupHeader(group: ChannelGroup, collapsed: boolean)}
+	<div
+		role="presentation"
+		class="relative flex h-6 items-center justify-between rounded px-1 {channelDrop?.kind ===
+			'group' && channelDrop.id === group.id
+			? 'bg-accent'
+			: ''} {dragGroupId === group.id ? 'opacity-50' : ''}"
+		draggable={canManageChannels}
+		ondragstart={(e) => startDrag(e, null, group.id)}
+		ondragover={(e) => overGroup(e, group)}
+		ondrop={(e) => drop(e, 'group')}
+		ondragend={resetDrag}
+	>
+		<ActionContextMenu
+			actions={channelGroupActions(group, {
+				onCreateChannel: () => {
+					createGroupId = group.id;
+					createOpen = true;
+				}
+			})}
+		>
+			{#snippet children(menuProps)}
+				<button
+					{...menuProps}
+					type="button"
+					aria-expanded={!collapsed}
+					onclick={() => collapsedGroupsState.toggle(group.id)}
+					class="flex min-w-0 flex-1 items-center gap-1 rounded px-1 text-left text-xs font-medium tracking-[0.02em] text-text-subtle transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					<ChevronRight
+						size={12}
+						strokeWidth={2}
+						class="shrink-0 transition-transform {collapsed ? '' : 'rotate-90'}"
+					/>
+					<span class="truncate">{group.name}</span>
+				</button>
+			{/snippet}
+		</ActionContextMenu>
+		{#if canManageChannels}
+			<button
+				type="button"
+				aria-label="Create channel in {group.name}"
+				onclick={() => {
+					createGroupId = group.id;
+					createOpen = true;
+				}}
+				class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				<Plus size={16} strokeWidth={1.75} />
+			</button>
+		{/if}
+		{@render dropIndicator(groupDrop?.id === group.id ? groupDrop.edge : null)}
+	</div>
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
@@ -181,103 +334,64 @@
 	</DropdownMenu.Root>
 
 	<!-- body -->
-	<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-3 scrollbar-stable">
-		<!-- Channels -->
-		<section>
-			<div class="flex h-6 items-center justify-between px-2">
-				<span class="text-xs font-medium tracking-[0.02em] text-text-subtle">Channels</span>
-				{#if canManageChannels}
+	<div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-3 scrollbar-stable">
+		{#if canManageChannels}
+			<!-- Same height as the create row it replaces, so the list doesn't shift under the cursor. -->
+			{#if dragChannelId !== null}
+				<div
+					role="presentation"
+					ondragover={overUngrouped}
+					ondrop={(e) => drop(e, 'ungrouped')}
+					class="flex h-6 shrink-0 items-center justify-center rounded border border-dashed text-xs {channelDrop?.kind ===
+					'ungrouped'
+						? 'border-primary text-foreground'
+						: 'border-border text-text-subtle'}"
+				>
+					Drop here for no category
+				</div>
+			{:else}
+				<div class="flex h-6 shrink-0 items-center justify-end px-2">
 					<button
 						type="button"
 						aria-label="Create channel"
-						onclick={() => (createOpen = true)}
+						onclick={() => {
+							createGroupId = undefined;
+							createOpen = true;
+						}}
 						class="flex h-5 w-5 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					>
 						<Plus size={16} strokeWidth={1.75} />
 					</button>
-				{/if}
-			</div>
+				</div>
+			{/if}
+		{/if}
 
-			<div class="mt-1 flex flex-col gap-0.5">
-				{#each textChannels as channel, i (channel.id)}
-					{@const actions = channelActionsFor(channel)}
-					<div class="group/row relative">
-						<ActionContextMenu {actions}>
-							{#snippet children(menuProps)}
-								<SidebarRow
-									{...menuProps}
-									label={channel.name}
-									href={channelHref(channel)}
-									active={channel.id === activeChannelId}
-									unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
-									mentions={unreadState.channelMentions(channel.id)}
-									dragging={dragType === 'text' && dragIndex === i}
-									draggable={canManageChannels}
-									ondragstart={() => handleDragStart('text', i)}
-									ondragover={(e) => handleDragOver(e, 'text', i)}
-									ondrop={() => handleDrop('text')}
-									ondragend={resetDrag}
-								>
-									{#snippet icon()}
-										<Hash size={16} strokeWidth={1.75} />
-									{/snippet}
-								</SidebarRow>
-							{/snippet}
-						</ActionContextMenu>
-						{@render settingsButton(channel)}
-						{@render dropIndicator(dropEdge('text', i))}
+		<div class="flex flex-col gap-0.5">
+			{#each layout.ungrouped as channel (channel.id)}
+				{@render channelItem(channel)}
+			{/each}
+		</div>
+
+		{#each layout.groups as { group, channels } (group.id)}
+			{@const collapsed = collapsedGroupsState.isCollapsed(group.id)}
+			{@const shown = visibleChannels(group, channels)}
+			{#if canManageChannels || channels.length > 0}
+				<section aria-label={group.name} class="mt-3">
+					{@render groupHeader(group, collapsed)}
+					<div class="mt-1 flex flex-col gap-0.5">
+						{#each shown as channel (channel.id)}
+							{@render channelItem(channel)}
+						{/each}
 					</div>
-				{/each}
-				{#if textChannels.length === 0}
-					<p class="px-2 py-1 text-xs text-text-subtle">No text channels yet.</p>
-				{/if}
-			</div>
-		</section>
+				</section>
+			{/if}
+		{/each}
 
-		<!-- Voice -->
-		{#if voiceChannels.length > 0}
-			<section>
-				<div class="flex h-6 items-center px-2">
-					<span class="text-xs font-medium tracking-[0.02em] text-text-subtle">Voice</span>
-				</div>
-				<div class="mt-1 flex flex-col gap-0.5">
-					{#each voiceChannels as channel, i (channel.id)}
-						{@const topic = channel.topic?.trim()}
-						{@const actions = channelActionsFor(channel)}
-						<div class="group/row relative">
-							<ActionContextMenu {actions}>
-								{#snippet children(menuProps)}
-									{#if topic}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												{#snippet child({ props })}
-													{@render voiceRow(channel, i, mergeProps(props, menuProps))}
-												{/snippet}
-											</Tooltip.Trigger>
-											<Tooltip.Content side="right" sideOffset={8}>{topic}</Tooltip.Content>
-										</Tooltip.Root>
-									{:else}
-										{@render voiceRow(channel, i, menuProps)}
-									{/if}
-								{/snippet}
-							</ActionContextMenu>
-							{@render settingsButton(channel)}
-							{@render dropIndicator(dropEdge('voice', i))}
-						</div>
-						{@const roster = voiceRoster(channel.id)}
-						{#if roster.length > 0}
-							<div class="mt-0.5 flex flex-col gap-0.5">
-								{#each roster as member (member.userId)}
-									<PresenceParticipant {member} />
-								{/each}
-							</div>
-						{/if}
-					{/each}
-				</div>
-			</section>
+		{#if !hasChannels && layout.groups.length === 0}
+			<p class="px-2 py-1 text-xs text-text-subtle">No channels yet.</p>
 		{/if}
 	</div>
 </div>
 
-<CreateChannelDialog bind:open={createOpen} />
+<CreateChannelDialog bind:open={createOpen} groupId={createGroupId} />
 <InviteDialog bind:open={inviteOpen} />
