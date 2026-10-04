@@ -1,7 +1,6 @@
 import type { User } from './auth.types';
 
 export type ServerSettings = {
-	channel_order: number[];
 	/** Text channel that opening the server lands in; absent shows the welcome screen. */
 	default_channel_id?: number | null;
 	[key: string]: any;

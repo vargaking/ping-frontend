@@ -5,6 +5,7 @@ export type ChannelUpdate = {
 	name?: string;
 	/** Empty or null clears the topic. */
 	topic?: string | null;
+	group_id?: number | null;
 };
 
 export const updateChannel = async (channelId: number, update: ChannelUpdate): Promise<Channel> => {

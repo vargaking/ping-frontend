@@ -1,14 +1,24 @@
-import { getServerChannels } from '$lib/requests/channels/getServerChannels';
+import { getServerChannelSnapshot } from '$lib/requests/channels/getServerChannelSnapshot';
+import { setChannelLayout } from '$lib/requests/channels/setChannelLayout';
+import { getErrorMessage } from '$lib/requests/errors';
+import { toast } from 'svelte-sonner';
 import { getServerMembers } from '$lib/requests/servers/getServerMembers';
 import { getServerRoles } from '$lib/requests/servers/getServerRoles';
 import { getUserServers } from '$lib/requests/servers/getUserServers';
-import { updateServer } from '$lib/requests/servers/updateServer';
-import type { Channel } from '$lib/types/channel.types';
+import type { Channel, ChannelGroup, ChannelLayout } from '$lib/types/channel.types';
 import type { Role, Server, ServerMember } from '$lib/types/server.types';
 import type { User } from '$lib/types/auth.types';
 import { has, parseMask, Permission } from '$lib/permissions';
 import { unreadState } from './unreadState.svelte';
 import { usersState } from './usersState.svelte';
+
+export type ServerLayout = {
+	ungrouped: Channel[];
+	groups: { group: ChannelGroup; channels: Channel[] }[];
+};
+
+const byPosition = (a: { position: number; id: number }, b: { position: number; id: number }) =>
+	a.position - b.position || a.id - b.id;
 
 export class ServersState {
 	servers: Record<number, Server> = $state({});
@@ -16,6 +26,8 @@ export class ServersState {
 	loaded = $state(false);
 	/** Channels per server; a missing key means the server's channels aren't loaded yet. */
 	channels: Record<number, Record<number, Channel>> = $state({});
+	/** Categories per server, loaded together with the channels. */
+	channelGroups: Record<number, Record<number, ChannelGroup>> = $state({});
 	selectedServerId: number | null = $state(null);
 	selectedChannelId: number | null = $state(null);
 	permissions: Record<number, bigint> = $state({});
@@ -38,20 +50,27 @@ export class ServersState {
 			? (this.selectedServerChannels[this.selectedChannelId] ?? null)
 			: null
 	);
-	selectedServerChannelsList: Channel[] = $derived.by(() => {
-		const channels = this.selectedServerChannels;
-		const all = Object.values(channels);
-		const order = this.selectedServer?.server_settings?.channel_order;
-		if (!order || order.length === 0) return all;
-
-		// Channels in the saved order first...
-		const ordered = order.map((id) => channels[id]).filter((ch): ch is Channel => ch != null);
-		// ...then any channel not yet in channel_order (e.g. just created) appended,
-		// so new channels show immediately instead of only after a reload.
-		const orderedIds = new Set(order);
-		const rest = all.filter((ch) => !orderedIds.has(ch.id));
-		return [...ordered, ...rest];
+	selectedServerLayout: ServerLayout = $derived.by(() => {
+		const groups = Object.values(
+			this.selectedServerId != null ? (this.channelGroups[this.selectedServerId] ?? {}) : {}
+		).sort(byPosition);
+		const channels = Object.values(this.selectedServerChannels).sort(byPosition);
+		const known = new Set(groups.map((g) => g.id));
+		return {
+			ungrouped: channels.filter((c) => c.group_id == null || !known.has(c.group_id)),
+			groups: groups.map((group) => ({
+				group,
+				channels: channels.filter((c) => c.group_id === group.id)
+			}))
+		};
 	});
+	selectedServerChannelsList: Channel[] = $derived([
+		...this.selectedServerLayout.ungrouped,
+		...this.selectedServerLayout.groups.flatMap((g) => g.channels)
+	]);
+
+	/** Bumped whenever a layout is applied, so a failed save can tell if something newer landed. */
+	private layoutVersion = 0;
 
 	readonly selectedPermissions: bigint | undefined = $derived(
 		this.selectedServer?.id != null ? this.permissions[this.selectedServer.id] : undefined
@@ -99,10 +118,9 @@ export class ServersState {
 		this.servers = {};
 		this.loaded = false;
 		this.channels = {};
+		this.channelGroups = {};
 		this.selectedServerId = null;
 		this.selectedChannelId = null;
-		this.reorderTimeouts.forEach(clearTimeout);
-		this.reorderTimeouts.clear();
 	}
 
 	async fetchUserServers(): Promise<Server[]> {
@@ -147,10 +165,72 @@ export class ServersState {
 	}
 
 	async fetchServerChannels(serverId: number): Promise<Channel[]> {
-		const fetchedChannels = await getServerChannels(serverId);
-		this.channels[serverId] = Object.fromEntries(fetchedChannels.map((ch) => [ch.id, ch]));
-		unreadState.noteFetchedChannels(serverId, fetchedChannels);
-		return fetchedChannels;
+		const { groups, channels } = await getServerChannelSnapshot(serverId);
+		this.channelGroups[serverId] = Object.fromEntries(groups.map((g) => [g.id, g]));
+		this.channels[serverId] = Object.fromEntries(channels.map((ch) => [ch.id, ch]));
+		this.layoutVersion++;
+		unreadState.noteFetchedChannels(serverId, channels);
+		return channels;
+	}
+
+	addGroup(serverId: number, group: ChannelGroup) {
+		const loaded = this.channelGroups[serverId];
+		if (loaded) loaded[group.id] = group;
+	}
+
+	updateGroup(serverId: number, group: ChannelGroup) {
+		const existing = this.channelGroups[serverId]?.[group.id];
+		if (existing) this.channelGroups[serverId][group.id] = { ...existing, ...group };
+	}
+
+	/** Drop a deleted category; the layout says where its channels went. */
+	removeGroup(serverId: number, groupId: number, layout: ChannelLayout) {
+		const loaded = this.channelGroups[serverId];
+		if (loaded) delete loaded[groupId];
+		this.applyLayout(serverId, layout);
+	}
+
+	/** Set group and position of every channel and group the layout names. Unknown ids are
+	 *  ignored, and channels it doesn't mention keep their values. */
+	applyLayout(serverId: number, layout: ChannelLayout) {
+		this.layoutVersion++;
+		const channels = this.channels[serverId];
+		const groups = this.channelGroups[serverId];
+		if (!channels || !groups) return;
+
+		const place = (ids: number[], groupId: number | null) =>
+			ids.forEach((id, position) => {
+				if (channels[id]) channels[id] = { ...channels[id], group_id: groupId, position };
+			});
+		place(layout.ungrouped, null);
+		layout.groups.forEach(({ id, channel_ids }, position) => {
+			if (!groups[id]) return;
+			groups[id] = { ...groups[id], position };
+			place(channel_ids, id);
+		});
+	}
+
+	/** Apply a new layout at once and save it. A failed save goes back to the previous state,
+	 *  unless a newer layout was applied meanwhile, and the server's state is refetched. */
+	async setLayout(serverId: number, layout: ChannelLayout) {
+		const before = {
+			channels: { ...this.channels[serverId] },
+			groups: { ...this.channelGroups[serverId] }
+		};
+		this.applyLayout(serverId, layout);
+		const version = this.layoutVersion;
+		try {
+			await setChannelLayout(serverId, layout);
+		} catch (e) {
+			if (this.layoutVersion === version) {
+				this.channels[serverId] = before.channels;
+				this.channelGroups[serverId] = before.groups;
+			}
+			toast.error(`Couldn't save the channel order: ${getErrorMessage(e)}`);
+			this.fetchServerChannels(serverId).catch((err) =>
+				console.warn('Failed to refresh channels after a failed reorder', err)
+			);
+		}
 	}
 
 	/** Patch in a channel we learned about over the socket (channel_created). */
@@ -173,6 +253,7 @@ export class ServersState {
 	removeServer(serverId: number) {
 		delete this.servers[serverId];
 		delete this.channels[serverId];
+		delete this.channelGroups[serverId];
 		delete this.permissions[serverId];
 		delete this.roles[serverId];
 		delete this.memberRoles[serverId];
@@ -191,25 +272,15 @@ export class ServersState {
 			...existing,
 			name: channel.name,
 			topic: channel.topic ?? null,
-			channel_settings: channel.channel_settings
+			channel_settings: channel.channel_settings,
+			group_id: channel.group_id ?? null,
+			position: channel.position ?? existing.position
 		};
 	}
 
 	/** Drop a deleted channel (own delete or channel_deleted). */
 	removeChannel(serverId: number, channelId: number) {
 		unreadState.forgetChannel(channelId);
-
-		const server = this.servers[serverId];
-		const order = server?.server_settings?.channel_order;
-		if (server && order?.includes(channelId)) {
-			this.servers[serverId] = {
-				...server,
-				server_settings: {
-					...server.server_settings,
-					channel_order: order.filter((id) => id !== channelId)
-				}
-			};
-		}
 
 		const loaded = this.channels[serverId];
 		if (loaded) delete loaded[channelId];
@@ -230,39 +301,6 @@ export class ServersState {
 		if (!server?.members?.some((m) => m.id === userId)) return;
 
 		this.servers[serverId] = { ...server, members: server.members.filter((m) => m.id !== userId) };
-	}
-
-	// Timer handles are never rendered, so they needn't be reactive.
-	// eslint-disable-next-line svelte/prefer-svelte-reactivity
-	private reorderTimeouts = new Map<number, ReturnType<typeof setTimeout>>();
-
-	reorderChannels(serverId: number, channelIds: number[]) {
-		const server = this.servers[serverId];
-		if (!server) return;
-
-		// Update local state immediately — Svelte re-renders the list
-		this.servers[serverId] = {
-			...server,
-			server_settings: { ...server.server_settings, channel_order: channelIds }
-		};
-
-		// Debounce the server update so rapid reorders don't spam the API
-		clearTimeout(this.reorderTimeouts.get(serverId));
-		this.reorderTimeouts.set(
-			serverId,
-			setTimeout(async () => {
-				this.reorderTimeouts.delete(serverId);
-				try {
-					await updateServer(serverId, {
-						server_settings: {
-							channel_order: this.servers[serverId].server_settings!.channel_order
-						}
-					});
-				} catch (e) {
-					console.error('Failed to persist channel order:', e);
-				}
-			}, 500)
-		);
 	}
 }
 
