@@ -1,9 +1,13 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Attachment } from './attachment.types';
 
+/** Original author of a message brought in from elsewhere; the row's owner is a shared account. */
+export type ImportedAuthor = { id: string; name: string };
+
 export type MessageType = {
 	id: string;
 	user_id: number;
+	imported_author?: ImportedAuthor | null;
 	content: JSONContent;
 	timestamp: string;
 	// Channel messages carry server_id/channel_id; direct messages carry
@@ -32,7 +36,13 @@ export type Embed = {
 };
 
 export type ReplyRef =
-	| { id: string; user_id: number; preview: string; deleted?: false }
+	| {
+			id: string;
+			user_id: number;
+			imported_author?: ImportedAuthor | null;
+			preview: string;
+			deleted?: false;
+	  }
 	| { id: string; deleted: true };
 
 export type Reaction = { emoji: string; user_ids: number[] };

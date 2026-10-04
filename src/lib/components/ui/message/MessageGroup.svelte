@@ -4,14 +4,16 @@
 	import type { User } from '$lib/types/auth.types';
 	import type { MessageType } from '$lib/types/messages.types';
 	import MessageRow from './MessageRow.svelte';
+	import AuthorName from './AuthorName.svelte';
 	import ReplyContext from './ReplyContext.svelte';
 
 	let {
-		userId,
 		messages,
 		onJumpToMessage
-	}: { userId: number; messages: MessageType[]; onJumpToMessage: (messageId: string) => void } =
-		$props();
+	}: { messages: MessageType[]; onJumpToMessage: (messageId: string) => void } = $props();
+
+	const userId = $derived(messages[0].user_id);
+	const imported = $derived(messages[0].imported_author ?? null);
 
 	// Resolve the author without gating the whole row on a promise — the row
 	// renders immediately (Avatar shows its placeholder) and fills in when the
@@ -20,6 +22,10 @@
 	let user = $state<User | null>(null);
 
 	$effect(() => {
+		if (imported) {
+			user = null;
+			return;
+		}
 		let cancelled = false;
 		Promise.resolve(usersState.getOrFetchUser(userId)).then((u) => {
 			if (!cancelled) user = u;
@@ -42,14 +48,20 @@
 </script>
 
 <div class="flex gap-3">
-	<Avatar {user} size="md" rounded="rounded-[10px]" className="mt-0.5 h-9 w-9" />
+	<Avatar
+		{user}
+		name={imported?.name}
+		size="md"
+		rounded="rounded-[10px]"
+		className="mt-0.5 h-9 w-9"
+	/>
 	<div class="flex min-w-0 flex-1 flex-col">
 		{#if messages[0].reply_to}
 			<ReplyContext reply={messages[0].reply_to} onJump={onJumpToMessage} />
 		{/if}
 		<div class="flex max-w-[760px] items-baseline gap-2">
-			<span class="min-w-0 truncate text-sm font-semibold text-foreground">
-				{user?.username ?? '…'}
+			<span class="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-foreground">
+				<AuthorName name={imported?.name ?? user?.username ?? '…'} imported={imported != null} />
 			</span>
 			<span class="shrink-0 font-mono text-[11px] whitespace-nowrap text-text-subtle">
 				{headerTime}
