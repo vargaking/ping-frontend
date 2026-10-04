@@ -49,6 +49,11 @@
 		});
 	});
 
+	function unfocus() {
+		if (document.fullscreenElement) return;
+		focusedId = null;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape' && focusedId && !document.fullscreenElement) focusedId = null;
 	}
@@ -112,8 +117,9 @@
 			{:else}
 				<!-- Keyed each rather than #if: focused turns null before the block is torn down. -->
 				{#each focused && !voiceState.previewHidden(focused) ? [focused] : [] as stream (stream.id)}
+					{@const name = stream.local ? 'Your screen' : `${stream.username}'s screen`}
 					<section
-						aria-label="{stream.local ? 'Your' : `${stream.username}'s`} screen"
+						aria-label={name}
 						class="relative mb-3 flex min-h-0 shrink-0 justify-center rounded-xl bg-black"
 					>
 						<StreamVideo
@@ -121,6 +127,12 @@
 							bind:el={stageVideo}
 							class="max-h-[70vh] rounded-xl"
 						/>
+						<button
+							type="button"
+							aria-label="Unfocus {name}"
+							onclick={unfocus}
+							class="absolute inset-0 cursor-pointer rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+						></button>
 						<div class="absolute top-2 right-2 flex gap-2">
 							{#if voiceState.mirrorsSelf(stream)}
 								<Button
@@ -141,7 +153,7 @@
 									Fullscreen
 								</Button>
 							{/if}
-							<Button variant="secondary" size="sm" onclick={() => (focusedId = null)}>
+							<Button variant="secondary" size="sm" onclick={unfocus}>
 								<Minimize2 size={14} strokeWidth={1.75} />
 								Exit focus
 							</Button>
