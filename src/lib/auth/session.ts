@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { usersState } from '$lib/states/usersState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { messagesState } from '$lib/states/messagesState.svelte';
+import { forumState } from '$lib/states/forumState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { unreadState } from '$lib/states/unreadState.svelte';
 import { serverRequestState } from '$lib/states/serverRequestState.svelte';
@@ -26,6 +27,7 @@ export async function clearSession(): Promise<void> {
 	serverRequestState.reset();
 
 	messagesState.clearAll();
+	forumState.reset();
 	conversationsState.reset();
 	unreadState.reset();
 	notificationsState.resetPush();

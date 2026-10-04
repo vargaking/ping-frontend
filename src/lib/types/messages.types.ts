@@ -11,6 +11,8 @@ export type MessageType = {
 	server_id?: number | null;
 	channel_id?: number | null;
 	conversation_id?: number | null;
+	/** The forum post a message belongs to; null in text channels and DMs. */
+	post_id?: number | null;
 	edited_at?: string | null;
 	attachments?: Attachment[];
 	reactions?: Reaction[];
@@ -35,7 +37,14 @@ export type ReplyRef =
 
 export type Reaction = { emoji: string; user_ids: number[] };
 
+/** What the composer hands over when it doesn't send the message itself. */
+export type MessageDraft = {
+	content: JSONContent;
+	attachments: Attachment[];
+	embeds: Embed[];
+};
+
 /** Where a composed message goes: a server channel or a DM conversation. */
 export type MessageTarget =
-	| { kind: 'channel'; serverId: number; channelId: number }
+	| { kind: 'channel'; serverId: number; channelId: number; postId?: number }
 	| { kind: 'direct'; conversationId: number };

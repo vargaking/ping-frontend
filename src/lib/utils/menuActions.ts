@@ -5,10 +5,14 @@ import {
 	FolderPlus,
 	Copy,
 	Link,
+	Lock,
+	LockOpen,
 	LogOut,
 	MessageSquare,
 	MicOff,
 	Pencil,
+	Pin,
+	PinOff,
 	Plus,
 	Reply,
 	Settings,
@@ -26,8 +30,11 @@ import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 import { Permission } from '$lib/permissions';
 import { deleteMessage } from '$lib/requests/messages/deleteMessage';
+import { deleteForumPost } from '$lib/requests/forum/deleteForumPost';
+import { updateForumPost } from '$lib/requests/forum/updateForumPost';
 import { getErrorMessage } from '$lib/requests/errors';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
+import { forumState } from '$lib/states/forumState.svelte';
 import { messageEditState } from '$lib/states/messageEditState.svelte';
 import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 import { overlayState } from '$lib/states/overlayState.svelte';
@@ -39,6 +46,7 @@ import { usersState } from '$lib/states/usersState.svelte';
 import type { VoiceMember } from '$lib/states/voiceRoster.svelte';
 import type { User } from '$lib/types/auth.types';
 import type { Channel, ChannelGroup } from '$lib/types/channel.types';
+import type { ForumPost, ForumPostUpdate } from '$lib/types/forum.types';
 import type { MessageType } from '$lib/types/messages.types';
 import type { Server } from '$lib/types/server.types';
 import { db } from '$lib/utils/db';
@@ -49,6 +57,8 @@ import { disconnectMember, serverMuteMember } from '$lib/utils/voiceModeration';
 import { confirmLeaveServer } from '$lib/utils/leaveServer';
 import { messageClipboardText } from '$lib/utils/messageContent';
 import { markRepliesDeleted } from '$lib/utils/replies';
+import { channelPath, postPath } from '$lib/utils/channelRoutes';
+import EditPostDialog from '$lib/components/forum/EditPostDialog.svelte';
 
 export type MenuAction = {
 	id: string;
@@ -95,6 +105,10 @@ export function canEditMessage(message: MessageType): boolean {
 }
 
 export function canDeleteMessage(message: MessageType): boolean {
+	// The opening message goes with its post.
+	if (message.post_id != null && forumState.openingMessageId(message.post_id) === message.id) {
+		return false;
+	}
 	if (canEditMessage(message)) return true;
 	// A DM has no moderators, so only the author can delete there.
 	return (
@@ -182,9 +196,94 @@ export function messageActions(
 	return actions;
 }
 
+export function canManagePost(post: ForumPost, serverId: number): boolean {
+	const me = usersState.loggedInUser;
+	return (
+		(me != null && post.author_id === me.id) ||
+		serversState.can(Permission.MANAGE_MESSAGES, serverId)
+	);
+}
+
+async function updatePost(post: ForumPost, update: ForumPostUpdate) {
+	try {
+		forumState.applyPost(await updateForumPost(post.id, update));
+	} catch (e) {
+		toast.error(`Couldn't update the post: ${getErrorMessage(e)}`);
+	}
+}
+
+export function postActions(serverId: number, post: ForumPost): MenuAction[] {
+	const actions: MenuAction[] = [
+		{
+			id: 'copy-link',
+			label: 'Copy link',
+			icon: Link,
+			group: 'post',
+			run: () =>
+				copyToClipboard(
+					new URL(postPath(serverId, post.channel_id, post.id), location.origin).href,
+					'Link'
+				)
+		}
+	];
+	if (canManagePost(post, serverId)) {
+		actions.push({
+			id: 'edit',
+			label: 'Edit title and tags',
+			icon: Pencil,
+			group: 'manage',
+			run: () => overlayState.open(EditPostDialog, { post })
+		});
+	}
+	if (serversState.can(Permission.MANAGE_MESSAGES, serverId)) {
+		actions.push(
+			{
+				id: 'pin',
+				label: post.pinned ? 'Unpin post' : 'Pin post',
+				icon: post.pinned ? PinOff : Pin,
+				group: 'manage',
+				run: () => updatePost(post, { pinned: !post.pinned })
+			},
+			{
+				id: 'lock',
+				label: post.locked ? 'Unlock post' : 'Lock post',
+				icon: post.locked ? LockOpen : Lock,
+				group: 'manage',
+				run: () => updatePost(post, { locked: !post.locked })
+			}
+		);
+	}
+	if (canManagePost(post, serverId)) {
+		actions.push({
+			id: 'delete',
+			label: 'Delete post',
+			icon: Trash2,
+			group: 'danger',
+			destructive: true,
+			run: () =>
+				overlayState.open(ConfirmDialog, {
+					title: 'Delete post?',
+					description:
+						'This deletes the post and every reply to it for everyone. This can’t be undone.',
+					confirmLabel: 'Delete',
+					destructive: true,
+					onConfirm: async () => {
+						try {
+							await deleteForumPost(post.id);
+							forumState.applyPostDeleted(post.channel_id, post.id);
+						} catch (e) {
+							toast.error(`Couldn't delete the post: ${getErrorMessage(e)}`);
+						}
+					}
+				})
+		});
+	}
+	return actions;
+}
+
 export function channelActions(serverId: number, channel: Channel): MenuAction[] {
 	const actions: MenuAction[] = [];
-	if (channel.type === 'text') {
+	if (channel.type !== 'voice') {
 		if (unreadState.channelUnread(channel.id)) {
 			actions.push({
 				id: 'mark-read',
@@ -200,10 +299,7 @@ export function channelActions(serverId: number, channel: Channel): MenuAction[]
 			icon: Link,
 			group: 'channel',
 			run: () =>
-				copyToClipboard(
-					new URL(`/app/server/${serverId}/channel/${channel.id}/`, location.origin).href,
-					'Link'
-				)
+				copyToClipboard(new URL(channelPath(serverId, channel), location.origin).href, 'Link')
 		});
 	}
 	if (serversState.can(Permission.MANAGE_CHANNELS, serverId)) {

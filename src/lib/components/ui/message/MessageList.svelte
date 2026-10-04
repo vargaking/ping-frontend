@@ -31,6 +31,8 @@
 		errorDescription: string;
 		/** When set, a 404 calls this instead of falling back to the cache. */
 		onNotFound?: () => void;
+		/** False when something else marks the thread read (a forum post is read with its channel). */
+		trackRead?: boolean;
 	};
 
 	let {
@@ -40,7 +42,8 @@
 		readCache,
 		emptyDescription,
 		errorDescription,
-		onNotFound
+		onNotFound,
+		trackRead = true
 	}: Props = $props();
 
 	let messageWrapper = $state<HTMLDivElement>();
@@ -157,7 +160,7 @@
 
 	/** Current read markers for `target`, read from the single source of truth. */
 	function readSnapshot(): ReadMarkers | null {
-		if (!target) return null;
+		if (!target || !trackRead) return null;
 		if (target.kind === 'channel') {
 			return {
 				lastReadId: unreadState.channelLastReadId(target.channelId),
@@ -379,10 +382,11 @@
 	// visible, and the window is focused — never just because a message arrived
 	// while we're hidden or unfocused.
 	const beingRead = $derived(
-		target != null && documentFocusState.visible && documentFocusState.focused
+		trackRead && target != null && documentFocusState.visible && documentFocusState.focused
 	);
 
 	$effect(() => {
+		if (!trackRead) return;
 		const key = threadKey;
 		unreadState.setActiveThread(beingRead ? key : null);
 		return () => {

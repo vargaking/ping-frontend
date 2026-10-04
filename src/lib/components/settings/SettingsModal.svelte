@@ -10,6 +10,8 @@
 	import ServerInvites from './ServerInvites.svelte';
 	import ServerMembers from './ServerMembers.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
+	import ForumTagsSettings from './ForumTagsSettings.svelte';
+	import { forumState } from '$lib/states/forumState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
@@ -49,19 +51,25 @@
 		const out: Section[] = [];
 
 		if (channel && serversState.can(Permission.MANAGE_CHANNELS)) {
-			out.push({
-				scope: 'channel',
-				label: `#${channel.name}`,
-				tabs: [
-					{
-						id: 'channel-general',
-						label: 'Channel overview',
-						scope: 'channel',
-						form: true,
-						render: channelOverview
-					}
-				]
-			});
+			const channelTabs: Tab[] = [
+				{
+					id: 'channel-general',
+					label: 'Channel overview',
+					scope: 'channel',
+					form: true,
+					render: channelOverview
+				}
+			];
+			if (channel.type === 'forum') {
+				channelTabs.push({
+					id: 'channel-tags',
+					label: 'Tags',
+					scope: 'channel',
+					count: forumState.tags(channel.id).length,
+					render: forumTags
+				});
+			}
+			out.push({ scope: 'channel', label: `#${channel.name}`, tabs: channelTabs });
 		}
 
 		if (server) {
@@ -142,6 +150,11 @@
 {#snippet channelOverview()}
 	{#if channelId != null}
 		<ChannelSettings {channelId} />
+	{/if}
+{/snippet}
+{#snippet forumTags()}
+	{#if channelId != null}
+		<ForumTagsSettings {channelId} />
 	{/if}
 {/snippet}
 {#snippet serverOverview()}

@@ -2,7 +2,7 @@ export type Channel = {
 	id: number;
 	name: string;
 	channel_settings: object;
-	type: 'text' | 'voice';
+	type: 'text' | 'voice' | 'forum';
 	topic?: string | null;
 	/** The category the channel sits in; null when it is ungrouped. */
 	group_id: number | null;

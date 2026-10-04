@@ -29,7 +29,16 @@
 		serverActions
 	} from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
-	import { Hash, Volume2, ChevronDown, ChevronRight, Plus, Settings } from 'lucide-svelte';
+	import { channelPath } from '$lib/utils/channelRoutes';
+	import {
+		Hash,
+		MessagesSquare,
+		Volume2,
+		ChevronDown,
+		ChevronRight,
+		Plus,
+		Settings
+	} from 'lucide-svelte';
 
 	let createOpen = $state(false);
 	let createGroupId: number | undefined = $state(undefined);
@@ -54,7 +63,7 @@
 		return channels.filter(
 			(c) =>
 				c.id === activeChannelId ||
-				(c.type === 'text' &&
+				(c.type !== 'voice' &&
 					(unreadState.channelUnread(c.id) || unreadState.channelMentions(c.id) > 0)) ||
 				(c.type === 'voice' && voiceRoster(c.id).length > 0)
 		);
@@ -139,11 +148,7 @@
 	}
 
 	function channelHref(channel: Channel) {
-		return `/app/server/${serversState.selectedServer?.id}/channel/${channel.id}/`;
-	}
-
-	function voiceHref(channel: Channel) {
-		return `/app/server/${serversState.selectedServer?.id}/voice/${channel.id}/`;
+		return channelPath(serversState.selectedServer?.id ?? 0, channel);
 	}
 </script>
 
@@ -188,7 +193,7 @@
 			}
 		})}
 		label={channel.name}
-		href={voiceHref(channel)}
+		href={channelHref(channel)}
 		active={channel.id === activeChannelId}
 		dragging={dragChannelId === channel.id}
 		draggable={canManageChannels}
@@ -243,7 +248,11 @@
 						ondragend={resetDrag}
 					>
 						{#snippet icon()}
-							<Hash size={16} strokeWidth={1.75} />
+							{#if channel.type === 'forum'}
+								<MessagesSquare size={16} strokeWidth={1.75} />
+							{:else}
+								<Hash size={16} strokeWidth={1.75} />
+							{/if}
 						{/snippet}
 					</SidebarRow>
 				{/if}

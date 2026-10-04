@@ -12,7 +12,7 @@ type ChannelUnread = {
 };
 
 /**
- * Single source of truth for unread state across text channels and DMs (DM raw
+ * Single source of truth for unread state across text and forum channels and DMs (DM raw
  * data lives on conversationsState — see its last_read_message_id/last_message_id/
  * unread_count — this just aggregates it alongside channels).
  */
@@ -56,7 +56,7 @@ class UnreadState {
 		return this.channels[channelId]?.lastMessageId ?? null;
 	}
 
-	/** Any text channel of this server unread, and its summed mentions. */
+	/** Any text or forum channel of this server unread, and its summed mentions. */
 	serverUnread(serverId: number): { unread: boolean; mentions: number } {
 		let unread = false;
 		let mentions = 0;
@@ -87,7 +87,7 @@ class UnreadState {
 	 *  freshly created/joined server). The fetched markers win. */
 	private applyChannels(serverId: number, fetched: Channel[]) {
 		for (const channel of fetched) {
-			if (channel.type !== 'text') continue;
+			if (channel.type === 'voice') continue;
 			const existing = this.channels[channel.id];
 			const lastReadId = channel.last_read_message_id ?? null;
 			const lastMessageId = channel.last_message_id ?? null;
@@ -126,7 +126,7 @@ class UnreadState {
 	/** A channel we learned about over the socket (channel_created) — unread fields
 	 *  arrive null since nothing's been sent there yet. */
 	noteNewChannel(serverId: number, channel: Channel) {
-		if (channel.type !== 'text') return;
+		if (channel.type === 'voice') return;
 		if (this.channels[channel.id]) return;
 		this.channels[channel.id] = {
 			serverId,
@@ -202,7 +202,7 @@ class UnreadState {
 		void this.persistChannelRead(channelId, messageId);
 	}
 
-	/** Mark every unread text channel of a server read. */
+	/** Mark every unread text and forum channel of a server read. */
 	markServerRead(serverId: number) {
 		for (const [id, c] of Object.entries(this.channels)) {
 			if (c.serverId === serverId && this.isChannelUnread(c)) this.markChannelRead(Number(id));

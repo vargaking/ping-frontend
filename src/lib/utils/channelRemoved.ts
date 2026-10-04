@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
 import { serversState } from '$lib/states/serversState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
+import { forumState } from '$lib/states/forumState.svelte';
 import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
 
 /**
@@ -16,6 +17,7 @@ export async function channelRemoved(serverId: number, channelId: number, byMe =
 
 	serversState.removeChannel(serverId, channelId);
 	voicePresenceState.forgetChannel(channelId);
+	forumState.forgetChannel(channelId);
 
 	if (wasInVoice) await voiceState.leaveVoice();
 	if (wasViewing) await goto(`/app/server/${serverId}/`);
