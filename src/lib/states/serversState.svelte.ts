@@ -8,7 +8,17 @@ import { getUserServers } from '$lib/requests/servers/getUserServers';
 import type { Channel, ChannelGroup, ChannelLayout } from '$lib/types/channel.types';
 import type { Role, Server, ServerMember } from '$lib/types/server.types';
 import type { User } from '$lib/types/auth.types';
-import { has, parseMask, Permission } from '$lib/permissions';
+import { reorderRoles } from '$lib/requests/servers/reorderRoles';
+import { ALL_PERMISSIONS, has, parseMask, Permission } from '$lib/permissions';
+import {
+	applyPositions,
+	assignedRoles,
+	nameColor,
+	positionsForOrder,
+	rankOf,
+	sortRoles,
+	withoutRole
+} from '$lib/utils/roles';
 import { unreadState } from './unreadState.svelte';
 import { usersState } from './usersState.svelte';
 
@@ -147,7 +157,7 @@ export class ServersState {
 			getServerMembers(serverId),
 			getServerRoles(serverId)
 		]);
-		this.roles[serverId] = roles;
+		this.setRoles(serverId, roles);
 		this.memberRoles[serverId] = Object.fromEntries(members.map((m) => [m.user.id, m.role_ids]));
 		return members;
 	}
@@ -156,12 +166,74 @@ export class ServersState {
 		this.memberRoles[serverId] = { ...this.memberRoles[serverId], [userId]: roleIds };
 	}
 
-	/** Names of a member's assigned roles, the owner shown as "Owner". */
-	roleNames(serverId: number, userId: number): string[] {
-		if (this.servers[serverId]?.owner_id === userId) return ['Owner'];
-		const roles = this.roles[serverId] ?? [];
-		const ids = this.memberRoles[serverId]?.[userId] ?? [];
-		return roles.filter((r) => ids.includes(r.id)).map((r) => r.name);
+	setRoles(serverId: number, roles: Role[]) {
+		this.roles[serverId] = sortRoles(roles);
+	}
+
+	/** Add or replace a role (role_created, role_updated); ignored until roles are loaded. */
+	upsertRole(serverId: number, role: Role) {
+		const loaded = this.roles[serverId];
+		if (!loaded) return;
+		this.setRoles(serverId, [...loaded.filter((r) => r.id !== role.id), role]);
+	}
+
+	setRolePositions(serverId: number, positions: { id: number; position: number }[]) {
+		const loaded = this.roles[serverId];
+		if (loaded) this.roles[serverId] = applyPositions(loaded, positions);
+	}
+
+	/** Forget a deleted role everywhere it was used (role_deleted). */
+	removeRole(serverId: number, roleId: number) {
+		const loaded = this.roles[serverId];
+		if (loaded) this.roles[serverId] = withoutRole(loaded, roleId);
+		const members = this.memberRoles[serverId];
+		if (!members) return;
+		this.memberRoles[serverId] = Object.fromEntries(
+			Object.entries(members).map(([userId, ids]) => [userId, ids.filter((id) => id !== roleId)])
+		);
+	}
+
+	/** Apply a new role order at once and save it; a failed save goes back to the previous order.
+	 *  `ids` lists every role except the default one, highest first. */
+	async setRoleOrder(serverId: number, ids: number[]) {
+		const before = this.roles[serverId];
+		if (!before) return;
+		this.setRolePositions(serverId, positionsForOrder(ids));
+		try {
+			this.setRoles(serverId, await reorderRoles(serverId, ids));
+		} catch (e) {
+			this.roles[serverId] = before;
+			toast.error(`Couldn't save the role order: ${getErrorMessage(e)}`);
+		}
+	}
+
+	isOwner(serverId: number): boolean {
+		const ownerId = this.servers[serverId]?.owner_id;
+		return ownerId != null && ownerId === usersState.loggedInUser?.id;
+	}
+
+	/** The logged-in user's mask; the owner holds every permission. */
+	maskOf(serverId: number): bigint {
+		return this.isOwner(serverId) ? ALL_PERMISSIONS : (this.permissions[serverId] ?? 0n);
+	}
+
+	/** Position of the logged-in user's highest role; the owner outranks every role. */
+	rankIn(serverId: number): number {
+		if (this.isOwner(serverId)) return Infinity;
+		const me = usersState.loggedInUser?.id;
+		const ids = me != null ? (this.memberRoles[serverId]?.[me] ?? []) : [];
+		return rankOf(this.roles[serverId] ?? [], ids);
+	}
+
+	/** A member's assigned roles, highest first. */
+	rolesOf(serverId: number, userId: number): Role[] {
+		return assignedRoles(this.roles[serverId] ?? [], this.memberRoles[serverId]?.[userId] ?? []);
+	}
+
+	/** Colour of the member's highest coloured role. */
+	nameColorOf(serverId: number | null | undefined, userId: number): string | null {
+		if (serverId == null) return null;
+		return nameColor(this.roles[serverId] ?? [], this.memberRoles[serverId]?.[userId] ?? []);
 	}
 
 	async fetchServerChannels(serverId: number): Promise<Channel[]> {
