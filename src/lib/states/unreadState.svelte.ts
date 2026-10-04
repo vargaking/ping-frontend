@@ -1,4 +1,4 @@
-import { getServerChannels } from '$lib/requests/channels/getServerChannels';
+import { getServerChannelSnapshot } from '$lib/requests/channels/getServerChannelSnapshot';
 import { markChannelRead } from '$lib/requests/channels/markChannelRead';
 import type { Channel } from '$lib/types/channel.types';
 import { conversationsState } from './conversationsState.svelte';
@@ -109,7 +109,7 @@ class UnreadState {
 		await Promise.all(
 			serverIds.map(async (serverId) => {
 				try {
-					const channels = await getServerChannels(serverId);
+					const { channels } = await getServerChannelSnapshot(serverId);
 					this.applyChannels(serverId, channels);
 				} catch (e) {
 					console.warn('Failed to seed unread state for server', serverId, e);
@@ -215,7 +215,10 @@ class UnreadState {
 		const channel = Object.values(this.channels).find((c) => c.lastMessageId === messageId);
 		if (!channel) return;
 		try {
-			this.applyChannels(channel.serverId, await getServerChannels(channel.serverId));
+			this.applyChannels(
+				channel.serverId,
+				(await getServerChannelSnapshot(channel.serverId)).channels
+			);
 		} catch (e) {
 			console.warn('Failed to refresh unread state after a delete', e);
 		}

@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import dotenv from 'dotenv';
 
@@ -8,6 +8,7 @@ dotenv.config();
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), basicSsl()],
+	test: { include: ['src/**/*.test.ts'] },
 	server: {
 		proxy: {
 			'/api': `http://${process.env.LOCAL_IP}:8000`,

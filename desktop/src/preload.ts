@@ -31,6 +31,7 @@ const bridge = {
 	version: versionArg ? versionArg.slice('--zet-version='.length) : '',
 	platform: process.platform as 'win32' | 'darwin' | 'linux',
 	frameless: true,
+	canShareAudio: process.platform === 'win32',
 	setUnread(state: { count: number; unread: boolean }) {
 		ipcRenderer.send('shell:unread', state);
 	},
@@ -45,6 +46,9 @@ const bridge = {
 	},
 	retry() {
 		ipcRenderer.send('shell:retry');
+	},
+	listScreenSources(): Promise<ScreenSource[]> {
+		return ipcRenderer.invoke('shell:list-sources');
 	},
 	onPickScreenSource(handler: PickHandler) {
 		pickHandler = handler;

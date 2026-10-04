@@ -10,6 +10,7 @@
 	import PresenceTile from '$lib/components/ui/voice/PresenceTile.svelte';
 	import StreamTile from '$lib/components/ui/voice/StreamTile.svelte';
 	import StreamVideo from '$lib/components/ui/voice/StreamVideo.svelte';
+	import StreamSound from '$lib/components/ui/voice/StreamSound.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
@@ -133,6 +134,7 @@
 							onclick={unfocus}
 							class="absolute inset-0 cursor-pointer rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
 						></button>
+						<StreamSound {stream} class="absolute top-2 left-2 max-w-[40%]" />
 						<div class="absolute top-2 right-2 flex gap-2">
 							{#if voiceState.mirrorsSelf(stream)}
 								<Button

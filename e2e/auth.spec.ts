@@ -22,7 +22,7 @@ test('a new user can register, create a server and channel, and send a message',
 		page.getByRole('navigation', { name: 'Servers' }).getByRole('link', { name: serverName })
 	).toBeVisible();
 
-	await page.getByRole('button', { name: 'Create channel' }).click();
+	await page.getByRole('button', { name: 'Create channel', exact: true }).click();
 	await page.getByPlaceholder('Channel name').fill('general');
 	await page.getByRole('dialog').getByRole('button', { name: 'Create', exact: true }).click();
 	await expect(page).toHaveURL(/\/channel\/\d+\//);

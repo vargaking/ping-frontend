@@ -680,6 +680,18 @@ class SocketState {
 				serversState.updateChannel(message.server_id, message.channel);
 				voiceState.renameChannel(message.channel.id, message.channel.name);
 				break;
+			case 'channel_group_created':
+				serversState.addGroup(message.server_id, message.group);
+				break;
+			case 'channel_group_updated':
+				serversState.updateGroup(message.server_id, message.group);
+				break;
+			case 'channel_group_deleted':
+				serversState.removeGroup(message.server_id, message.group_id, message.layout);
+				break;
+			case 'channel_layout_updated':
+				serversState.applyLayout(message.server_id, message.layout);
+				break;
 			case 'channel_deleted':
 				channelRemoved(message.server_id, message.channel_id);
 				break;

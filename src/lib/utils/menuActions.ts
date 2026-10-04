@@ -2,12 +2,14 @@ import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
 import {
 	CheckCheck,
+	FolderPlus,
 	Copy,
 	Link,
 	LogOut,
 	MessageSquare,
 	MicOff,
 	Pencil,
+	Plus,
 	Reply,
 	Settings,
 	SmilePlus,
@@ -36,10 +38,11 @@ import { unreadState } from '$lib/states/unreadState.svelte';
 import { usersState } from '$lib/states/usersState.svelte';
 import type { VoiceMember } from '$lib/states/voiceRoster.svelte';
 import type { User } from '$lib/types/auth.types';
-import type { Channel } from '$lib/types/channel.types';
+import type { Channel, ChannelGroup } from '$lib/types/channel.types';
 import type { MessageType } from '$lib/types/messages.types';
 import type { Server } from '$lib/types/server.types';
 import { db } from '$lib/utils/db';
+import { confirmDeleteGroup, promptCreateGroup, promptRenameGroup } from '$lib/utils/channelGroups';
 import { canKickMember, kickMember } from '$lib/utils/kickMember';
 import { canModerateMember } from '$lib/utils/memberModeration';
 import { disconnectMember, serverMuteMember } from '$lib/utils/voiceModeration';
@@ -215,6 +218,37 @@ export function channelActions(serverId: number, channel: Channel): MenuAction[]
 	return actions;
 }
 
+export function channelGroupActions(
+	group: ChannelGroup,
+	{ onCreateChannel }: { onCreateChannel: () => void }
+): MenuAction[] {
+	if (!serversState.can(Permission.MANAGE_CHANNELS, group.server_id)) return [];
+	return [
+		{
+			id: 'create-channel',
+			label: 'Create channel here',
+			icon: Plus,
+			group: 'channel',
+			run: onCreateChannel
+		},
+		{
+			id: 'rename',
+			label: 'Rename category',
+			icon: Pencil,
+			group: 'manage',
+			run: () => promptRenameGroup(group)
+		},
+		{
+			id: 'delete',
+			label: 'Delete category',
+			icon: Trash2,
+			group: 'danger',
+			destructive: true,
+			run: () => confirmDeleteGroup(group)
+		}
+	];
+}
+
 /** Invite and settings open dialogs that work on the selected server, so they only show for it. */
 export function serverActions(
 	server: Server,
@@ -242,6 +276,15 @@ export function serverActions(
 			icon: UserPlus,
 			group: 'manage',
 			run: onInvite
+		});
+	}
+	if (selected && serversState.can(Permission.MANAGE_CHANNELS, serverId)) {
+		actions.push({
+			id: 'create-category',
+			label: 'Create category',
+			icon: FolderPlus,
+			group: 'manage',
+			run: () => promptCreateGroup(serverId)
 		});
 	}
 	if (selected) {

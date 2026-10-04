@@ -30,6 +30,9 @@ const ALLOWED_PERMISSIONS = new Set([
 	'display-capture'
 ]);
 
+/** Loopback capture of the PC's sound is only supported on Windows. */
+const CAN_SHARE_AUDIO = process.platform === 'win32';
+
 const SAFE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 let mainWindow: BrowserWindow | null = null;
@@ -94,6 +97,12 @@ function registerIpc() {
 		const result = setLaunchAtLogin(enabled);
 		rebuildTrayMenu();
 		return result;
+	});
+
+	ipcMain.handle('shell:list-sources', async (event) => {
+		if (!fromApp(event) || !mainWindow) return [];
+		const sources = await listSources(mainWindow.getMediaSourceId());
+		return sources.map(toScreenSource);
 	});
 
 	ipcMain.on('shell:picker-handler', (event, registered) => {
@@ -174,7 +183,7 @@ function registerSession() {
 		}
 		callback({
 			video: source,
-			audio: request.audioRequested && process.platform === 'win32' ? 'loopback' : undefined
+			audio: request.audioRequested && CAN_SHARE_AUDIO ? 'loopback' : undefined
 		});
 	});
 }

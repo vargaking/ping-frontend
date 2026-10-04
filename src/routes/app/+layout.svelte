@@ -7,14 +7,14 @@
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
-	import ScreenSourcePicker from '$lib/components/voice/ScreenSourcePicker.svelte';
+	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
 	import { desktop } from '$lib/desktop';
-	import { screenPickerState } from '$lib/states/screenPickerState.svelte';
+	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 
 	let { children } = $props();
 
@@ -31,11 +31,11 @@
 
 	onMount(() => {
 		const unsubscribe = desktop?.onPickScreenSource?.((sources) =>
-			screenPickerState.request(sources)
+			shareDialogState.handleShellRequest(sources)
 		);
 		return () => {
 			unsubscribe?.();
-			screenPickerState.choose(null);
+			shareDialogState.close();
 		};
 	});
 
@@ -67,4 +67,4 @@
 <Overlay />
 <PushPrompt />
 <MicPrompt />
-<ScreenSourcePicker />
+<ShareScreenDialog />
