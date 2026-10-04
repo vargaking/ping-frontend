@@ -13,7 +13,9 @@ export const Permission = {
 	MANAGE_CHANNELS: 1n << 8n,
 	KICK_MEMBERS: 1n << 9n,
 	MANAGE_SERVER: 1n << 10n,
-	MANAGE_ROLES: 1n << 11n
+	MANAGE_ROLES: 1n << 11n,
+	MUTE_MEMBERS: 1n << 12n,
+	MOVE_MEMBERS: 1n << 13n
 } as const;
 
 export function parseMask(mask: string): bigint {
