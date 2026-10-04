@@ -41,13 +41,19 @@
 	} from 'lucide-svelte';
 
 	let createOpen = $state(false);
-	let createGroupId: number | undefined = $state(undefined);
+	let createGroupId: number | null | undefined = $state(undefined);
 	let inviteOpen = $state(false);
 
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 	const headerActions = $derived(
 		serversState.selectedServer
-			? serverActions(serversState.selectedServer, { onInvite: () => (inviteOpen = true) })
+			? serverActions(serversState.selectedServer, {
+					onInvite: () => (inviteOpen = true),
+					onCreateChannel: () => {
+						createGroupId = null;
+						createOpen = true;
+					}
+				})
 			: []
 	);
 
@@ -344,48 +350,19 @@
 
 	<!-- body -->
 	<div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 py-3 scrollbar-stable">
-		{#if canManageChannels}
-			<!-- Same height as the create row it replaces, so the list doesn't shift under the cursor. -->
-			{#if dragChannelId !== null}
-				<div
-					role="presentation"
-					ondragover={overUngrouped}
-					ondrop={(e) => drop(e, 'ungrouped')}
-					class="flex h-6 shrink-0 items-center justify-center rounded border border-dashed text-xs {channelDrop?.kind ===
-					'ungrouped'
-						? 'border-primary text-foreground'
-						: 'border-border text-text-subtle'}"
-				>
-					Drop here for no category
-				</div>
-			{:else}
-				<div class="flex h-6 shrink-0 items-center justify-end px-2">
-					<button
-						type="button"
-						aria-label="Create channel"
-						onclick={() => {
-							createGroupId = undefined;
-							createOpen = true;
-						}}
-						class="flex h-5 w-5 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-					>
-						<Plus size={16} strokeWidth={1.75} />
-					</button>
-				</div>
-			{/if}
+		{#if layout.ungrouped.length > 0}
+			<div class="flex flex-col gap-0.5">
+				{#each layout.ungrouped as channel (channel.id)}
+					{@render channelItem(channel)}
+				{/each}
+			</div>
 		{/if}
-
-		<div class="flex flex-col gap-0.5">
-			{#each layout.ungrouped as channel (channel.id)}
-				{@render channelItem(channel)}
-			{/each}
-		</div>
 
 		{#each layout.groups as { group, channels } (group.id)}
 			{@const collapsed = collapsedGroupsState.isCollapsed(group.id)}
 			{@const shown = visibleChannels(group, channels)}
 			{#if canManageChannels || channels.length > 0}
-				<section aria-label={group.name} class="mt-3">
+				<section aria-label={group.name} class="mt-3 first:mt-0">
 					{@render groupHeader(group, collapsed)}
 					<div class="mt-1 flex flex-col gap-0.5">
 						{#each shown as channel (channel.id)}
@@ -398,6 +375,23 @@
 
 		{#if !hasChannels}
 			<p class="px-2 py-1 text-xs text-text-subtle">No channels yet.</p>
+		{/if}
+
+		{#if dragChannelId !== null}
+			<!-- Overlays the bottom of the list, so starting a drag doesn't move the rows. -->
+			<div class="pointer-events-none sticky bottom-0 mt-auto h-0 shrink-0">
+				<div
+					role="presentation"
+					ondragover={overUngrouped}
+					ondrop={(e) => drop(e, 'ungrouped')}
+					class="pointer-events-auto absolute inset-x-0 bottom-0 flex h-8 items-center justify-center rounded border border-dashed bg-sidebar text-xs {channelDrop?.kind ===
+					'ungrouped'
+						? 'border-primary text-foreground'
+						: 'border-border text-text-subtle'}"
+				>
+					Drop here for no category
+				</div>
+			</div>
 		{/if}
 	</div>
 </div>
