@@ -12,11 +12,13 @@
 		user: User;
 		online?: boolean;
 		role?: string;
+		serverId?: number | null;
 	};
 
-	let { user, online = false, role }: Props = $props();
+	let { user, online = false, role, serverId = null }: Props = $props();
 
 	const isMe = $derived(usersState.loggedInUser?.id === user.id);
+	const color = $derived(serversState.nameColorOf(serverId, user.id));
 	const actions = $derived(memberActions(serversState.selectedServerId, user));
 </script>
 
@@ -30,7 +32,11 @@
 			aria-hidden="true"
 		></span>
 	</div>
-	<span class="min-w-0 flex-1 truncate text-sm font-medium {online ? '' : 'text-text-subtle'}">
+	<span
+		class="min-w-0 flex-1 truncate text-sm font-medium {online ? '' : 'text-text-subtle'}"
+		style:color
+		style:opacity={color && !online ? 0.6 : undefined}
+	>
 		{user.username}
 	</span>
 	{#if role}

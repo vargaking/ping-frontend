@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { serversState } from '$lib/states/serversState.svelte';
 	import type { User } from '$lib/types/auth.types';
 	import type { MessageType } from '$lib/types/messages.types';
 	import MessageRow from './MessageRow.svelte';
@@ -14,6 +15,9 @@
 
 	const userId = $derived(messages[0].user_id);
 	const imported = $derived(messages[0].imported_author ?? null);
+	const nameColor = $derived(
+		imported ? null : serversState.nameColorOf(messages[0].server_id, userId)
+	);
 
 	// Resolve the author without gating the whole row on a promise — the row
 	// renders immediately (Avatar shows its placeholder) and fills in when the
@@ -61,7 +65,11 @@
 		{/if}
 		<div class="flex max-w-[760px] items-baseline gap-2">
 			<span class="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-foreground">
-				<AuthorName name={imported?.name ?? user?.username ?? '…'} imported={imported != null} />
+				<AuthorName
+					name={imported?.name ?? user?.username ?? '…'}
+					imported={imported != null}
+					color={nameColor}
+				/>
 			</span>
 			<span class="shrink-0 font-mono text-[11px] whitespace-nowrap text-text-subtle">
 				{headerTime}
