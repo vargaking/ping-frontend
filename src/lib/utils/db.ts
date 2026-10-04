@@ -113,6 +113,10 @@ function createDb(): AppDb {
 			dexieDb.version(2).stores({
 				messages: 'id, server_id, channel_id, conversation_id, user_id, content, timestamp'
 			});
+			// v3 indexes post_id so a forum post's messages can be read back per post.
+			dexieDb.version(3).stores({
+				messages: 'id, server_id, channel_id, conversation_id, post_id, user_id, content, timestamp'
+			});
 			return dexieDb;
 		} catch (e) {
 			console.warn('IndexedDB unavailable — falling back to in-memory store.', e);
