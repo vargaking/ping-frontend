@@ -19,10 +19,15 @@ class UsersState {
 		this.onlineUsers = new SvelteSet();
 	}
 
-	/** Profile responses about us omit the admin flag; keep the one we already know. */
+	/** Profile responses about us omit the /auth/me-only fields; keep the ones we already know. */
 	private keepAdminFlag(user: User): User {
-		if (user.is_platform_admin !== undefined || this.loggedInUser?.id !== user.id) return user;
-		return { ...user, is_platform_admin: this.loggedInUser.is_platform_admin };
+		const known = this.loggedInUser;
+		if (!known || known.id !== user.id) return user;
+		return {
+			...user,
+			is_platform_admin: user.is_platform_admin ?? known.is_platform_admin,
+			max_attachment_bytes: user.max_attachment_bytes ?? known.max_attachment_bytes
+		};
 	}
 
 	setLoggedInUser(incoming: User | null) {

@@ -1,11 +1,24 @@
+import { isAxiosError } from 'axios';
 import { PUBLIC_BASE_URL } from '$env/static/public';
 import type { Attachment } from '$lib/types/attachment.types';
 import type { MessageTarget } from '$lib/types/messages.types';
 import { axiosClient } from '../axiosClient';
 import { normalizeError } from '../errors';
+import { usersState } from '$lib/states/usersState.svelte';
 
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** Used when the server doesn't report its own cap. */
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
+export function maxAttachmentBytes(): number {
+	const reported = usersState.loggedInUser?.max_attachment_bytes;
+	return typeof reported === 'number' && reported > 0 ? reported : DEFAULT_MAX_ATTACHMENT_BYTES;
+}
+
+export function formatSizeLimit(bytes: number): string {
+	const mb = bytes / 1024 ** 2;
+	return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
+}
 
 export const uploadAttachment = async (
 	file: File,
@@ -29,7 +42,12 @@ export const uploadAttachment = async (
 		return response.data;
 	} catch (error) {
 		if (normalizeError(error).status === 413) {
-			throw new Error('File is larger than 10 MB');
+			const detail = isAxiosError(error) ? error.response?.data?.detail : null;
+			throw new Error(
+				typeof detail === 'string'
+					? detail
+					: `File is larger than ${formatSizeLimit(maxAttachmentBytes())}`
+			);
 		}
 		throw error;
 	}
