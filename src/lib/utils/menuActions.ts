@@ -348,7 +348,7 @@ export function channelGroupActions(
 /** Invite and settings open dialogs that work on the selected server, so they only show for it. */
 export function serverActions(
 	server: Server,
-	{ onInvite }: { onInvite?: () => void } = {}
+	{ onInvite, onCreateChannel }: { onInvite?: () => void; onCreateChannel?: () => void } = {}
 ): MenuAction[] {
 	const serverId = server.id;
 	if (serverId == null) return [];
@@ -375,6 +375,15 @@ export function serverActions(
 		});
 	}
 	if (selected && serversState.can(Permission.MANAGE_CHANNELS, serverId)) {
+		if (onCreateChannel) {
+			actions.push({
+				id: 'create-channel',
+				label: 'Create channel',
+				icon: Plus,
+				group: 'manage',
+				run: onCreateChannel
+			});
+		}
 		actions.push({
 			id: 'create-category',
 			label: 'Create category',
