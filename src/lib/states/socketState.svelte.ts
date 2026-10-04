@@ -10,8 +10,10 @@ import {
 	messageThreadKey,
 	channelThreadKey,
 	directThreadKey,
+	postThreadKey,
 	threadKey
 } from './messagesState.svelte';
+import { forumState } from './forumState.svelte';
 import { typingState } from './typingState.svelte';
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
@@ -22,6 +24,7 @@ import { voicePresenceState } from './voicePresenceState.svelte';
 import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound';
 import { notifyChannelMessage, showThreadNotification } from '$lib/utils/desktopNotification';
 import { channelTag, dmTag } from '$lib/utils/notificationTags';
+import { postPath } from '$lib/utils/channelRoutes';
 import { messageMentionsUser, messagePreviewText } from '$lib/utils/messageContent';
 import { db } from '$lib/utils/db';
 import { channelRemoved } from '$lib/utils/channelRemoved';
@@ -125,6 +128,7 @@ class SocketState {
 			// Voice frames sent while we were offline are gone, so refetch.
 			const serverId = serversState.selectedServerId;
 			if (this.hasConnected && serverId != null) voicePresenceState.load(serverId);
+			if (this.hasConnected) forumState.markStale();
 			this.hasConnected = true;
 
 			this.sendActivity(documentFocusState.active ? 'active' : 'idle');
@@ -277,7 +281,12 @@ class SocketState {
 		this.socket.send(
 			JSON.stringify(
 				target.kind === 'channel'
-					? { type: 'typing', server_id: target.serverId, channel_id: target.channelId }
+					? {
+							type: 'typing',
+							server_id: target.serverId,
+							channel_id: target.channelId,
+							...(target.postId != null && { post_id: target.postId })
+						}
 					: { type: 'typing', conversation_id: target.conversationId }
 			)
 		);
@@ -313,6 +322,7 @@ class SocketState {
 						id,
 						server_id: target.serverId,
 						channel_id: target.channelId,
+						post_id: target.postId ?? null,
 						user_id: user.id,
 						content: message,
 						timestamp,
@@ -338,6 +348,7 @@ class SocketState {
 						id,
 						server_id: target.serverId,
 						channel_id: target.channelId,
+						...(target.postId != null && { post_id: target.postId }),
 						content: message,
 						timestamp,
 						attachment_ids: attachmentIds,
@@ -380,12 +391,17 @@ class SocketState {
 		const mine = me != null && message.user_id === me.id;
 		const channelId = message.channel_id;
 		const serverId = message.server_id;
+		const postId = message.post_id ?? null;
 
-		if (channelId != null) typingState.clear(channelThreadKey(channelId), message.user_id);
+		if (channelId != null) typingState.clear(messageThreadKey(message), message.user_id);
 
+		// A post's thread is only filled once opened; an unopened one fetches its
+		// history (including this message) then.
 		const isCurrentThread =
-			message.server_id == serversState.selectedServerId &&
-			message.channel_id == serversState.selectedChannelId;
+			postId != null
+				? messagesState.has(postThreadKey(postId))
+				: message.server_id == serversState.selectedServerId &&
+					message.channel_id == serversState.selectedChannelId;
 		if (isCurrentThread) {
 			messagesState.addMessage(message);
 		}
@@ -403,10 +419,12 @@ class SocketState {
 		const beingRead = unreadState.isBeingRead(channelThreadKey(channelId));
 		const mentionsMe = !mine && me != null && messageMentionsUser(message.content, me.id);
 
+		// Forum channels are read as a whole: the forum views mark them read, as
+		// no single message list is open to do it.
 		unreadState.noteChannelMessage(channelId, serverId, message.id, {
 			mine,
 			mentionsMe,
-			read: beingRead
+			read: beingRead && postId == null
 		});
 
 		if (mine || beingRead) return;
@@ -415,6 +433,7 @@ class SocketState {
 			kind: 'channel',
 			channelId,
 			serverId,
+			postId,
 			senderId: message.user_id,
 			content: message.content,
 			attachments: message.attachments,
@@ -463,6 +482,8 @@ class SocketState {
 					kind: 'channel';
 					channelId: number;
 					serverId: number;
+					/** Set for a message in a forum post. */
+					postId: number | null;
 					senderId: number;
 					content: unknown;
 					attachments?: Attachment[];
@@ -512,12 +533,16 @@ class SocketState {
 		}
 
 		const server = serversState.servers[args.serverId];
+		const href =
+			args.postId != null
+				? postPath(args.serverId, args.channelId, args.postId)
+				: `/app/server/${args.serverId}/channel/${args.channelId}/`;
 		if (args.mentionsMe) {
 			void showThreadNotification({
 				tag: channelTag(args.channelId),
 				title: `${senderUsername} in #${unreadState.channelName(args.channelId)}`,
 				body,
-				url: `/app/server/${args.serverId}/channel/${args.channelId}/`,
+				url: href,
 				messageUuid: args.messageUuid,
 				noun: 'mentions'
 			});
@@ -531,7 +556,7 @@ class SocketState {
 			senderUsername,
 			content: args.content,
 			attachments: args.attachments,
-			href: `/app/server/${args.serverId}/channel/${args.channelId}/`
+			href
 		});
 	}
 
@@ -657,7 +682,9 @@ class SocketState {
 				typingState.note(
 					message.conversation_id != null
 						? directThreadKey(message.conversation_id)
-						: channelThreadKey(message.channel_id),
+						: message.post_id != null
+							? postThreadKey(message.post_id)
+							: channelThreadKey(message.channel_id),
 					message.user_id
 				);
 				break;
@@ -679,6 +706,16 @@ class SocketState {
 			case 'channel_updated':
 				serversState.updateChannel(message.server_id, message.channel);
 				voiceState.renameChannel(message.channel.id, message.channel.name);
+				break;
+			case 'forum_post_created':
+			case 'forum_post_updated':
+				forumState.applyPost(message.post);
+				break;
+			case 'forum_post_deleted':
+				forumState.applyPostDeleted(message.channel_id, message.post_id);
+				break;
+			case 'forum_tags_updated':
+				forumState.applyTags(message.channel_id, message.tags);
 				break;
 			case 'channel_group_created':
 				serversState.addGroup(message.server_id, message.group);
@@ -768,6 +805,18 @@ class SocketState {
 					this.outbox.drop(message.ref);
 					this.handleMessageDeleted({ id: message.ref });
 					toast.error("Couldn't send the reply. The original message is no longer there.");
+					break;
+				}
+				if (message.code === 'post_locked' && message.ref) {
+					this.outbox.drop(message.ref);
+					this.handleMessageDeleted({ id: message.ref });
+					toast.error('This post is locked.');
+					break;
+				}
+				if (message.code === 'invalid_post' && message.ref) {
+					this.outbox.drop(message.ref);
+					this.handleMessageDeleted({ id: message.ref });
+					toast.error('This post no longer exists.');
 					break;
 				}
 				console.warn('Server rejected a frame:', message.code, message.ref);
