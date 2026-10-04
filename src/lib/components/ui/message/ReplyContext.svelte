@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { Reply } from 'lucide-svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import AuthorName from './AuthorName.svelte';
 	import type { ReplyRef } from '$lib/types/messages.types';
 
 	let { reply, onJump }: { reply: ReplyRef; onJump: (messageId: string) => void } = $props();
 
-	const authorId = $derived(reply.deleted ? null : reply.user_id);
-	const authorName = $derived(authorId != null ? usersState.users[authorId]?.username : undefined);
+	const imported = $derived(reply.deleted ? null : (reply.imported_author ?? null));
+	const authorId = $derived(reply.deleted || imported ? null : reply.user_id);
+	const authorName = $derived(
+		imported ? imported.name : authorId != null ? usersState.users[authorId]?.username : undefined
+	);
 
 	$effect(() => {
 		if (authorId != null) usersState.getOrFetchUser(authorId);
@@ -25,6 +29,9 @@
 		class="mb-0.5 flex max-w-[760px] min-w-0 items-center gap-1.5 rounded text-left text-xs text-text-subtle transition-colors hover:text-text-body focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 	>
 		<Reply size={16} strokeWidth={1.75} class="shrink-0" />
-		<span class="truncate">{authorName ?? '…'}: {reply.preview}</span>
+		<span class="flex shrink-0 items-center gap-1">
+			<AuthorName name={authorName ?? '…'} imported={imported != null} />{imported ? '' : ':'}
+		</span>
+		<span class="truncate">{reply.preview}</span>
 	</button>
 {/if}

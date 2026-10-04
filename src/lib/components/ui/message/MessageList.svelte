@@ -1,5 +1,6 @@
 <script lang="ts">
 	import MessageGroup from './MessageGroup.svelte';
+	import { continuesGroup } from '$lib/utils/messageGroups';
 	import DateDivider from './DateDivider.svelte';
 	import UnreadDivider from './UnreadDivider.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
@@ -76,8 +77,6 @@
 	let unreadBoundaryId = $state<string | null>(null);
 	let unreadAnchorId = $state<string | null>(null);
 
-	const GROUP_GAP_MS = 5 * 60 * 1000;
-
 	function dayKey(ts: string) {
 		return new Date(ts).toDateString();
 	}
@@ -95,21 +94,20 @@
 	type RenderItem =
 		| { kind: 'date'; key: string; label: string }
 		| { kind: 'unread'; key: string }
-		| { kind: 'group'; key: string; userId: number; messages: MessageType[] };
+		| { kind: 'group'; key: string; messages: MessageType[] };
 
 	const items = $derived.by<RenderItem[]>(() => {
 		const result: RenderItem[] = [];
 		let lastDay: string | null = null;
-		let group: { userId: number; messages: MessageType[]; lastTs: string } | null = null;
+		let group: MessageType[] | null = null;
 		let unreadInserted = false;
 
 		const flush = () => {
 			if (group) {
 				result.push({
 					kind: 'group',
-					key: `g-${group.messages[0].id}`,
-					userId: group.userId,
-					messages: group.messages
+					key: `g-${group[0].id}`,
+					messages: group
 				});
 				group = null;
 			}
@@ -129,17 +127,11 @@
 				unreadInserted = true;
 			}
 
-			if (
-				group &&
-				group.userId === m.user_id &&
-				!m.reply_to &&
-				new Date(m.timestamp).getTime() - new Date(group.lastTs).getTime() < GROUP_GAP_MS
-			) {
-				group.messages.push(m);
-				group.lastTs = m.timestamp;
+			if (group && continuesGroup(group[group.length - 1], m)) {
+				group.push(m);
 			} else {
 				flush();
-				group = { userId: m.user_id, messages: [m], lastTs: m.timestamp };
+				group = [m];
 			}
 		}
 		flush();
@@ -484,11 +476,7 @@
 				{:else if item.kind === 'unread'}
 					<UnreadDivider />
 				{:else}
-					<MessageGroup
-						userId={item.userId}
-						messages={item.messages}
-						onJumpToMessage={jumpToMessage}
-					/>
+					<MessageGroup messages={item.messages} onJumpToMessage={jumpToMessage} />
 				{/if}
 			{/each}
 		</div>

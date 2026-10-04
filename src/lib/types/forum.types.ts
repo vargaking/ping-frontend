@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Attachment } from './attachment.types';
-import type { Embed, MessageType } from './messages.types';
+import type { Embed, ImportedAuthor, MessageType } from './messages.types';
 
 export type ForumTag = {
 	id: number;
@@ -20,6 +20,7 @@ export type ForumPost = {
 	channel_id: number;
 	title: string;
 	author_id: number | null;
+	imported_author?: ImportedAuthor | null;
 	tag_ids: number[];
 	pinned: boolean;
 	locked: boolean;

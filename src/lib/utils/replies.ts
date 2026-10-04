@@ -7,6 +7,7 @@ export function replyRefFor(message: MessageType): ReplyRef {
 	return {
 		id: message.id,
 		user_id: message.user_id,
+		imported_author: message.imported_author ?? null,
 		preview: messagePreviewText(message.content, message.attachments)
 	};
 }

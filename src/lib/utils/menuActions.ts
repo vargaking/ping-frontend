@@ -101,7 +101,7 @@ async function openDirectMessage(userId: number) {
 
 export function canEditMessage(message: MessageType): boolean {
 	const me = usersState.loggedInUser;
-	return me != null && me.id === message.user_id;
+	return me != null && message.imported_author == null && me.id === message.user_id;
 }
 
 export function canDeleteMessage(message: MessageType): boolean {
@@ -199,7 +199,7 @@ export function messageActions(
 export function canManagePost(post: ForumPost, serverId: number): boolean {
 	const me = usersState.loggedInUser;
 	return (
-		(me != null && post.author_id === me.id) ||
+		(me != null && post.imported_author == null && post.author_id === me.id) ||
 		serversState.can(Permission.MANAGE_MESSAGES, serverId)
 	);
 }

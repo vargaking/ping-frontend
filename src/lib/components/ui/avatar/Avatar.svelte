@@ -6,6 +6,8 @@
 	type Props = {
 		user?: User | null;
 		src?: string | null;
+		/** Initials-only avatar for someone who has no account. */
+		name?: string | null;
 		size?: 'sm' | 'md' | 'lg' | 'xl';
 		/** Tailwind rounding utility, e.g. 'rounded-full', 'rounded-[10px]'. */
 		rounded?: string;
@@ -15,6 +17,7 @@
 	let {
 		user = null,
 		src = null,
+		name = null,
 		size = 'md',
 		rounded = 'rounded-full',
 		className = ''
@@ -35,7 +38,16 @@
 	};
 
 	const imgSrc = $derived(src || user?.profile?.avatar);
-	const toneClass = $derived(user && !imgSrc ? avatarToneClass(user.id) : 'bg-accent');
+	const label = $derived(user?.username ?? name);
+	const toneClass = $derived(
+		imgSrc
+			? 'bg-accent'
+			: user
+				? avatarToneClass(user.id)
+				: name
+					? avatarToneClass(name)
+					: 'bg-accent'
+	);
 </script>
 
 <div
@@ -43,8 +55,8 @@
 >
 	{#if imgSrc}
 		<img src={imgSrc} alt={user?.username || 'User avatar'} class="h-full w-full object-cover" />
-	{:else if user}
-		<span class="font-semibold select-none {textClasses[size]}">{initials(user.username)}</span>
+	{:else if label}
+		<span class="font-semibold select-none {textClasses[size]}">{initials(label)}</span>
 	{:else}
 		<div class="h-3/5 w-3/5 text-text-subtle">
 			<UserSVG />

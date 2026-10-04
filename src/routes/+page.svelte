@@ -43,7 +43,8 @@
 			dot: 'next',
 			items: [
 				{ label: 'Mobile apps', detail: 'iOS and Android' },
-				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' }
+				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' },
+				{ label: 'Moving from Discord', detail: "import your server's history" }
 			]
 		},
 		{
@@ -55,7 +56,6 @@
 				{ label: 'One account across every server' },
 				{ label: 'End-to-end encryption' },
 				{ label: 'Workspaces', detail: 'personal, work and university, on one account' },
-				{ label: 'Moving from Discord', detail: "import your server's history" },
 				{ label: 'Custom frontends' },
 				{ label: 'An automations / bot API' }
 			]

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ForumPost, ForumTag } from '$lib/types/forum.types';
+	import AuthorName from '$lib/components/ui/message/AuthorName.svelte';
 	import ForumTagChip from './ForumTagChip.svelte';
 	import ForumThumbnail from './ForumThumbnail.svelte';
 	import { authorName, tagsOf } from '$lib/utils/forum';
@@ -36,7 +37,10 @@
 {/snippet}
 
 {#snippet meta()}
-	<span class="truncate">{authorName(serverId, post.author_id)}</span>
+	<AuthorName
+		name={post.imported_author?.name ?? authorName(serverId, post.author_id)}
+		imported={post.imported_author != null}
+	/>
 	<span aria-hidden="true">·</span>
 	<span class="flex shrink-0 items-center gap-1">
 		<MessageSquare size={12} strokeWidth={1.75} />
