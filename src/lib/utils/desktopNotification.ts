@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { desktop } from '$lib/desktop';
 import type { Attachment } from '$lib/types/attachment.types';
 import { messagePreviewText } from './messageContent';
 import type { NotificationData } from './notificationTags';
@@ -31,6 +32,7 @@ function notify(opts: NotifyOptions) {
 			icon: ICON
 		});
 		notification.onclick = () => {
+			desktop?.showWindow();
 			window.focus();
 			goto(opts.href);
 			notification.close();
@@ -69,7 +71,7 @@ export async function showThreadNotification(opts: {
 	noun: 'messages' | 'mentions';
 }) {
 	try {
-		const registration = await navigator.serviceWorker?.getRegistration();
+		const registration = desktop ? undefined : await navigator.serviceWorker?.getRegistration();
 		if (!registration) {
 			notify({ tag: opts.tag, title: opts.title, body: opts.body, href: opts.url });
 			return;

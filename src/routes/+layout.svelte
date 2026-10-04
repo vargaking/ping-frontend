@@ -14,7 +14,10 @@
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
+	import { desktop, frameless } from '$lib/desktop';
+	import DesktopTitleBar from '$lib/components/ui/shell/DesktopTitleBar.svelte';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
+	import { SITE_NAME } from '$lib/meta';
 
 	let { children } = $props();
 
@@ -24,6 +27,10 @@
 	onMount(() => {
 		window.addEventListener('pointerdown', primeNotificationSound, { once: true });
 		window.addEventListener('keydown', primeNotificationSound, { once: true });
+	});
+
+	onMount(() => {
+		if (frameless) document.documentElement.dataset.frameless = '';
 	});
 
 	// A push notification click asks an already-open tab to move to its thread.
@@ -64,9 +71,49 @@
 	// a logged-in user never sees /login before bouncing to /app.
 	let ready = $state(false);
 
+	let unreachable = $state(false);
+
+	const inApp = $derived(page.route.id?.startsWith('/app') ?? false);
+
+	// When the server can't be reached, stay on the loading screen and keep trying
+	// instead of treating the user as logged out.
 	onMount(() => {
-		initializeAppData().finally(() => {
-			authChecked = true;
+		const retryDelays = [2000, 4000, 8000, 10000];
+		let attempt = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let running = false;
+		let finished = false;
+
+		async function load() {
+			if (running || finished) return;
+			running = true;
+			clearTimeout(timer);
+			const result = await initializeAppData();
+			running = false;
+			if (finished) return;
+			if (result === 'ok') {
+				finished = true;
+				unreachable = false;
+				authChecked = true;
+				return;
+			}
+			unreachable = true;
+			timer = setTimeout(load, retryDelays[Math.min(attempt++, retryDelays.length - 1)]);
+		}
+
+		window.addEventListener('online', load);
+		void load();
+		return () => {
+			finished = true;
+			clearTimeout(timer);
+			window.removeEventListener('online', load);
+		};
+	});
+
+	$effect(() => {
+		desktop?.setUnread({
+			count: loggedIn ? unreadState.badgeTotal : 0,
+			unread: loggedIn && unreadState.anyUnread
 		});
 	});
 
@@ -88,14 +135,14 @@
 			return;
 		}
 
-		if (isPublicPath(path)) {
+		if (isPublicPath(path) && !(desktop && path === '/')) {
 			ready = true;
 			return;
 		}
 
 		// Protected route while logged out: remember where they were headed.
 		ready = false;
-		const target = safeNext(path + url.search);
+		const target = path === '/' ? null : safeNext(path + url.search);
 		goto(target ? `/login?next=${encodeURIComponent(target)}` : '/login', { replaceState: true });
 	});
 </script>
@@ -105,13 +152,30 @@
 <ModeWatcher defaultMode="dark" />
 <Toaster position="bottom-right" />
 
-{#if ready}
-	{@render children()}
-{:else}
-	<div class="flex h-screen w-screen items-center justify-center bg-background">
-		<div class="flex flex-col items-center gap-3">
-			<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
-			<span class="sr-only">Loading…</span>
+{#snippet content()}
+	{#if ready}
+		{@render children()}
+	{:else}
+		<div class="flex h-screen w-screen items-center justify-center bg-background">
+			<div class="flex flex-col items-center gap-3">
+				<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
+				{#if unreachable}
+					<span class="text-sm text-muted-foreground">Can't reach {SITE_NAME}. Reconnecting…</span>
+				{:else}
+					<span class="sr-only">Loading…</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#if frameless && !(ready && inApp)}
+	<div class="flex h-screen w-screen flex-col">
+		<DesktopTitleBar />
+		<div class="desktop-page relative min-h-0 flex-1 overflow-auto">
+			{@render content()}
 		</div>
 	</div>
+{:else}
+	{@render content()}
 {/if}

@@ -1,6 +1,22 @@
 <script lang="ts">
 	import { ArrowRight } from 'lucide-svelte';
 	import Logo from '$lib/components/brand/Logo.svelte';
+	import { onMount } from 'svelte';
+	import { desktop } from '$lib/desktop';
+
+	const downloadOptions = [
+		{ platform: 'windows', label: 'Download for Windows' },
+		{ platform: 'linux', label: 'Download for Linux' }
+	];
+
+	let onLinux = $state(false);
+	const downloads = $derived(onLinux ? [...downloadOptions].reverse() : downloadOptions);
+
+	onMount(() => {
+		const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+		const platform = nav.userAgentData?.platform ?? navigator.userAgent;
+		onLinux = /Linux/i.test(platform) && !/Android/i.test(navigator.userAgent);
+	});
 
 	const roadmap = [
 		{
@@ -17,6 +33,7 @@
 				{ label: 'Direct messages' },
 				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
 				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
+				{ label: 'Desktop app', detail: 'Windows and Linux, with tray and launch at login' },
 				{ label: 'Servers', detail: 'invites, roles, member management' }
 			]
 		},
@@ -25,7 +42,6 @@
 			note: 'in progress',
 			dot: 'next',
 			items: [
-				{ label: 'Desktop app' },
 				{ label: 'Mobile apps', detail: 'iOS and Android' },
 				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' }
 			]
@@ -95,7 +111,24 @@
 				>
 					Create account
 				</a>
+				{#if !desktop}
+					{#each downloads as item (item.platform)}
+						<a
+							href="/download/{item.platform}"
+							data-sveltekit-reload
+							class="inline-flex h-11 items-center rounded-[10px] border border-input bg-accent px-5 text-sm font-medium text-foreground transition-colors hover:bg-accent/70"
+						>
+							{item.label}
+						</a>
+					{/each}
+				{/if}
 			</div>
+			{#if !desktop}
+				<p class="mt-3 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+					The installer isn't signed yet, so Windows warns about an unknown publisher. Choose "More
+					info", then "Run anyway". On Linux, make the AppImage executable, then run it.
+				</p>
+			{/if}
 		</section>
 
 		<section class="relative z-[1] mt-24">

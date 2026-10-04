@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore: ['desktop/**']
   push:
     branches: [master]
+    paths-ignore: ['desktop/**']
 
 jobs:
   lint-and-check:

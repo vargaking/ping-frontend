@@ -9,6 +9,8 @@ import {
 	type EnablePushResult
 } from '$lib/utils/push';
 
+import { desktop } from '$lib/desktop';
+
 const DESKTOP_KEY = 'notifications:desktop';
 const SOUND_KEY = 'notifications:sound';
 
@@ -48,7 +50,7 @@ function readPermission(): NotificationPermissionState {
  *  browser permission state (re-read on focus and on settings-tab mount) and
  *  whether this browser is subscribed to Web Push. */
 class NotificationsState {
-	desktop = $state(readBool(DESKTOP_KEY, false));
+	desktop = $state(readBool(DESKTOP_KEY, !!desktop));
 	sound = $state(readBool(SOUND_KEY, true));
 	permission = $state<NotificationPermissionState>(readPermission());
 	push = $state<PushState>('unsupported');

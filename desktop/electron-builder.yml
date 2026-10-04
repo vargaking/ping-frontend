@@ -1,0 +1,28 @@
+appId: app.zetchat.desktop
+productName: Zet
+publish: null
+directories:
+  output: release
+  buildResources: assets
+files:
+  - dist/**
+  - static/**
+  - assets/tray*.png
+  - assets/overlay*.png
+  - assets/icon.png
+win:
+  target: nsis
+  icon: assets/icon.ico
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: Zet-Setup.${ext}
+mac:
+  target: dmg
+  icon: assets/icon.png
+linux:
+  target: AppImage
+  artifactName: Zet.${ext}
+  executableName: zet
+  icon: assets/icon.png
+  category: Network

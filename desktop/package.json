@@ -1,0 +1,26 @@
+{
+	"name": "zet-desktop",
+	"version": "0.2.0",
+	"private": true,
+	"description": "Zet desktop shell",
+	"main": "dist/main.js",
+	"scripts": {
+		"build": "tsc",
+		"check": "tsc --noEmit",
+		"lint": "prettier --check .",
+		"start": "npm run build && electron .",
+		"icons": "node scripts/icons.mjs",
+		"dist": "npm run build && electron-builder",
+		"dist:win": "npm run build && electron-builder --win",
+		"dist:linux": "npm run build && electron-builder --linux"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.4",
+		"electron": "^44.5.1",
+		"electron-builder": "^26.15.3",
+		"png-to-ico": "^3.0.2",
+		"prettier": "^3.9.9",
+		"sharp": "^0.35.5",
+		"typescript": "^7.0.2"
+	}
+}

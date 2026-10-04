@@ -3,6 +3,7 @@ import { subscribePush } from '$lib/requests/push/subscribePush';
 import { unsubscribePush } from '$lib/requests/push/unsubscribePush';
 import type { PushConfig, PushTestResult } from '$lib/types/push.types';
 import { urlBase64ToBytes } from '$lib/utils/base64url';
+import { desktop } from '$lib/desktop';
 
 export type EnablePushResult = 'enabled' | 'denied' | 'dismissed' | 'unsupported' | 'error';
 
@@ -27,13 +28,14 @@ function isMobileBrowser(): boolean {
 	);
 }
 
-/** Web Push is offered on desktop browsers only. */
+/** Web Push is offered on desktop browsers only; the desktop app has no push service. */
 export function pushSupported(): boolean {
 	if (typeof window === 'undefined') return false;
 	return (
 		'serviceWorker' in navigator &&
 		'PushManager' in window &&
 		'Notification' in window &&
+		!desktop &&
 		!isMobileBrowser()
 	);
 }
