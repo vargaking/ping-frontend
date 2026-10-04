@@ -17,7 +17,7 @@ import { toast } from 'svelte-sonner';
 import type { VoiceQuality } from './connectionState.svelte';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
-import { voicePeerAudioState } from './voicePeerAudioState.svelte';
+import { voicePeerAudioState, voiceStreamAudioState } from './voicePeerAudioState.svelte';
 import { DEFAULT_DEVICE, voiceSettingsState } from './voiceSettingsState.svelte';
 import { axiosClient } from '$lib/requests/axiosClient';
 import {
@@ -37,6 +37,7 @@ import {
 	type ScreenContent,
 	type ScreenPresetId
 } from '$lib/utils/screenShare';
+import { soundEnv, soundOption, soundResult } from '$lib/utils/shareSound';
 
 export interface VoicePeer {
 	id: string;
@@ -60,6 +61,8 @@ export interface ScreenStream {
 	track: RemoteVideoTrack | LocalVideoTrack;
 	/** What the browser is capturing. Only known for your own share. */
 	surface?: 'monitor' | 'window' | 'browser';
+	/** The sharer is publishing sound with the video. */
+	sound: boolean;
 }
 
 /** Participant attribute other clients read to show someone as deafened. */
@@ -124,6 +127,10 @@ class VoiceState {
 	peers: SvelteMap<string, VoicePeer> = $state(new SvelteMap());
 	/** The user's own screen share is live. */
 	sharing: boolean = $state(false);
+	/** A share is starting: the picker is open or the tracks are publishing. */
+	startingShare: boolean = $state(false);
+	/** Whether your own share carries sound, and why not. Null while not sharing. */
+	shareSound: { on: boolean; text: string } | null = $state(null);
 	// participant identity -> their screen share video
 	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
 	/** Identities LiveKit reported gone since they last connected to this room. */
@@ -214,8 +221,19 @@ class VoiceState {
 			username: p.name || 'Unknown',
 			local,
 			track,
-			surface: local ? this.captureSurface(track) : undefined
+			surface: local ? this.captureSurface(track) : undefined,
+			sound: this.hasScreenSound(p)
 		});
+	}
+
+	private hasScreenSound(p: Participant): boolean {
+		return p.getTrackPublication(Track.Source.ScreenShareAudio) !== undefined;
+	}
+
+	private refreshScreenSound(p: Participant) {
+		const stream = this.screens.get(p.identity);
+		const sound = this.hasScreenSound(p);
+		if (stream && stream.sound !== sound) this.screens.set(p.identity, { ...stream, sound });
 	}
 
 	private captureSurface(track: RemoteVideoTrack | LocalVideoTrack): ScreenStream['surface'] {
@@ -341,7 +359,15 @@ class VoiceState {
 
 	/** Apply this user's volume and mute-for-me choice to a person in the call. */
 	private applyPeerAudio(userId: number) {
-		this.room?.remoteParticipants.get(String(userId))?.setVolume(voicePeerAudioState.level(userId));
+		const p = this.room?.remoteParticipants.get(String(userId));
+		if (p) this.seedPeerAudio(p);
+	}
+
+	/** Voice and screen share sound are separate sources, each with its own level. */
+	private seedPeerAudio(p: RemoteParticipant) {
+		const userId = Number(p.identity);
+		p.setVolume(voicePeerAudioState.level(userId), Track.Source.Microphone);
+		p.setVolume(voiceStreamAudioState.level(userId), Track.Source.ScreenShareAudio);
 	}
 
 	setPeerVolume(userId: number, volume: number) {
@@ -351,6 +377,16 @@ class VoiceState {
 
 	setPeerMuted(userId: number, muted: boolean) {
 		voicePeerAudioState.set(userId, { muted });
+		this.applyPeerAudio(userId);
+	}
+
+	setStreamVolume(userId: number, volume: number) {
+		voiceStreamAudioState.set(userId, { volume });
+		this.applyPeerAudio(userId);
+	}
+
+	setStreamMuted(userId: number, muted: boolean) {
+		voiceStreamAudioState.set(userId, { muted });
 		this.applyPeerAudio(userId);
 	}
 
@@ -376,10 +412,17 @@ class VoiceState {
 		const refresh = (_pub: TrackPublication, p: Participant) => this.upsertPeer(p);
 		r.on(RoomEvent.TrackMuted, refresh)
 			.on(RoomEvent.TrackUnmuted, refresh)
-			.on(RoomEvent.TrackPublished, (pub, p) => this.upsertPeer(p))
-			.on(RoomEvent.TrackUnpublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.TrackPublished, (pub, p) => {
+				this.upsertPeer(p);
+				this.refreshScreenSound(p);
+			})
+			.on(RoomEvent.TrackUnpublished, (pub, p) => {
+				this.upsertPeer(p);
+				this.refreshScreenSound(p);
+			})
 			.on(RoomEvent.LocalTrackPublished, (pub, p) => {
 				this.upsertPeer(p);
+				this.refreshScreenSound(p);
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
 				if (pub.track?.kind === Track.Kind.Video) {
 					this.sharing = true;
@@ -389,10 +432,14 @@ class VoiceState {
 			})
 			.on(RoomEvent.LocalTrackUnpublished, (pub, p) => {
 				this.upsertPeer(p);
+				this.refreshScreenSound(p);
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
 				if (pub.kind === Track.Kind.Video && !this.swappingScreen) {
 					this.sharing = false;
+					this.shareSound = null;
 					this.screens.delete(p.identity);
+					const audio = p.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
+					if (audio) void p.unpublishTrack(audio).catch(() => {});
 				}
 			})
 			.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => {
@@ -432,7 +479,7 @@ class VoiceState {
 				this.detachTrack(track);
 			})
 			.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
-				p.setVolume(voicePeerAudioState.level(Number(p.identity)));
+				this.seedPeerAudio(p);
 				this.departed.delete(p.identity);
 				this.upsertPeer(p);
 			})
@@ -508,13 +555,20 @@ class VoiceState {
 
 	async startScreenShare() {
 		const room = this.room;
-		if (!room || this.sharing) return;
+		if (!room || this.sharing || this.startingShare) return;
+		const gen = this.generation;
+		const env = soundEnv();
+		const requested = voiceSettingsState.screenSound;
+		// The browser's picker can still switch to a tab, so only a device that can't share sound at all skips it.
+		const askForAudio = requested && soundOption(env, 'browser').available;
 		const { preset } = SCREEN_PRESETS[voiceSettingsState.screenPreset];
+		this.startingShare = true;
 		try {
 			await room.localParticipant.setScreenShareEnabled(
 				true,
 				{
-					audio: true,
+					audio: askForAudio,
+					video: env.desktop ? true : { displaySurface: voiceSettingsState.screenSurface },
 					resolution: preset.resolution,
 					contentHint: voiceSettingsState.screenContent,
 					selfBrowserSurface: 'exclude',
@@ -524,10 +578,23 @@ class VoiceState {
 				},
 				screenPublishOptions(voiceSettingsState.screenPreset)
 			);
+			const video = this.localScreenTrack;
+			if (gen === this.generation && this.sharing && video) {
+				const hasAudio =
+					room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)?.track !==
+					undefined;
+				this.shareSound = soundResult(env, {
+					audioTracks: hasAudio ? 1 : 0,
+					surface: this.captureSurface(video),
+					requested
+				});
+			}
 		} catch (err) {
 			if (isPickerCancel(err)) return;
 			console.warn('Screen share failed:', err);
 			toast.error(`Couldn't start screen share${err instanceof Error ? `: ${err.message}` : '.'}`);
+		} finally {
+			if (gen === this.generation) this.startingShare = false;
 		}
 	}
 
@@ -583,6 +650,7 @@ class VoiceState {
 			mst.stop();
 			this.swappingScreen = false;
 			this.sharing = false;
+			this.shareSound = null;
 			this.screens.delete(lp.identity);
 			await this.stopScreenShare();
 			const audio = lp.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
@@ -670,6 +738,8 @@ class VoiceState {
 		this.screens = new SvelteMap();
 		this.departed = new SvelteSet();
 		this.sharing = false;
+		this.startingShare = false;
+		this.shareSound = null;
 		this.selfPreview = false;
 		this.quality = 'unknown';
 	}
@@ -844,7 +914,7 @@ class VoiceState {
 			// 4. Seed the peers map: self + everyone already in the room.
 			this.upsertPeer(room.localParticipant);
 			room.remoteParticipants.forEach((p) => {
-				p.setVolume(voicePeerAudioState.level(Number(p.identity)));
+				this.seedPeerAudio(p);
 				this.upsertPeer(p);
 				// Existing tracks fire TrackSubscribed automatically on connect.
 			});
