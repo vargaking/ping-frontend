@@ -700,6 +700,20 @@ class SocketState {
 			case 'member_roles_updated':
 				serversState.setMemberRoles(message.server_id, message.user_id, message.role_ids);
 				break;
+			case 'role_created':
+				serversState.upsertRole(message.server_id, message.role);
+				serversState.setRolePositions(message.server_id, message.positions);
+				break;
+			case 'role_updated':
+				serversState.upsertRole(message.server_id, message.role);
+				break;
+			case 'role_deleted':
+				serversState.removeRole(message.server_id, message.role_id);
+				serversState.setRolePositions(message.server_id, message.positions);
+				break;
+			case 'roles_reordered':
+				serversState.setRolePositions(message.server_id, message.positions);
+				break;
 			case 'channel_created':
 				serversState.addChannel(message.server_id, message.channel);
 				break;

@@ -9,6 +9,7 @@
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
 	import ServerInvites from './ServerInvites.svelte';
 	import ServerMembers from './ServerMembers.svelte';
+	import RolesSettings from './RolesSettings.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import ForumTagsSettings from './ForumTagsSettings.svelte';
 	import { forumState } from '$lib/states/forumState.svelte';
@@ -98,6 +99,15 @@
 				count: server.members?.length,
 				render: serverMembers
 			});
+			if (serversState.can(Permission.MANAGE_ROLES)) {
+				tabs.push({
+					id: 'server-roles',
+					label: 'Roles',
+					scope: 'server',
+					form: true,
+					render: serverRoles
+				});
+			}
 			out.push({ scope: 'server', label: server.name, tabs });
 		}
 
@@ -165,6 +175,9 @@
 {/snippet}
 {#snippet serverMembers()}
 	<ServerMembers onInvite={serversState.canInvite ? () => (inviteOpen = true) : undefined} />
+{/snippet}
+{#snippet serverRoles()}
+	<RolesSettings />
 {/snippet}
 {#snippet account()}
 	<AccountSettings />

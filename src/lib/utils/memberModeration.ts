@@ -1,4 +1,5 @@
-import { has, rolesMask } from '$lib/permissions';
+import { has } from '$lib/permissions';
+import { memberMask } from '$lib/utils/roles';
 import { serversState } from '$lib/states/serversState.svelte';
 import { usersState } from '$lib/states/usersState.svelte';
 
@@ -10,5 +11,5 @@ export function canModerateMember(serverId: number, userId: number, perm: bigint
 	if (ownerId != null && ownerId === myId) return true;
 	const roles = serversState.roles[serverId] ?? [];
 	const memberRoleIds = serversState.memberRoles[serverId]?.[userId] ?? [];
-	return !has(rolesMask(roles, memberRoleIds), perm);
+	return !has(memberMask(roles, memberRoleIds), perm);
 }

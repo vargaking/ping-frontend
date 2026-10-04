@@ -40,4 +40,7 @@ export type Role = {
 	deny: string;
 	parent_id: number | null;
 	is_default: boolean;
+	/** Higher is more powerful; the default role is 0. */
+	position: number;
+	color: string | null;
 };
