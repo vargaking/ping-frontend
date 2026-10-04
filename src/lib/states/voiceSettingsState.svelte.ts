@@ -7,6 +7,7 @@ import {
 	type ScreenContent,
 	type ScreenPresetId
 } from '$lib/utils/screenShare';
+import { SURFACES, type Surface } from '$lib/utils/shareSound';
 
 const STORAGE_KEY = 'voice.devices';
 /** The browser's own default device, as enumerateDevices reports it in Chrome. */
@@ -19,6 +20,8 @@ type Prefs = {
 	echoCancellation: boolean;
 	screenPreset: ScreenPresetId;
 	screenContent: ScreenContent;
+	screenSound: boolean;
+	screenSurface: Surface;
 };
 
 const DEFAULTS: Prefs = {
@@ -27,7 +30,9 @@ const DEFAULTS: Prefs = {
 	noiseSuppression: true,
 	echoCancellation: true,
 	screenPreset: DEFAULT_SCREEN_PRESET,
-	screenContent: DEFAULT_SCREEN_CONTENT
+	screenContent: DEFAULT_SCREEN_CONTENT,
+	screenSound: true,
+	screenSurface: 'monitor'
 };
 
 function loadPrefs(): Prefs {
@@ -45,7 +50,11 @@ function loadPrefs(): Prefs {
 					: DEFAULTS.screenPreset,
 				screenContent: Object.hasOwn(SCREEN_CONTENT_LABELS, saved.screenContent)
 					? saved.screenContent
-					: DEFAULTS.screenContent
+					: DEFAULTS.screenContent,
+				screenSound: saved.screenSound !== false,
+				screenSurface: SURFACES.includes(saved.screenSurface)
+					? saved.screenSurface
+					: DEFAULTS.screenSurface
 			};
 		}
 	} catch {
@@ -63,6 +72,8 @@ class VoiceSettingsState {
 	echoCancellation = $state(DEFAULTS.echoCancellation);
 	screenPreset = $state(DEFAULTS.screenPreset);
 	screenContent = $state(DEFAULTS.screenContent);
+	screenSound = $state(DEFAULTS.screenSound);
+	screenSurface = $state(DEFAULTS.screenSurface);
 
 	inputs = $state<MediaDeviceInfo[]>([]);
 	outputs = $state<MediaDeviceInfo[]>([]);
@@ -88,7 +99,9 @@ class VoiceSettingsState {
 					noiseSuppression: this.noiseSuppression,
 					echoCancellation: this.echoCancellation,
 					screenPreset: this.screenPreset,
-					screenContent: this.screenContent
+					screenContent: this.screenContent,
+					screenSound: this.screenSound,
+					screenSurface: this.screenSurface
 				})
 			);
 		} catch {

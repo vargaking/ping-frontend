@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { voiceState, type ScreenStream } from '$lib/states/voiceState.svelte';
 	import StreamVideo from './StreamVideo.svelte';
+	import StreamSound from './StreamSound.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { Maximize2, EyeOff, MonitorUp } from 'lucide-svelte';
 
@@ -41,6 +42,7 @@
 			class="absolute inset-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
 		></button>
 	{/if}
+	<StreamSound {stream} class="absolute top-2 left-2 z-10" />
 	<div
 		class="pointer-events-none absolute right-2 bottom-2 left-2 flex items-center justify-between gap-2"
 		aria-hidden="true"

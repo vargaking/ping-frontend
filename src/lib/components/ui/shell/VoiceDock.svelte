@@ -4,6 +4,7 @@
 	import { micIssueText } from '$lib/utils/voiceErrors';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
+	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
 	import { Permission } from '$lib/permissions';
 	import {
@@ -23,7 +24,9 @@
 		PhoneOff,
 		ScreenShare,
 		ScreenShareOff,
-		ChevronUp
+		ChevronUp,
+		Volume2,
+		VolumeOff
 	} from 'lucide-svelte';
 
 	const channelName = $derived.by(() => {
@@ -167,6 +170,23 @@
 			</div>
 		{/if}
 
+		{#if voiceState.sharing && voiceState.shareSound}
+			{@const { on, text } = voiceState.shareSound}
+			<div
+				class="mb-2 flex items-start gap-2 rounded-md bg-muted px-2 py-1.5 text-xs {on
+					? 'text-foreground'
+					: 'text-muted-foreground'}"
+				role="status"
+			>
+				{#if on}
+					<Volume2 size={14} strokeWidth={1.75} class="mt-px shrink-0" />
+				{:else}
+					<VolumeOff size={14} strokeWidth={1.75} class="mt-px shrink-0" />
+				{/if}
+				<span class="min-w-0 flex-1">{text}</span>
+			</div>
+		{/if}
+
 		<Tooltip.Provider>
 			<div class="flex items-center gap-2">
 				{@render control(
@@ -191,44 +211,47 @@
 							voiceState.sharing ? 'Stop sharing' : 'Share screen',
 							'',
 							voiceState.sharing,
-							() =>
-								voiceState.sharing ? voiceState.stopScreenShare() : voiceState.startScreenShare(),
+							() => (voiceState.sharing ? voiceState.stopScreenShare() : shareDialogState.show()),
 							shareIcon,
-							'primary'
+							'primary',
+							voiceState.startingShare
 						)}
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger
-								aria-label="Screen share options"
-								class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-							>
-								<ChevronUp size={14} strokeWidth={1.75} />
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Content side="top" align="start" class="w-48">
-								<DropdownMenu.Group>
-									<DropdownMenu.Label>Quality</DropdownMenu.Label>
-									<DropdownMenu.RadioGroup
-										value={voiceSettingsState.screenPreset}
-										onValueChange={(value) => voiceState.setScreenQuality(value as ScreenPresetId)}
-									>
-										{#each Object.entries(SCREEN_PRESETS) as [id, { label }] (id)}
-											<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
-										{/each}
-									</DropdownMenu.RadioGroup>
-								</DropdownMenu.Group>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Group>
-									<DropdownMenu.Label>Optimize for</DropdownMenu.Label>
-									<DropdownMenu.RadioGroup
-										value={voiceSettingsState.screenContent}
-										onValueChange={(value) => voiceState.setScreenContent(value as ScreenContent)}
-									>
-										{#each Object.entries(SCREEN_CONTENT_LABELS) as [id, label] (id)}
-											<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
-										{/each}
-									</DropdownMenu.RadioGroup>
-								</DropdownMenu.Group>
-							</DropdownMenu.Content>
-						</DropdownMenu.Root>
+						{#if voiceState.sharing}
+							<DropdownMenu.Root>
+								<DropdownMenu.Trigger
+									aria-label="Screen share options"
+									class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+								>
+									<ChevronUp size={14} strokeWidth={1.75} />
+								</DropdownMenu.Trigger>
+								<DropdownMenu.Content side="top" align="start" class="w-48">
+									<DropdownMenu.Group>
+										<DropdownMenu.Label>Quality</DropdownMenu.Label>
+										<DropdownMenu.RadioGroup
+											value={voiceSettingsState.screenPreset}
+											onValueChange={(value) =>
+												voiceState.setScreenQuality(value as ScreenPresetId)}
+										>
+											{#each Object.entries(SCREEN_PRESETS) as [id, { label }] (id)}
+												<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
+											{/each}
+										</DropdownMenu.RadioGroup>
+									</DropdownMenu.Group>
+									<DropdownMenu.Separator />
+									<DropdownMenu.Group>
+										<DropdownMenu.Label>Optimize for</DropdownMenu.Label>
+										<DropdownMenu.RadioGroup
+											value={voiceSettingsState.screenContent}
+											onValueChange={(value) => voiceState.setScreenContent(value as ScreenContent)}
+										>
+											{#each Object.entries(SCREEN_CONTENT_LABELS) as [id, label] (id)}
+												<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
+											{/each}
+										</DropdownMenu.RadioGroup>
+									</DropdownMenu.Group>
+								</DropdownMenu.Content>
+							</DropdownMenu.Root>
+						{/if}
 					</div>
 				{/if}
 				<button

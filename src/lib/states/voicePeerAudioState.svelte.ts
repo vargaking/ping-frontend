@@ -6,13 +6,12 @@ export interface PeerAudio {
 	muted: boolean;
 }
 
-const STORAGE_KEY = 'voice.peerAudio';
 const DEFAULT: PeerAudio = { volume: 1, muted: false };
 
-function load(): [number, PeerAudio][] {
+function load(storageKey: string): [number, PeerAudio][] {
 	const saved: [number, PeerAudio][] = [];
 	try {
-		const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
+		const parsed = JSON.parse(localStorage.getItem(storageKey) ?? '{}');
 		for (const [id, value] of Object.entries(parsed)) {
 			const { volume, muted } = value as Partial<PeerAudio>;
 			if (typeof volume !== 'number' || !(volume >= 0 && volume <= 1)) continue;
@@ -25,10 +24,12 @@ function load(): [number, PeerAudio][] {
 }
 
 /** How loud each person is for this user, on this device only. */
-class VoicePeerAudioState {
-	private peers = new SvelteMap<number, PeerAudio>(
-		typeof localStorage === 'undefined' ? [] : load()
-	);
+export class PeerAudioStore {
+	private peers: SvelteMap<number, PeerAudio>;
+
+	constructor(private storageKey: string) {
+		this.peers = new SvelteMap(typeof localStorage === 'undefined' ? [] : load(storageKey));
+	}
 
 	get(userId: number): PeerAudio {
 		return this.peers.get(userId) ?? DEFAULT;
@@ -49,11 +50,14 @@ class VoicePeerAudioState {
 
 	private persist() {
 		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(this.peers)));
+			localStorage.setItem(this.storageKey, JSON.stringify(Object.fromEntries(this.peers)));
 		} catch {
 			/* storage blocked: the choice just won't survive a reload */
 		}
 	}
 }
 
-export const voicePeerAudioState = new VoicePeerAudioState();
+/** How loud each person's voice is. */
+export const voicePeerAudioState = new PeerAudioStore('voice.peerAudio');
+/** How loud each person's screen share sound is. */
+export const voiceStreamAudioState = new PeerAudioStore('voice.streamAudio');
