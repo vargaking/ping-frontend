@@ -31,9 +31,9 @@ test('the channel list always matches the selected server', async ({ browser }) 
 		if (hasChannels) {
 			await expect(channels.getByRole('link', { name: 'alpha' })).toBeVisible();
 			await expect(channels.getByRole('link', { name: 'beta' })).toBeVisible();
-			await expect(channels.getByText('No text channels yet.')).toBeHidden();
+			await expect(channels.getByText('No channels yet.')).toBeHidden();
 		} else {
-			await expect(channels.getByText('No text channels yet.')).toBeVisible();
+			await expect(channels.getByText('No channels yet.')).toBeVisible();
 			await expect(
 				channels.getByRole('link'),
 				`${name} should not list another server's channels`

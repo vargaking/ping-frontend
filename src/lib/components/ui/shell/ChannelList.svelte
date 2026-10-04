@@ -387,7 +387,7 @@
 			{/if}
 		{/each}
 
-		{#if !hasChannels && layout.groups.length === 0}
+		{#if !hasChannels}
 			<p class="px-2 py-1 text-xs text-text-subtle">No channels yet.</p>
 		{/if}
 	</div>
