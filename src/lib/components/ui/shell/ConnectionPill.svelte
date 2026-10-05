@@ -40,7 +40,9 @@
 	>
 		<span class="h-1.5 w-1.5 rounded-full {dots[status]}"></span>
 		<span class="max-w-40 truncate text-[13px]">{serverName}</span>
-		<span class="font-mono text-[11px] text-text-subtle">{formatRtt(info?.rttMs ?? null)}</span>
+		<span class="translate-y-px font-mono text-[11px] text-text-subtle"
+			>{formatRtt(info?.rttMs ?? null)}</span
+		>
 	</Popover.Trigger>
 	<Popover.Content align="center" sideOffset={8} class="p-0">
 		<ConnectionsPopover />

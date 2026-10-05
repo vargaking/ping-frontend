@@ -65,7 +65,7 @@
 			<span class="h-1.5 w-1.5 rounded-full {chip[status].dot}"></span>
 			<span class="text-[11px]">{chip[status].label}</span>
 		</span>
-		<span class="w-12 shrink-0 text-right font-mono text-[11px] text-text-subtle"
+		<span class="w-12 shrink-0 translate-y-px text-right font-mono text-[11px] text-text-subtle"
 			>{formatRtt(rttMs)}</span
 		>
 	</div>
