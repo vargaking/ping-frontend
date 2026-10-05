@@ -10,6 +10,7 @@
 	import ServerInvites from './ServerInvites.svelte';
 	import ServerMembers from './ServerMembers.svelte';
 	import RolesSettings from './RolesSettings.svelte';
+	import ServerImport from './ServerImport.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import ForumTagsSettings from './ForumTagsSettings.svelte';
 	import { forumState } from '$lib/states/forumState.svelte';
@@ -108,6 +109,14 @@
 					render: serverRoles
 				});
 			}
+			if (serversState.isSelectedServerOwner) {
+				tabs.push({
+					id: 'server-import',
+					label: 'Import',
+					scope: 'server',
+					render: serverImport
+				});
+			}
 			out.push({ scope: 'server', label: server.name, tabs });
 		}
 
@@ -178,6 +187,9 @@
 {/snippet}
 {#snippet serverRoles()}
 	<RolesSettings />
+{/snippet}
+{#snippet serverImport()}
+	<ServerImport />
 {/snippet}
 {#snippet account()}
 	<AccountSettings />
