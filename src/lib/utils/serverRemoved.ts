@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
 import { serversState } from '$lib/states/serversState.svelte';
+import { serverImportState } from '$lib/states/serverImportState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
 
 const removing = new Set<number>();
@@ -36,5 +37,6 @@ async function removeNow(serverId: number, reason?: keyof typeof notices) {
 	// server from state makes them refetch its (now missing) channels.
 	if (wasSelected) await goto('/app/direct/');
 	serversState.removeServer(serverId);
+	serverImportState.forget(serverId);
 	if (reason && name) toast(notices[reason](name));
 }
