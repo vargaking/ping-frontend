@@ -3,14 +3,14 @@
 	import { mergeProps } from 'bits-ui';
 	import * as ContextMenu from '$lib/components/ui/context-menu/index';
 	import { cn } from '$lib/utils.js';
-	import { groupActions, type MenuAction } from '$lib/utils/menuActions';
+	import { groupActions, type MenuEntry } from '$lib/utils/menuActions';
 
 	// Links, media and text fields inside the trigger keep the browser's own menu.
 	const NATIVE_MENU_TARGETS =
 		'a[href], img, video, audio, input, textarea, [contenteditable="true"]';
 
 	type Props = {
-		actions: MenuAction[];
+		actions: MenuEntry[];
 		/** Spread the given props onto the element that should open the menu. */
 		children: Snippet<[props: Record<string, unknown>]>;
 		/** Applied to the menu itself. */
@@ -29,6 +29,12 @@
 		if (!open) return;
 		const close = (e: Event) => {
 			if (e.target instanceof Node && content?.contains(e.target)) return;
+			if (
+				e.target instanceof Element &&
+				e.target.closest('[data-slot="context-menu-sub-content"]')
+			) {
+				return;
+			}
 			open = false;
 		};
 		window.addEventListener('scroll', close, { capture: true, passive: true });
@@ -96,13 +102,39 @@
 					<ContextMenu.Separator />
 				{/if}
 				{#each group as action (action.id)}
-					<ContextMenu.Item
-						variant={action.destructive ? 'destructive' : 'default'}
-						onSelect={() => action.run()}
-					>
-						<action.icon size={16} strokeWidth={1.75} />
-						{action.label}
-					</ContextMenu.Item>
+					{#if 'toggles' in action}
+						<ContextMenu.Sub>
+							<ContextMenu.SubTrigger>
+								<action.icon size={16} strokeWidth={1.75} />
+								{action.label}
+							</ContextMenu.SubTrigger>
+							<ContextMenu.SubContent class="max-h-72 w-48 overflow-y-auto">
+								{#each action.toggles as toggle (toggle.id)}
+									<ContextMenu.CheckboxItem
+										checked={toggle.checked}
+										disabled={toggle.disabled}
+										closeOnSelect={false}
+										onCheckedChange={(checked) => toggle.toggle(checked)}
+									>
+										<span
+											aria-hidden="true"
+											class="h-2 w-2 shrink-0 rounded-full {toggle.color ? '' : 'bg-text-subtle'}"
+											style:background-color={toggle.color}
+										></span>
+										<span class="truncate">{toggle.label}</span>
+									</ContextMenu.CheckboxItem>
+								{/each}
+							</ContextMenu.SubContent>
+						</ContextMenu.Sub>
+					{:else}
+						<ContextMenu.Item
+							variant={action.destructive ? 'destructive' : 'default'}
+							onSelect={() => action.run()}
+						>
+							<action.icon size={16} strokeWidth={1.75} />
+							{action.label}
+						</ContextMenu.Item>
+					{/if}
 				{/each}
 			{/each}
 		</ContextMenu.Content>

@@ -6,12 +6,15 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { updateMemberRoles } from '$lib/requests/servers/updateMemberRoles';
-	import { Permission } from '$lib/permissions';
-	import { canTouchRole, resolveRole } from '$lib/utils/roles';
 	import { canKickMember, kickMember } from '$lib/utils/kickMember';
 	import { getErrorMessage } from '$lib/requests/errors';
-	import type { Role, ServerMember } from '$lib/types/server.types';
+	import {
+		assignableRoles,
+		canAssign,
+		canChangeRolesOf,
+		setMemberRole
+	} from '$lib/utils/memberRoles';
+	import type { ServerMember } from '$lib/types/server.types';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
@@ -24,11 +27,6 @@
 	let { onInvite }: { onInvite?: () => void } = $props();
 
 	const serverId = $derived(serversState.selectedServer?.id);
-	const roles = $derived(serverId != null ? (serversState.roles[serverId] ?? []) : []);
-	const assignableRoles = $derived(roles.filter((r) => !r.is_default));
-	const myMask = $derived(serverId != null ? serversState.maskOf(serverId) : 0n);
-	const myRank = $derived(serverId != null ? serversState.rankIn(serverId) : 0);
-	const isOwner = $derived(serverId != null && serversState.isOwner(serverId));
 	const myId = $derived(usersState.loggedInUser?.id);
 	// Changes when someone joins or leaves over the socket, which refetches.
 	const memberCount = $derived(serversState.selectedServer?.members?.length ?? 0);
@@ -83,28 +81,7 @@
 	}
 
 	function canChangeRole(member: Row) {
-		return (
-			serversState.can(Permission.MANAGE_ROLES) &&
-			member.user.id !== myId &&
-			!member.is_owner &&
-			assignableRoles.length > 0
-		);
-	}
-
-	function canToggleRole(role: Role) {
-		return canTouchRole(role, myRank, isOwner) && !(resolveRole(role.id, roles).allow & ~myMask);
-	}
-
-	async function toggleRole(member: Row, role: Role, assigned: boolean) {
-		if (serverId == null) return;
-		const ids = member.roleIds.filter((id) => id !== role.id);
-		if (assigned) ids.push(role.id);
-		try {
-			const updated = await updateMemberRoles(serverId, member.user.id, ids);
-			serversState.setMemberRoles(serverId, member.user.id, updated.role_ids);
-		} catch (e) {
-			toast.error(`Couldn't change ${member.user.username}'s roles: ${getErrorMessage(e)}`);
-		}
+		return serverId != null && canChangeRolesOf(serverId, member.user.id);
 	}
 
 	async function message(member: Row) {
@@ -235,19 +212,20 @@
 										Message
 									</DropdownMenu.Item>
 									<DropdownMenu.Separator />
-									{#if canChangeRole(member)}
+									{#if serverId != null && canChangeRole(member)}
 										<DropdownMenu.Sub>
 											<DropdownMenu.SubTrigger>
 												<Shield size={16} strokeWidth={1.75} />
 												Roles
 											</DropdownMenu.SubTrigger>
 											<DropdownMenu.SubContent class="w-48">
-												{#each assignableRoles as role (role.id)}
+												{#each assignableRoles(serverId) as role (role.id)}
 													<DropdownMenu.CheckboxItem
 														checked={member.roleIds.includes(role.id)}
-														disabled={!canToggleRole(role)}
+														disabled={!canAssign(serverId, role)}
 														closeOnSelect={false}
-														onCheckedChange={(assigned) => toggleRole(member, role, assigned)}
+														onCheckedChange={(assigned) =>
+															setMemberRole(serverId, member.user, role, assigned)}
 													>
 														<span
 															aria-hidden="true"

@@ -134,6 +134,18 @@ export function canTouchRole(role: Role, rank: number, isOwner: boolean): boolea
 	return isOwner || role.position < rank;
 }
 
+/** Whether someone with this rank and mask may hand out or take away `role`. */
+export function canAssignRole(
+	role: Role,
+	roles: Role[],
+	actor: { rank: number; isOwner: boolean; mask: bigint }
+): boolean {
+	return (
+		canTouchRole(role, actor.rank, actor.isOwner) &&
+		!(resolveRole(role.id, roles).allow & ~actor.mask)
+	);
+}
+
 /** The roles after one is deleted: children of it lose their parent. */
 export function withoutRole(roles: Role[], roleId: number): Role[] {
 	return roles
