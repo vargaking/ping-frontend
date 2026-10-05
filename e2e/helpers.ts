@@ -44,6 +44,12 @@ export async function createChannel(context: BrowserContext, serverId: number, n
 	);
 }
 
+export async function createRole(context: BrowserContext, serverId: number, name: string) {
+	return json<{ id: number; name: string }>(
+		await context.request.post(`/servers/${serverId}/roles`, { data: { name } })
+	);
+}
+
 export async function createInvite(context: BrowserContext, serverId: number) {
 	return json<{ id: string }>(
 		await context.request.post('/invites/', { data: { server_id: serverId } })

@@ -16,6 +16,7 @@ import {
 	Plus,
 	Reply,
 	Settings,
+	Shield,
 	SmilePlus,
 	Trash2,
 	Unplug,
@@ -53,6 +54,12 @@ import { db } from '$lib/utils/db';
 import { confirmDeleteGroup, promptCreateGroup, promptRenameGroup } from '$lib/utils/channelGroups';
 import { canKickMember, kickMember } from '$lib/utils/kickMember';
 import { canModerateMember } from '$lib/utils/memberModeration';
+import {
+	assignableRoles,
+	canAssign,
+	canChangeRolesOf,
+	setMemberRole
+} from '$lib/utils/memberRoles';
 import { disconnectMember, serverMuteMember } from '$lib/utils/voiceModeration';
 import { confirmLeaveServer } from '$lib/utils/leaveServer';
 import { messageClipboardText } from '$lib/utils/messageContent';
@@ -60,18 +67,35 @@ import { markRepliesDeleted } from '$lib/utils/replies';
 import { channelPath, postPath } from '$lib/utils/channelRoutes';
 import EditPostDialog from '$lib/components/forum/EditPostDialog.svelte';
 
-export type MenuAction = {
+type MenuBase = {
 	id: string;
 	label: string;
 	icon: typeof Icon;
-	run: () => void | Promise<void>;
-	destructive?: boolean;
-	/** Neighbouring actions with different groups get a separator between them. */
+	/** Neighbouring entries with different groups get a separator between them. */
 	group?: string;
 };
 
-export function groupActions(actions: MenuAction[]): MenuAction[][] {
-	const groups: MenuAction[][] = [];
+export type MenuAction = MenuBase & {
+	run: () => void | Promise<void>;
+	destructive?: boolean;
+};
+
+export type MenuToggle = {
+	id: string;
+	label: string;
+	checked: boolean;
+	disabled?: boolean;
+	color?: string | null;
+	toggle: (checked: boolean) => void | Promise<void>;
+};
+
+/** Opens a list of checkboxes that stays open while they are toggled. */
+export type MenuSubmenu = MenuBase & { toggles: MenuToggle[] };
+
+export type MenuEntry = MenuAction | MenuSubmenu;
+
+export function groupActions<T extends { group?: string }>(actions: T[]): T[][] {
+	const groups: T[][] = [];
 	let previous: string | undefined;
 	for (const action of actions) {
 		if (groups.length === 0 || action.group !== previous) groups.push([]);
@@ -414,8 +438,8 @@ export function serverActions(
 	return actions;
 }
 
-export function memberActions(serverId: number | null | undefined, user: User): MenuAction[] {
-	const actions: MenuAction[] = [];
+export function memberActions(serverId: number | null | undefined, user: User): MenuEntry[] {
+	const actions: MenuEntry[] = [];
 	if (usersState.loggedInUser?.id !== user.id) {
 		actions.push({
 			id: 'message',
@@ -432,6 +456,23 @@ export function memberActions(serverId: number | null | undefined, user: User): 
 		group: 'user',
 		run: () => copyToClipboard(user.username, 'Username')
 	});
+	if (serverId != null && canChangeRolesOf(serverId, user.id)) {
+		const assigned = new Set(serversState.memberRoles[serverId]?.[user.id] ?? []);
+		actions.push({
+			id: 'roles',
+			label: 'Roles',
+			icon: Shield,
+			group: 'manage',
+			toggles: assignableRoles(serverId).map((role) => ({
+				id: String(role.id),
+				label: role.name,
+				color: role.color,
+				checked: assigned.has(role.id),
+				disabled: !canAssign(serverId, role),
+				toggle: (checked) => setMemberRole(serverId, user, role, checked)
+			}))
+		});
+	}
 	if (serverId != null && canKickMember(serverId, user.id)) {
 		actions.push({
 			id: 'kick',

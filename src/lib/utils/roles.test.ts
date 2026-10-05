@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Permission } from '$lib/permissions';
+import { ALL_PERMISSIONS, Permission } from '$lib/permissions';
 import type { Role } from '$lib/types/server.types';
 import {
 	applyPositions,
 	assignedRoles,
+	canAssignRole,
 	canTouchRole,
 	inheritedSource,
 	memberMask,
@@ -162,6 +163,41 @@ describe('canTouchRole', () => {
 
 	it('lets the owner touch anything', () => {
 		expect(canTouchRole(mod, 0, true)).toBe(true);
+	});
+});
+
+describe('canAssignRole', () => {
+	const actor = { rank: 3, isOwner: false, mask: MEMBER | KICK };
+
+	it('lets the owner assign anything', () => {
+		const roles = [role({ id: 2, position: 9, allow: MANAGE })];
+		expect(
+			canAssignRole(roles[0], roles, { rank: Infinity, isOwner: true, mask: ALL_PERMISSIONS })
+		).toBe(true);
+	});
+
+	it('refuses a role at or above the actor rank', () => {
+		const roles = [role({ id: 2, position: 3 }), role({ id: 3, position: 4 })];
+		expect(canAssignRole(roles[0], roles, actor)).toBe(false);
+		expect(canAssignRole(roles[1], roles, actor)).toBe(false);
+	});
+
+	it('allows a role below the rank that stays inside the mask', () => {
+		const roles = [role({ id: 2, position: 2, allow: KICK })];
+		expect(canAssignRole(roles[0], roles, actor)).toBe(true);
+	});
+
+	it('refuses a role below the rank that grants a bit outside the mask', () => {
+		const roles = [role({ id: 2, position: 2, allow: KICK | MANAGE })];
+		expect(canAssignRole(roles[0], roles, actor)).toBe(false);
+	});
+
+	it('refuses a role whose out-of-mask bit is inherited from its parent', () => {
+		const roles = [
+			role({ id: 2, position: 1, allow: MANAGE }),
+			role({ id: 3, position: 2, parent_id: 2 })
+		];
+		expect(canAssignRole(roles[1], roles, actor)).toBe(false);
 	});
 });
 
