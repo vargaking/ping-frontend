@@ -10,6 +10,7 @@ import {
 	channelAction,
 	channelCounts,
 	existingLine,
+	importedTotals,
 	fileProblem,
 	isWorking,
 	listCapped,
@@ -148,6 +149,29 @@ describe('mergeImportFrame', () => {
 	});
 });
 
+describe('importedTotals', () => {
+	const total = (messages: number) => ({
+		messages,
+		existing_messages: 0,
+		posts: 0,
+		attachments: 0,
+		attachment_bytes: 0
+	});
+
+	it('takes the whole import from the plan, not the last run', () => {
+		const totals = importedTotals({
+			plan: plan({ totals: total(102_500) }),
+			result: plan({ totals: total(53_500) })
+		});
+		expect(totals?.messages).toBe(102_500);
+	});
+
+	it('falls back to the result without a plan, and to nothing without either', () => {
+		expect(importedTotals({ plan: null, result: plan({ totals: total(7) }) })?.messages).toBe(7);
+		expect(importedTotals({ plan: null, result: null })).toBeNull();
+	});
+});
+
 describe('isWorking', () => {
 	it('is true while the server unpacks or imports', () => {
 		expect(['unpacking', 'importing'].map((s) => isWorking(s as Import['status']))).toEqual([
@@ -256,6 +280,15 @@ describe('plan formatting', () => {
 		);
 		expect(channelAction(channel({ action: 'skipped', reason: 'private' }))).toBe(
 			'Skipped: private'
+		);
+	});
+
+	it('leaves the # off an existing voice channel', () => {
+		expect(
+			channelAction(channel({ action: 'existing', target_name: 'Lounge', type: 'voice' }))
+		).toBe('Into existing Lounge');
+		expect(channelAction(channel({ action: 'existing', target_name: 'chat', type: 'forum' }))).toBe(
+			'Into existing #chat'
 		);
 	});
 

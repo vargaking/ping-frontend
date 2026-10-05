@@ -13,6 +13,7 @@
 		channelCounts,
 		count,
 		existingLine,
+		importedTotals,
 		fileProblem,
 		mappingChanged,
 		mappingOf,
@@ -520,13 +521,14 @@
 		</div>
 	{:else if view === 'done' && imp}
 		{@const result = imp.result ?? imp.plan}
+		{@const totals = importedTotals(imp)}
 		<section aria-label="Result" class="flex flex-col gap-2">
-			{#if result}
+			{#if totals}
 				<p aria-live="polite" class="text-sm">
-					Imported {count(result.totals.messages, 'message')}, {count(
-						result.totals.posts,
-						'forum post'
-					)} and {count(result.totals.attachments, 'attachment')} from {source}.
+					Imported {count(totals.messages, 'message')}, {count(totals.posts, 'forum post')} and {count(
+						totals.attachments,
+						'attachment'
+					)} from {source}.
 				</p>
 			{/if}
 			{#if imp.error}

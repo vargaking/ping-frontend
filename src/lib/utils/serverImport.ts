@@ -64,6 +64,14 @@ export function platformName(source: Import['source']): string {
 	return source ? (PLATFORMS[source.platform] ?? source.platform) : '';
 }
 
+/**
+ * The totals a finished import brought in. The plan covers the whole import, while the
+ * result only reports the last run, which is partial after a resumed import.
+ */
+export function importedTotals(imp: Pick<Import, 'plan' | 'result'>): PlanTotals | null {
+	return (imp.plan ?? imp.result)?.totals ?? null;
+}
+
 /** "12 messages, 3 forum posts, 40 attachments (1.2 MB)". */
 export function totalsLine(totals: PlanTotals, formatSize: (bytes: number) => string): string {
 	return [
@@ -80,7 +88,10 @@ export function existingLine(existing: number): string | null {
 
 export function channelAction(channel: PlanChannel): string {
 	if (channel.action === 'create') return 'New channel';
-	if (channel.action === 'existing') return `Into existing #${channel.target_name ?? channel.name}`;
+	if (channel.action === 'existing') {
+		const prefix = channel.type === 'voice' ? '' : '#';
+		return `Into existing ${prefix}${channel.target_name ?? channel.name}`;
+	}
 	return channel.reason ? `Skipped: ${channel.reason}` : 'Skipped';
 }
 
