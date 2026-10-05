@@ -61,8 +61,10 @@
 	let mapping = $state<AuthorMapping>({});
 	let syncedAuthors = '';
 
+	// load() reads the entry it fills in, so it runs untracked: only a new server id should refetch.
 	$effect(() => {
-		if (serverId != null) void serverImportState.load(serverId);
+		const id = serverId;
+		if (id != null) untrack(() => void serverImportState.load(id));
 	});
 
 	const needsMembers = $derived(view === 'ready' || view === 'done');

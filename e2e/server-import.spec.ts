@@ -4,16 +4,17 @@ import { storedZip } from './zip';
 
 const CHANNEL = 'imported-general';
 
-function exportZip(): Buffer {
+// Message ids are tied to the source server, so each run needs its own to avoid being skipped as already imported.
+function exportZip(sourceId: string): Buffer {
 	const messages = [
 		{
-			id: '1',
+			id: `${sourceId}-1`,
 			author_id: '1001',
 			timestamp: '2024-05-01T10:00:00+00:00',
 			content: 'first message'
 		},
 		{
-			id: '2',
+			id: `${sourceId}-2`,
 			author_id: '1002',
 			timestamp: '2024-05-01T10:01:00+00:00',
 			content: 'second message'
@@ -22,7 +23,7 @@ function exportZip(): Buffer {
 	return storedZip({
 		'server.json': JSON.stringify({
 			format: 1,
-			source: { platform: 'discord', server_id: '900', server_name: 'Deducks' },
+			source: { platform: 'discord', server_id: sourceId, server_name: 'Deducks' },
 			channels: [{ id: '501', name: CHANNEL, type: 'text' }],
 			authors: [
 				{ id: '1001', name: 'Maple', messages: 1 },
@@ -51,6 +52,12 @@ test('the owner imports an export, matches an author and everyone sees the chann
 	const server = await createServer(owner.context, serverName);
 	await joinInvite(member.context, (await createInvite(owner.context, server.id)).id);
 
+	let importReads = 0;
+	owner.page.on('request', (request) => {
+		const { pathname } = new URL(request.url());
+		if (request.method() === 'GET' && pathname === `/servers/${server.id}/import`) importReads++;
+	});
+
 	await owner.page.goto(`/app/server/${server.id}/`);
 	await member.page.goto(`/app/server/${server.id}/`);
 
@@ -58,10 +65,20 @@ test('the owner imports an export, matches an author and everyone sees the chann
 	await settingsTabs.getByRole('button', { name: 'Import' }).click();
 	await expect(owner.page.getByRole('button', { name: 'Choose zip' })).toBeVisible();
 
+	const readsOnOpen = importReads;
+	await owner.page.waitForTimeout(2000);
+	const idleReads = importReads - readsOnOpen;
+	expect(idleReads, 'an idle Import tab should not keep refetching the import').toBeLessThanOrEqual(
+		2
+	);
+	expect(readsOnOpen, 'opening the tab should fetch the import once or twice').toBeLessThanOrEqual(
+		2
+	);
+
 	await owner.page.locator('input[type="file"][accept*=".zip"]').setInputFiles({
 		name: 'export.zip',
 		mimeType: 'application/zip',
-		buffer: exportZip()
+		buffer: exportZip(uniqueName('src'))
 	});
 
 	const start = owner.page.getByRole('button', { name: 'Start import' });
@@ -123,4 +140,6 @@ test('the owner imports an export, matches an author and everyone sees the chann
 		memberTabs.getByRole('button', { name: 'Import' }),
 		'only the owner should get the Import tab'
 	).toHaveCount(0);
+
+	expect(importReads, 'the whole flow should need only a few reads').toBeLessThan(40);
 });

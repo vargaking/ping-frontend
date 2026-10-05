@@ -69,8 +69,10 @@ class ServerImportState {
 		return this.entries[serverId] ?? EMPTY;
 	}
 
+	/** The reactive entry; the assignment expression would hand back the plain object instead. */
 	private ensure(serverId: number): ServerImportEntry {
-		return (this.entries[serverId] ??= { ...EMPTY });
+		if (!this.entries[serverId]) this.entries[serverId] = { ...EMPTY };
+		return this.entries[serverId];
 	}
 
 	/** Fetch the server's import. Quiet once something is on screen, so it doesn't flash. */
@@ -86,7 +88,13 @@ class ServerImportState {
 		try {
 			const response = await getServerImport(serverId);
 			if (this.loadSeq.get(serverId) !== seq) return;
-			entry.limits = response.limits;
+			const { limits } = response;
+			if (
+				entry.limits?.max_bytes !== limits.max_bytes ||
+				entry.limits?.chunk_bytes !== limits.chunk_bytes
+			) {
+				entry.limits = limits;
+			}
 			entry.loadStatus = 'ready';
 			entry.loadError = null;
 			this.store(serverId, response.import);

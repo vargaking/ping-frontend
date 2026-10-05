@@ -8,7 +8,12 @@ dotenv.config();
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit(), basicSsl()],
-	test: { include: ['src/**/*.test.ts'] },
+	// Rune effects only run with Svelte's browser build; see src/test/webEnvironment.ts.
+	resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
+	test: {
+		include: ['src/**/*.test.ts'],
+		environmentMatchGlobs: [['src/**/*.svelte.test.ts', './src/test/webEnvironment.ts']]
+	},
 	server: {
 		proxy: {
 			'/api': `http://${process.env.LOCAL_IP}:8000`,
