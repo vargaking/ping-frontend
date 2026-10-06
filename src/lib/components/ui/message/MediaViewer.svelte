@@ -170,7 +170,7 @@
 	}
 
 	const barButton =
-		'flex h-9 w-9 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
+		'flex h-9 w-9 items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11';
 	const navButton =
 		'absolute top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/90 transition-colors hover:bg-black/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 </script>
@@ -192,7 +192,9 @@
 			}}
 		>
 			{#if current}
-				<div class="flex shrink-0 items-center gap-2 px-3 py-2 sm:px-4">
+				<div
+					class="flex shrink-0 items-center gap-2 px-3 py-2 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] sm:px-4"
+				>
 					<DialogPrimitive.Title class="min-w-0 flex-1 truncate text-sm font-medium">
 						{current.filename}
 					</DialogPrimitive.Title>
@@ -234,7 +236,7 @@
 					<div
 						bind:this={stage}
 						role="presentation"
-						class="absolute inset-0 flex items-center justify-center overflow-hidden p-2 sm:p-6"
+						class="absolute inset-0 flex items-center justify-center overflow-hidden p-2 max-md:pb-[calc(0.5rem+var(--safe-bottom))] sm:p-6"
 						onpointerdown={onPointerDown}
 						onpointermove={onPointerMove}
 						onpointerup={onPointerUp}

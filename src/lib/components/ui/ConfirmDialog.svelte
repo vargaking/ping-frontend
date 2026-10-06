@@ -41,7 +41,7 @@
 		<button
 			type="button"
 			onclick={() => overlayState.close()}
-			class="rounded-lg px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="rounded-lg px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-3"
 		>
 			{cancelLabel}
 		</button>
@@ -49,7 +49,7 @@
 			type="button"
 			onclick={confirm}
 			disabled={busy}
-			class="rounded-lg px-4 py-2 text-sm font-medium transition-opacity focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 {destructive
+			class="rounded-lg px-4 py-2 text-sm font-medium transition-opacity focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50 pointer-coarse:py-3 {destructive
 				? 'bg-destructive text-white hover:bg-destructive/90'
 				: 'bg-primary text-primary-foreground hover:bg-primary/90'}"
 		>

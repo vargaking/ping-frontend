@@ -52,7 +52,7 @@
 				variant="secondary"
 				size="sm"
 				aria-label="Invite"
-				class="max-md:size-9 max-md:px-0"
+				class="max-md:size-9 max-md:px-0 pointer-coarse:max-md:h-9"
 				onclick={() => (inviteOpen = true)}
 			>
 				<UserPlus size={16} strokeWidth={1.75} />
