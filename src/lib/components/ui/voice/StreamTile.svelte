@@ -3,6 +3,7 @@
 	import StreamVideo from './StreamVideo.svelte';
 	import StreamSound from './StreamSound.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import { fullscreenSupported } from '$lib/utils/screenShare';
 	import { Maximize2, EyeOff, MonitorUp } from 'lucide-svelte';
 
 	type Props = {
@@ -18,9 +19,10 @@
 	const hidden = $derived(voiceState.previewHidden(stream));
 	const mirrors = $derived(voiceState.mirrorsSelf(stream));
 	const canHide = $derived(mirrors && !hidden);
+	const canFullscreen = fullscreenSupported();
 
 	const overlayButton =
-		'absolute top-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
+		'absolute top-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:opacity-100 pointer-coarse:before:absolute pointer-coarse:before:-inset-2';
 </script>
 
 <li class="group relative aspect-video min-w-0 overflow-hidden rounded-xl bg-black">
@@ -38,7 +40,7 @@
 			type="button"
 			aria-label="Focus {name}"
 			onclick={onfocus}
-			ondblclick={mirrors ? undefined : () => video?.requestFullscreen()}
+			ondblclick={mirrors || !canFullscreen ? undefined : () => video?.requestFullscreen()}
 			class="absolute inset-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
 		></button>
 	{/if}
@@ -58,7 +60,7 @@
 			LIVE
 		</span>
 	</div>
-	{#if !mirrors}
+	{#if !mirrors && canFullscreen}
 		<button
 			type="button"
 			aria-label="Fullscreen {name}"

@@ -268,7 +268,7 @@
 	}
 </script>
 
-<div class={compact ? '' : 'px-8 pb-6'}>
+<div class={compact ? '' : 'px-8 pb-6 max-md:px-3 max-md:pb-[max(12px,var(--safe-bottom))]'}>
 	<p
 		aria-live="polite"
 		class="px-1 pb-1.5 text-xs text-text-subtle {socketState.reconnecting ? '' : 'sr-only'}"

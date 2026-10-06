@@ -172,7 +172,7 @@
 							type="button"
 							aria-pressed={color === null}
 							onclick={() => (color = null)}
-							class="h-7 rounded-full border border-input px-3 text-xs text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {color ===
+							class="h-7 rounded-full border border-input px-3 text-xs text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-8 {color ===
 							null
 								? 'bg-accent text-foreground'
 								: ''}"
@@ -186,7 +186,7 @@
 								aria-pressed={color === swatch}
 								onclick={() => (color = swatch)}
 								style:background-color={swatch}
-								class="h-5 w-5 rounded-full ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {color ===
+								class="h-5 w-5 rounded-full ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-8 pointer-coarse:w-8 {color ===
 								swatch
 									? 'ring-2 ring-foreground'
 									: ''}"
@@ -197,7 +197,7 @@
 							aria-label="Custom colour"
 							value={color ?? '#5b8def'}
 							oninput={(e) => (color = e.currentTarget.value)}
-							class="h-7 w-9 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+							class="h-7 w-9 cursor-pointer rounded-md border border-input bg-transparent p-0.5 pointer-coarse:h-8"
 						/>
 					</div>
 				</div>
@@ -265,7 +265,7 @@
 		{#if !role.is_default && !locked}
 			<section
 				aria-label="Delete role"
-				class="flex items-center gap-4 rounded-xl border border-destructive-border p-4"
+				class="flex items-center gap-4 rounded-xl border border-destructive-border p-4 max-md:flex-col max-md:items-stretch max-md:gap-3"
 			>
 				<p class="flex-1 text-[13px] text-muted-foreground">
 					Deleting this role removes it from everyone who has it. Roles inheriting from it lose

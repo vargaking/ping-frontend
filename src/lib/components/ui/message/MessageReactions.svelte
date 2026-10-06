@@ -5,6 +5,7 @@
 	import { toggleReaction } from '$lib/utils/reactions';
 	import type { MessageType } from '$lib/types/messages.types';
 	import { SmilePlus } from 'lucide-svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 
 	let { message }: { message: MessageType } = $props();
 
@@ -32,7 +33,7 @@
 		<div class="mt-1 flex flex-wrap items-center gap-1">
 			{#each reactions as reaction (reaction.emoji)}
 				{@const mine = meId != null && reaction.user_ids.includes(meId)}
-				<Tooltip.Root>
+				<Tooltip.Root disabled={phoneState.touch}>
 					<Tooltip.Trigger>
 						{#snippet child({ props })}
 							<button

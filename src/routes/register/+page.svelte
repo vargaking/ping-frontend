@@ -167,7 +167,9 @@
 	</form>
 
 	<p class="text-center text-sm text-muted-foreground">
-		Already have an account? <a href={loginHref} class="font-medium text-foreground hover:underline"
+		Already have an account? <a
+			href={loginHref}
+			class="font-medium text-foreground hover:underline pointer-coarse:inline-block pointer-coarse:py-3"
 			>Sign in</a
 		>
 	</p>

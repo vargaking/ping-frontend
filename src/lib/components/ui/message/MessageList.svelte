@@ -370,12 +370,10 @@
 
 	documentFocusState.attach();
 
-	// The thread is "being read" when it's the one this list shows, the tab is
-	// visible, and the window is focused — never just because a message arrived
-	// while we're hidden or unfocused.
-	const beingRead = $derived(
-		trackRead && target != null && documentFocusState.visible && documentFocusState.focused
-	);
+	// The thread is "being read" when it's the one this list shows and the page is
+	// in front of the user — never just because a message arrived while we're
+	// hidden, unfocused or covered by the phone navigation.
+	const beingRead = $derived(trackRead && target != null && documentFocusState.reading);
 
 	$effect(() => {
 		if (!trackRead) return;
@@ -445,14 +443,14 @@
 <div
 	bind:this={messageWrapper}
 	onscroll={handleScroll}
-	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable"
+	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable pointer-coarse:select-none"
 >
 	{#if loadState === 'loading'}
-		<div class="px-8 pt-6">
+		<div class="px-8 pt-6 max-md:px-3">
 			<LoadingList rows={6} avatar />
 		</div>
 	{:else if loadState === 'error'}
-		<div class="flex h-full items-center justify-center px-8">
+		<div class="flex h-full items-center justify-center px-8 max-md:px-3">
 			<ErrorState
 				title="Couldn’t load messages"
 				description={errorDescription}
@@ -460,7 +458,7 @@
 			/>
 		</div>
 	{:else if items.length === 0}
-		<div class="flex h-full items-center justify-center px-8">
+		<div class="flex h-full items-center justify-center px-8 max-md:px-3">
 			<EmptyState title="No messages yet" description={emptyDescription}>
 				{#snippet icon()}
 					<MessagesSquare size={20} strokeWidth={1.75} />
@@ -468,7 +466,7 @@
 			</EmptyState>
 		</div>
 	{:else}
-		<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2">
+		<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2 max-md:px-3">
 			<div bind:this={topSentinel} aria-hidden="true"></div>
 			{#each items as item (item.key)}
 				{#if item.kind === 'date'}

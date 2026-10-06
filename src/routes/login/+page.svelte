@@ -105,7 +105,9 @@
 	</form>
 
 	<p class="text-center text-sm text-muted-foreground">
-		New here? <a href={registerHref} class="font-medium text-foreground hover:underline"
+		New here? <a
+			href={registerHref}
+			class="font-medium text-foreground hover:underline pointer-coarse:inline-block pointer-coarse:py-3"
 			>Create an account</a
 		>
 	</p>

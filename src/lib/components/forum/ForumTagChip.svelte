@@ -25,7 +25,7 @@
 		type="button"
 		aria-pressed={selected}
 		{onclick}
-		class="{base} transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {selected
+		class="{base} transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-8 {selected
 			? 'border-primary bg-accent text-foreground'
 			: 'border-border text-muted-foreground hover:bg-card hover:text-foreground'}"
 	>

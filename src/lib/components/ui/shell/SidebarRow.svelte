@@ -29,7 +29,7 @@
 	}: Props = $props();
 
 	const rowClass = $derived(
-		`group flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+		`group flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 ${
 			active
 				? 'bg-accent font-medium text-foreground'
 				: muted

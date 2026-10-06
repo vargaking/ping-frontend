@@ -14,8 +14,10 @@
 	const topic = $derived(channel?.topic ?? '');
 </script>
 
-<header class="flex h-14 shrink-0 items-center gap-3 border-b border-border pr-4 pl-6">
-	<span class="text-text-subtle">
+<header
+	class="flex h-14 shrink-0 items-center gap-3 border-b border-border pr-4 pl-6 max-md:h-12 max-md:px-3"
+>
+	<span class="text-text-subtle max-md:shrink-0">
 		{#if channel?.type === 'voice'}
 			<Volume2 size={18} strokeWidth={1.75} />
 		{:else if channel?.type === 'forum'}
@@ -24,14 +26,16 @@
 			<Hash size={18} strokeWidth={1.75} />
 		{/if}
 	</span>
-	<h1 class="text-[15px] font-semibold">{channel?.name ?? 'Select a channel'}</h1>
+	<h1 class="text-[15px] font-semibold max-md:min-w-0 max-md:truncate">
+		{channel?.name ?? 'Select a channel'}
+	</h1>
 
 	{#if topic}
-		<span class="h-4 w-px bg-border" aria-hidden="true"></span>
-		<p class="min-w-0 truncate text-[13px] text-text-subtle">{topic}</p>
+		<span class="h-4 w-px bg-border max-md:hidden" aria-hidden="true"></span>
+		<p class="min-w-0 truncate text-[13px] text-text-subtle max-md:hidden">{topic}</p>
 	{/if}
 
-	<div class="ml-auto flex items-center gap-2">
+	<div class="ml-auto flex items-center gap-2 max-md:shrink-0">
 		{#if channel && serversState.can(Permission.MANAGE_CHANNELS)}
 			<button
 				type="button"
@@ -44,9 +48,15 @@
 			</button>
 		{/if}
 		{#if serversState.canInvite}
-			<Button variant="secondary" size="sm" onclick={() => (inviteOpen = true)}>
+			<Button
+				variant="secondary"
+				size="sm"
+				aria-label="Invite"
+				class="max-md:size-9 max-md:px-0 pointer-coarse:max-md:h-9"
+				onclick={() => (inviteOpen = true)}
+			>
 				<UserPlus size={16} strokeWidth={1.75} />
-				Invite
+				<span class="max-md:sr-only">Invite</span>
 			</Button>
 		{/if}
 		<button

@@ -13,7 +13,11 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if overlayState.isOpen && overlayState.component}
-	<div class="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center max-md:bottom-auto max-md:h-[var(--app-height,100dvh)]"
+		role="dialog"
+		aria-modal="true"
+	>
 		<!-- Backdrop: a real button so clicking (or Enter/Space) closes the overlay -->
 		<button
 			type="button"
@@ -25,7 +29,7 @@
 
 		<!-- Content -->
 		<div
-			class="relative max-h-[90vh] max-w-[90vw] overflow-auto rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.5)]"
+			class="relative max-h-[90vh] max-w-[90vw] overflow-auto rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.5)] max-md:max-h-[calc(100%-1rem)] max-md:has-[[data-fullscreen]]:max-h-none max-md:has-[[data-fullscreen]]:max-w-none max-md:has-[[data-fullscreen]]:rounded-none max-md:has-[[data-fullscreen]]:shadow-none"
 			transition:scale={{ duration: 200, start: 0.95 }}
 		>
 			<overlayState.component {...overlayState.props} />

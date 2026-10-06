@@ -41,9 +41,31 @@
 		return () => window.removeEventListener('scroll', close, { capture: true });
 	});
 
+	// Lifting the finger after a long press still clicks whatever is under it, which
+	// would follow a link or toggle a button the moment the menu appears.
+	let touching = false;
+	let swallowNextClick = false;
+
+	function touchStart(e: PointerEvent) {
+		touching = e.pointerType === 'touch';
+		swallowNextClick = false;
+	}
+
+	function touchEnd() {
+		touching = false;
+	}
+
+	function swallowClick(e: MouseEvent) {
+		if (!swallowNextClick) return;
+		swallowNextClick = false;
+		e.preventDefault();
+		e.stopPropagation();
+	}
+
 	function onOpenChange(next: boolean) {
-		if (next)
-			opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		if (!next) return;
+		opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		swallowNextClick = touching;
 	}
 
 	// Without this, closing the menu leaves focus on the body when the trigger isn't focusable.
@@ -79,7 +101,13 @@
 	function triggerProps(props: Record<string, unknown>) {
 		const rest = { ...props };
 		delete rest.tabindex;
-		return mergeProps(rest, { oncontextmenucapture: interceptContextMenu });
+		return mergeProps(rest, {
+			oncontextmenucapture: interceptContextMenu,
+			onpointerdowncapture: touchStart,
+			onpointerupcapture: touchEnd,
+			onpointercancelcapture: touchEnd,
+			onclickcapture: swallowClick
+		});
 	}
 </script>
 

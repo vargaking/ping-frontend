@@ -51,7 +51,7 @@
 		class="flex max-w-xl flex-col gap-3 rounded-xl border border-destructive-border p-4"
 	>
 		<h3 class="text-sm font-semibold text-destructive">Danger zone</h3>
-		<div class="flex items-center gap-4">
+		<div class="flex items-center gap-4 max-md:flex-col max-md:items-stretch max-md:gap-3">
 			<p class="flex-1 text-[13px] text-muted-foreground">
 				Deleting this server removes it, its channels and its messages for everyone.
 			</p>

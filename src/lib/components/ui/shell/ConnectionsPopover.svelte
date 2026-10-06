@@ -71,7 +71,7 @@
 	</div>
 {/snippet}
 
-<div class="w-[420px] py-2">
+<div class="w-[420px] py-2 max-md:w-[min(420px,calc(100vw-1rem))]">
 	{#if connectionState.identity}
 		<div class="px-4 pt-1 pb-1.5 text-xs font-medium text-text-subtle">Identity</div>
 		{@render row(

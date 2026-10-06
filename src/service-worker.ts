@@ -9,6 +9,8 @@ import { PUBLIC_BASE_URL } from '$env/static/public';
 import { urlBase64ToBytes } from '$lib/utils/base64url';
 import type { NotificationData } from '$lib/utils/notificationTags';
 import { readPushPrefs } from '$lib/utils/pushPrefs';
+import { notificationBadgeCount, setAppBadge } from '$lib/utils/appBadge';
+import { isApplePushEndpoint } from '$lib/utils/pushEndpoint';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -53,6 +55,38 @@ function parsePayload(event: PushEvent): ParsedPayload {
 	return { ok: true, payload };
 }
 
+let applePush: boolean | null = null;
+
+/** Apple's push service needs every push to show a notification. Not cached
+ *  without a subscription, as one may be made later. */
+async function usesApplePush(): Promise<boolean> {
+	if (applePush !== null) return applePush;
+	try {
+		const subscription = await sw.registration.pushManager.getSubscription();
+		if (!subscription) return false;
+		applePush = isApplePushEndpoint(subscription.endpoint);
+		return applePush;
+	} catch {
+		return false;
+	}
+}
+
+async function hasVisibleWindow(): Promise<boolean> {
+	const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+	return windows.some((client) => client.visibilityState === 'visible');
+}
+
+async function syncBadge(closedTag?: string) {
+	try {
+		// A visible window sets the badge itself, from the real unread total.
+		if (await hasVisibleWindow()) return;
+		const shown = await sw.registration.getNotifications();
+		setAppBadge(notificationBadgeCount(shown, closedTag));
+	} catch (e) {
+		console.debug('[push] badge not updated', e);
+	}
+}
+
 async function showGeneric() {
 	await sw.registration.showNotification('New activity on Zeta', {
 		body: '',
@@ -61,6 +95,7 @@ async function showGeneric() {
 		data: { url: '/app/', count: 1 } satisfies NotificationData
 	});
 	console.debug('[push] shown: zeta-generic');
+	await syncBadge();
 }
 
 function safePath(url: unknown): string {
@@ -100,11 +135,14 @@ async function handlePush(event: PushEvent) {
 		const shown = await sw.registration.getNotifications({ tag: payload.tag });
 		shown.forEach((notification) => notification.close());
 		console.debug(`[push] closed: ${payload.tag}`);
+		await syncBadge(payload.tag);
 		return;
 	}
 
+	const apple = await usesApplePush();
+
 	// A window the user is working in shows its own notifications.
-	if (await hasActiveWindow()) {
+	if (!apple && (await hasActiveWindow())) {
 		console.debug('[push] skipped: active window');
 		return;
 	}
@@ -112,11 +150,12 @@ async function handlePush(event: PushEvent) {
 	const [existing] = await sw.registration.getNotifications({ tag: payload.tag });
 	const previousData = existing?.data as NotificationData | undefined;
 	const messageUuid = typeof payload.message_uuid === 'string' ? payload.message_uuid : undefined;
-	if (messageUuid && previousData?.messageUuid === messageUuid) {
+	const alreadyShown = !!messageUuid && previousData?.messageUuid === messageUuid;
+	if (alreadyShown && !apple) {
 		console.debug(`[push] skipped: already shown ${payload.tag}`);
 		return;
 	}
-	const count = Math.max(payload.count ?? 1, (previousData?.count ?? 0) + 1);
+	const count = Math.max(payload.count ?? 1, (previousData?.count ?? 0) + (alreadyShown ? 0 : 1));
 	const noun = payload.kind === 'dm' ? 'messages' : 'mentions';
 	const summarize = count > 1 && payload.kind !== 'server_request';
 	const prefs = await readPushPrefs();
@@ -131,6 +170,7 @@ async function handlePush(event: PushEvent) {
 		...({ renotify: true } as object)
 	});
 	console.debug(`[push] shown: ${payload.tag}`);
+	await syncBadge();
 }
 
 async function openThread(path: string) {
@@ -238,7 +278,9 @@ sw.addEventListener('push', (event) => {
 sw.addEventListener('notificationclick', (event) => {
 	event.notification.close();
 	const data = event.notification.data as Partial<NotificationData> | undefined;
-	event.waitUntil(openThread(safePath(data?.url)));
+	event.waitUntil(
+		Promise.all([syncBadge(event.notification.tag), openThread(safePath(data?.url))])
+	);
 });
 
 sw.addEventListener('pushsubscriptionchange', (event) =>

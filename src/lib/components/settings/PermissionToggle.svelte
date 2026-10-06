@@ -26,7 +26,9 @@
 	};
 </script>
 
-<div class="flex items-center justify-between gap-4">
+<div
+	class="flex items-center justify-between gap-4 max-md:flex-col max-md:items-stretch max-md:gap-2"
+>
 	<div class="flex min-w-0 flex-col gap-1">
 		<span class="text-sm font-medium">{label}</span>
 		<span class="text-xs text-muted-foreground">{description}</span>
@@ -37,7 +39,7 @@
 	<div
 		role="radiogroup"
 		aria-label={label}
-		class="flex shrink-0 overflow-hidden rounded-lg border border-input {disabled
+		class="flex shrink-0 overflow-hidden rounded-lg border border-input max-md:w-full {disabled
 			? 'opacity-50'
 			: ''}"
 	>
@@ -48,7 +50,7 @@
 				aria-checked={value === option.value}
 				{disabled}
 				onclick={() => onchange(option.value)}
-				class="h-8 px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed {value ===
+				class="h-8 px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed max-md:flex-1 pointer-coarse:h-10 {value ===
 				option.value
 					? active[option.value]
 					: 'text-muted-foreground hover:bg-card hover:text-foreground'}"

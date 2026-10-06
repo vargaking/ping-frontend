@@ -11,6 +11,8 @@
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
+	import { installState } from '$lib/states/installState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
@@ -18,6 +20,7 @@
 	import DesktopTitleBar from '$lib/components/ui/shell/DesktopTitleBar.svelte';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
 	import { SITE_NAME } from '$lib/meta';
+	import { setAppBadge } from '$lib/utils/appBadge';
 
 	let { children } = $props();
 
@@ -33,13 +36,18 @@
 		if (frameless) document.documentElement.dataset.frameless = '';
 	});
 
+	// The install prompt event can fire before the app shell mounts.
+	onMount(() => installState.attach());
+
 	// A push notification click asks an already-open tab to move to its thread.
 	onMount(() => {
 		if (!('serviceWorker' in navigator)) return;
 		const onMessage = (event: MessageEvent) => {
 			if (event.data?.type !== 'navigate') return;
 			const url = safeNext(event.data.url);
-			if (url) goto(url);
+			if (!url) return;
+			phoneState.closeNav();
+			goto(url);
 		};
 		navigator.serviceWorker.addEventListener('message', onMessage);
 		return () => navigator.serviceWorker.removeEventListener('message', onMessage);
@@ -74,6 +82,17 @@
 	let unreachable = $state(false);
 
 	const inApp = $derived(page.route.id?.startsWith('/app') ?? false);
+
+	// On a phone toasts sit at the top, under the app's top bar, so they never cover the composer.
+	const toastInset = $derived(
+		phoneState.phone
+			? {
+					top: inApp ? 'var(--notice-top)' : 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+					left: 12,
+					right: 12
+				}
+			: undefined
+	);
 
 	// When the server can't be reached, stay on the loading screen and keep trying
 	// instead of treating the user as logged out.
@@ -118,6 +137,10 @@
 	});
 
 	$effect(() => {
+		if (!desktop) setAppBadge(loggedIn ? unreadState.badgeTotal : 0);
+	});
+
+	$effect(() => {
 		if (!authChecked) return;
 
 		const url = page.url;
@@ -150,7 +173,11 @@
 <svelte:head><link rel="icon" href={icon} /></svelte:head>
 {#if page.data.meta}<MetaTags meta={page.data.meta} />{/if}
 <ModeWatcher defaultMode="dark" />
-<Toaster position="bottom-right" />
+<Toaster
+	position={phoneState.phone ? 'top-center' : 'bottom-right'}
+	offset={toastInset}
+	mobileOffset={toastInset}
+/>
 
 {#snippet content()}
 	{#if ready}

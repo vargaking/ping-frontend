@@ -9,6 +9,8 @@ export type MetaTag = { attr: 'name' | 'property'; key: string; content: string 
 
 export const SITE_NAME = 'Zeta';
 export const THEME_COLOR = '#8ab4d8';
+/** The app's top bar colour, so the status bar of an installed app blends into it. */
+export const APP_THEME_COLOR = '#0d0f11';
 
 const LANDING_DESCRIPTION = "A calm home for your server's chat and voice.";
 
@@ -48,10 +50,10 @@ export function inviteMeta(
 	};
 }
 
-export function metaTags(meta: PageMeta): MetaTag[] {
+export function metaTags(meta: PageMeta, themeColor = THEME_COLOR): MetaTag[] {
 	return [
 		{ attr: 'name', key: 'description', content: meta.description },
-		{ attr: 'name', key: 'theme-color', content: THEME_COLOR },
+		{ attr: 'name', key: 'theme-color', content: themeColor },
 		{ attr: 'property', key: 'og:title', content: meta.title },
 		{ attr: 'property', key: 'og:description', content: meta.description },
 		{ attr: 'property', key: 'og:image', content: meta.image },
@@ -74,8 +76,8 @@ export function escapeHtml(value: string): string {
 		.replaceAll("'", '&#39;');
 }
 
-export function metaTagsHtml(meta: PageMeta): string {
-	const tags = metaTags(meta).map(
+export function metaTagsHtml(meta: PageMeta, themeColor = THEME_COLOR): string {
+	const tags = metaTags(meta, themeColor).map(
 		(tag) => `<meta ${tag.attr}="${tag.key}" content="${escapeHtml(tag.content)}" />`
 	);
 	return [`<title>${escapeHtml(meta.title)}</title>`, ...tags].join('\n\t\t');
