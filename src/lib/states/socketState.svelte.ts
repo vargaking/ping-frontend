@@ -14,6 +14,7 @@ import {
 	threadKey
 } from './messagesState.svelte';
 import { forumState } from './forumState.svelte';
+import { serverImportState } from './serverImportState.svelte';
 import { typingState } from './typingState.svelte';
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
@@ -38,6 +39,10 @@ import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import type { Server } from '$lib/types/server.types';
 import type { ServerRequest } from '$lib/types/serverRequest.types';
+import type {
+	ServerImportFinishedFrame,
+	ServerImportUpdatedFrame
+} from '$lib/types/serverImport.types';
 import { applyReaction } from '$lib/utils/reactions';
 import { markRepliesDeleted, refreshReplyQuotes, replyRefFor } from '$lib/utils/replies';
 import { replyState } from './replyState.svelte';
@@ -625,6 +630,14 @@ class SocketState {
 		}
 	}
 
+	/** Every member sees what an import added; the owner's tab also shows the outcome. */
+	handleServerImportFinished({ server_id }: ServerImportFinishedFrame) {
+		serversState
+			.fetchServerChannels(server_id)
+			.catch((e) => console.warn('Failed to reload channels after an import', e));
+		serverImportState.refresh(server_id);
+	}
+
 	handleUserUpdate(user: User) {
 		usersState.applyUser(user);
 	}
@@ -785,6 +798,14 @@ class SocketState {
 				break;
 			case 'server_added':
 				this.handleServerAdded(message.server);
+				break;
+			case 'server_import_updated': {
+				const frame: ServerImportUpdatedFrame = message;
+				serverImportState.applyFrame(frame.server_id, frame.import);
+				break;
+			}
+			case 'server_import_finished':
+				this.handleServerImportFinished(message);
 				break;
 			case 'server_request_updated':
 				this.handleServerRequestUpdated(message.request);

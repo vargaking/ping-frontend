@@ -34,7 +34,8 @@
 				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
 				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
 				{ label: 'Desktop app', detail: 'Windows and Linux, with tray and launch at login' },
-				{ label: 'Servers', detail: 'invites, roles, member management' }
+				{ label: 'Servers', detail: 'invites, roles, member management' },
+				{ label: 'Moving from Discord', detail: "import your server's history" }
 			]
 		},
 		{
@@ -43,8 +44,7 @@
 			dot: 'next',
 			items: [
 				{ label: 'Mobile apps', detail: 'iOS and Android' },
-				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' },
-				{ label: 'Moving from Discord', detail: "import your server's history" }
+				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' }
 			]
 		},
 		{
