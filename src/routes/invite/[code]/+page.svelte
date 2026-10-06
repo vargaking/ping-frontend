@@ -77,7 +77,9 @@
 	}
 </script>
 
-<div class="flex h-screen w-full items-center justify-center bg-background p-4 text-foreground">
+<div
+	class="flex min-h-screen w-full items-center justify-center bg-background p-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] text-foreground"
+>
 	<div
 		class="flex w-full max-w-sm flex-col items-center gap-6 rounded-lg bg-card p-8 shadow-xl"
 		in:fade={{ duration: 200 }}
@@ -106,7 +108,7 @@
 				</p>
 				<a
 					href="/app/direct"
-					class="mt-6 inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+					class="mt-6 inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent pointer-coarse:py-3"
 				>
 					Return to App
 				</a>
@@ -138,7 +140,7 @@
 				</div>
 				<a
 					href="/app/direct"
-					class="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+					class="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-3"
 				>
 					No thanks, return to DMs
 				</a>
@@ -179,7 +181,7 @@
 
 				<a
 					href="/app/direct"
-					class="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+					class="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-3"
 				>
 					No thanks, return to DMs
 				</a>

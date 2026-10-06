@@ -83,6 +83,19 @@
 
 	const inApp = $derived(page.route.id?.startsWith('/app') ?? false);
 
+	// On a phone toasts sit at the top, under the app's top bar, so they never cover the composer.
+	const toastInset = $derived(
+		phoneState.phone
+			? {
+					top: inApp
+						? 'calc(env(safe-area-inset-top, 0px) + 2.75rem + 0.5rem)'
+						: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+					left: 12,
+					right: 12
+				}
+			: undefined
+	);
+
 	// When the server can't be reached, stay on the loading screen and keep trying
 	// instead of treating the user as logged out.
 	onMount(() => {
@@ -162,7 +175,11 @@
 <svelte:head><link rel="icon" href={icon} /></svelte:head>
 {#if page.data.meta}<MetaTags meta={page.data.meta} />{/if}
 <ModeWatcher defaultMode="dark" />
-<Toaster position="bottom-right" />
+<Toaster
+	position={phoneState.phone ? 'top-center' : 'bottom-right'}
+	offset={toastInset}
+	mobileOffset={toastInset}
+/>
 
 {#snippet content()}
 	{#if ready}
