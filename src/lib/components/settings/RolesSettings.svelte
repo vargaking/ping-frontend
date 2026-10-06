@@ -2,6 +2,7 @@
 	import { fade } from 'svelte/transition';
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { getServerRoles } from '$lib/requests/servers/getServerRoles';
 	import { createRole } from '$lib/requests/servers/createRole';
 	import { getErrorMessage } from '$lib/requests/errors';
@@ -99,7 +100,7 @@
 {#snippet row(role: Role)}
 	<li class="relative" ondragover={(e) => over(e, role)} ondrop={finishDrop} role="presentation">
 		<div
-			draggable={!locked(role)}
+			draggable={!locked(role) && !phoneState.touch}
 			ondragstart={(e) => startDrag(e, role)}
 			ondragend={resetDrag}
 			role="presentation"
@@ -115,7 +116,7 @@
 				</span>
 			{:else if role.is_default}
 				<span class="w-6"></span>
-			{:else}
+			{:else if !phoneState.touch}
 				<span class="flex h-8 w-6 cursor-grab items-center justify-center text-text-subtle">
 					<GripVertical size={16} strokeWidth={1.75} />
 				</span>
@@ -165,8 +166,9 @@
 		{:else}
 			<div class="flex max-w-xl flex-col gap-6">
 				<p class="text-sm text-muted-foreground">
-					Roles higher in the list win when a member's roles disagree. Drag to reorder. You can only
-					manage roles below your own highest role.
+					Roles higher in the list win when a member's roles disagree. {phoneState.touch
+						? ''
+						: 'Drag to reorder. '}You can only manage roles below your own highest role.
 				</p>
 
 				<form
