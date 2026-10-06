@@ -1,4 +1,5 @@
 import { ScreenSharePresets, VideoPreset, type TrackPublishOptions } from 'livekit-client';
+import { mobilePlatform, type MobilePlatform } from './install';
 
 export type ScreenPresetId = '720p30' | '1080p30' | '1080p60';
 export type ScreenContent = 'detail' | 'motion';
@@ -41,8 +42,15 @@ export const SCREEN_CONTENT_LABELS: Record<ScreenContent, string> = {
 export const DEFAULT_SCREEN_PRESET: ScreenPresetId = '1080p30';
 export const DEFAULT_SCREEN_CONTENT: ScreenContent = 'detail';
 
-export function screenShareSupported(): boolean {
-	return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
+/** Phone and tablet browsers can expose getDisplayMedia without being able to capture the screen. */
+export function screenShareSupported(
+	hasGetDisplayMedia = typeof navigator !== 'undefined' &&
+		!!navigator.mediaDevices?.getDisplayMedia,
+	platform: MobilePlatform = typeof navigator === 'undefined'
+		? null
+		: mobilePlatform(navigator.userAgent, navigator.maxTouchPoints)
+): boolean {
+	return hasGetDisplayMedia && platform === null;
 }
 
 /** iPhone Safari has no Fullscreen API for elements; iPad and desktops do. */
