@@ -221,3 +221,42 @@
 .desktop-page .min-h-screen {
 	min-height: 100%;
 }
+
+/* Phone shell. env() insets are 0 and --app-height is unset anywhere they don't
+   apply, so desktop keeps its plain 100vh layout. */
+:root {
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* The keyboard sits over the home indicator, so its inset is only wasted space. */
+html[data-keyboard] {
+	--safe-bottom: 0px;
+}
+
+html.app-shell {
+	overscroll-behavior: none;
+	-webkit-touch-callout: none;
+}
+
+@media (pointer: coarse) {
+	html.app-shell,
+	html.app-shell body {
+		overflow: hidden;
+	}
+	.app-shell-root {
+		height: var(--app-height, 100dvh);
+	}
+
+	/* Below 16px iOS zooms the page when a field gets focus. */
+	input,
+	select,
+	textarea,
+	.ProseMirror {
+		font-size: 16px;
+	}
+	.ProseMirror,
+	input,
+	textarea {
+		-webkit-user-select: text;
+		user-select: text;
+	}
+}

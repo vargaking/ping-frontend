@@ -5,6 +5,7 @@
 	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
 	import type { MenuAction } from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 
 	type Props = {
 		name: string;
@@ -50,7 +51,7 @@
 </script>
 
 <Tooltip.Provider>
-	<Tooltip.Root delayDuration={0}>
+	<Tooltip.Root delayDuration={0} disabled={phoneState.touch}>
 		<Tooltip.Trigger>
 			{#snippet child({ props })}
 				<ActionContextMenu {actions}>

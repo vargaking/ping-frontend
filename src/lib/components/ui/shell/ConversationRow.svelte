@@ -2,6 +2,7 @@
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import type { Conversation } from '$lib/types/conversation.types';
 	import { messagePreviewText } from '$lib/utils/messageContent';
 
@@ -24,7 +25,9 @@
 	});
 
 	// Never shows as unread while it's the thread we're actively reading.
-	const unread = $derived(!active && conversationsState.isUnread(conversation));
+	const unread = $derived(
+		(!active || phoneState.navCoversContent) && conversationsState.isUnread(conversation)
+	);
 </script>
 
 <a

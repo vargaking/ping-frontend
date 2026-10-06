@@ -14,7 +14,7 @@ export function trackForumRead(channelId: () => number | null) {
 
 	$effect(() => {
 		const id = channelId();
-		if (id == null || !documentFocusState.visible || !documentFocusState.focused) return;
+		if (id == null || !documentFocusState.reading) return;
 		const key = channelThreadKey(id);
 		unreadState.setActiveThread(key);
 		return () => {
@@ -24,7 +24,7 @@ export function trackForumRead(channelId: () => number | null) {
 
 	$effect(() => {
 		const id = channelId();
-		if (id == null || !documentFocusState.visible || !documentFocusState.focused) return;
+		if (id == null || !documentFocusState.reading) return;
 		if (!unreadState.channelUnread(id)) return;
 		const timer = setTimeout(() => unreadState.markChannelRead(id), MARK_READ_DELAY_MS);
 		return () => clearTimeout(timer);

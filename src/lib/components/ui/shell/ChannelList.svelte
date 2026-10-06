@@ -5,6 +5,7 @@
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import type { Channel, ChannelGroup, ChannelLayout } from '$lib/types/channel.types';
 	import { collapsedGroupsState } from '$lib/states/collapsedGroupsState.svelte';
 	import {
@@ -45,6 +46,8 @@
 	let inviteOpen = $state(false);
 
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
+	// HTML drag fights the long-press menu, so reordering stays a desktop action.
+	const canDrag = $derived(canManageChannels && !phoneState.touch);
 	const headerActions = $derived(
 		serversState.selectedServer
 			? serverActions(serversState.selectedServer, {
@@ -165,7 +168,7 @@
 			type="button"
 			aria-label="Settings for {channel.name}"
 			onclick={() => openChannelSettings(channel.id)}
-			class="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-text-subtle opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="absolute top-1/2 right-1.5 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-text-subtle opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:hidden"
 		>
 			<Settings size={14} strokeWidth={1.75} />
 		</button>
@@ -202,7 +205,7 @@
 		href={channelHref(channel)}
 		active={channel.id === activeChannelId}
 		dragging={dragChannelId === channel.id}
-		draggable={canManageChannels}
+		draggable={canDrag}
 		ondragstart={(e) => startDrag(e, channel.id, null)}
 		ondragend={resetDrag}
 	>
@@ -229,7 +232,7 @@
 			{#snippet children(menuProps)}
 				{#if channel.type === 'voice'}
 					{#if topic}
-						<Tooltip.Root>
+						<Tooltip.Root disabled={phoneState.touch}>
 							<Tooltip.Trigger>
 								{#snippet child({ props })}
 									{@render voiceRow(channel, mergeProps(props, menuProps))}
@@ -246,10 +249,11 @@
 						label={channel.name}
 						href={channelHref(channel)}
 						active={channel.id === activeChannelId}
-						unread={channel.id !== activeChannelId && unreadState.channelUnread(channel.id)}
+						unread={(channel.id !== activeChannelId || phoneState.navCoversContent) &&
+							unreadState.channelUnread(channel.id)}
 						mentions={unreadState.channelMentions(channel.id)}
 						dragging={dragChannelId === channel.id}
-						draggable={canManageChannels}
+						draggable={canDrag}
 						ondragstart={(e) => startDrag(e, channel.id, null)}
 						ondragend={resetDrag}
 					>
@@ -282,11 +286,11 @@
 {#snippet groupHeader(group: ChannelGroup, collapsed: boolean)}
 	<div
 		role="presentation"
-		class="relative flex h-6 items-center justify-between rounded px-1 {channelDrop?.kind ===
+		class="relative flex h-6 items-center justify-between rounded px-1 pointer-coarse:h-11 {channelDrop?.kind ===
 			'group' && channelDrop.id === group.id
 			? 'bg-accent'
 			: ''} {dragGroupId === group.id ? 'opacity-50' : ''}"
-		draggable={canManageChannels}
+		draggable={canDrag}
 		ondragstart={(e) => startDrag(e, null, group.id)}
 		ondragover={(e) => overGroup(e, group)}
 		ondrop={(e) => drop(e, 'group')}
@@ -325,7 +329,7 @@
 					createGroupId = group.id;
 					createOpen = true;
 				}}
-				class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-subtle transition-colors hover:bg-card hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-9 pointer-coarse:w-9"
 			>
 				<Plus size={16} strokeWidth={1.75} />
 			</button>

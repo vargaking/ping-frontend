@@ -1,3 +1,5 @@
+import { phoneState } from '$lib/states/phoneState.svelte';
+
 const IDLE_AFTER_MS = 5 * 60_000;
 const HEARTBEAT_MS = 60_000;
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'pointermove', 'wheel', 'touchstart'] as const;
@@ -11,6 +13,11 @@ class DocumentFocusState {
 	visible = $state(typeof document !== 'undefined' ? document.visibilityState === 'visible' : true);
 	focused = $state(typeof document !== 'undefined' ? document.hasFocus() : true);
 	active = $state(false);
+
+	/** The page is in front of the user: visible, focused, and not under the phone navigation. */
+	get reading() {
+		return this.visible && this.focused && !phoneState.navCoversContent;
+	}
 
 	private attached = false;
 	private lastInputAt = 0;

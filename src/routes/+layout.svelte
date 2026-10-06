@@ -12,6 +12,7 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { installState } from '$lib/states/installState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
@@ -44,7 +45,9 @@
 		const onMessage = (event: MessageEvent) => {
 			if (event.data?.type !== 'navigate') return;
 			const url = safeNext(event.data.url);
-			if (url) goto(url);
+			if (!url) return;
+			phoneState.closeNav();
+			goto(url);
 		};
 		navigator.serviceWorker.addEventListener('message', onMessage);
 		return () => navigator.serviceWorker.removeEventListener('message', onMessage);
