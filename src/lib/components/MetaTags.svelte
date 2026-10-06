@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { metaTags, type PageMeta } from '$lib/meta';
+	import { metaTags, THEME_COLOR, type PageMeta } from '$lib/meta';
 
-	let { meta }: { meta: PageMeta } = $props();
+	let { meta, themeColor = THEME_COLOR }: { meta: PageMeta; themeColor?: string } = $props();
 </script>
 
 <svelte:head>
 	<title>{meta.title}</title>
-	{#each metaTags(meta) as tag (tag.key)}
+	{#each metaTags(meta, themeColor) as tag (tag.key)}
 		{#if tag.attr === 'name'}
 			<meta name={tag.key} content={tag.content} />
 		{:else}

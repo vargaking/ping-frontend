@@ -19,7 +19,8 @@
 	import { desktop, frameless } from '$lib/desktop';
 	import DesktopTitleBar from '$lib/components/ui/shell/DesktopTitleBar.svelte';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
-	import { SITE_NAME } from '$lib/meta';
+	import { APP_THEME_COLOR, SITE_NAME, THEME_COLOR } from '$lib/meta';
+	import { readInstallEnv } from '$lib/utils/install';
 	import { setAppBadge } from '$lib/utils/appBadge';
 
 	let { children } = $props();
@@ -38,6 +39,17 @@
 
 	// The install prompt event can fire before the app shell mounts.
 	onMount(() => installState.attach());
+
+	// The status bar of an installed app takes its colour from theme-color. Server-rendered
+	// pages carry the brand colour for link embeds, so the app overrides it on every page.
+	let themeColor = $state(THEME_COLOR);
+	onMount(() => {
+		if (!readInstallEnv().standalone) return;
+		themeColor = APP_THEME_COLOR;
+		for (const tag of document.querySelectorAll('meta[name="theme-color"]')) {
+			tag.setAttribute('content', APP_THEME_COLOR);
+		}
+	});
 
 	// A push notification click asks an already-open tab to move to its thread.
 	onMount(() => {
@@ -171,7 +183,7 @@
 </script>
 
 <svelte:head><link rel="icon" href={icon} /></svelte:head>
-{#if page.data.meta}<MetaTags meta={page.data.meta} />{/if}
+{#if page.data.meta}<MetaTags meta={page.data.meta} {themeColor} />{/if}
 <ModeWatcher defaultMode="dark" />
 <Toaster
 	position={phoneState.phone ? 'top-center' : 'bottom-right'}
