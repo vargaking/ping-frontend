@@ -87,9 +87,7 @@
 	const toastInset = $derived(
 		phoneState.phone
 			? {
-					top: inApp
-						? 'calc(env(safe-area-inset-top, 0px) + 2.75rem + 0.5rem)'
-						: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+					top: inApp ? 'var(--notice-top)' : 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
 					left: 12,
 					right: 12
 				}

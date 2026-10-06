@@ -226,6 +226,10 @@
    apply, so desktop keeps its plain 100vh layout. */
 :root {
 	--safe-bottom: env(safe-area-inset-bottom, 0px);
+	/* Height of the call bar under the top bar; set while it shows. */
+	--call-bar: 0px;
+	/* Where prompts and toasts start on a phone: under the top bar and the call bar. */
+	--notice-top: calc(env(safe-area-inset-top, 0px) + 2.75rem + var(--call-bar) + 0.5rem);
 }
 /* The keyboard sits over the home indicator, so its inset is only wasted space. */
 html[data-keyboard] {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { closeNavOnPageLink } from '$lib/states/phoneState.svelte';
+	import { closeNavOnPageLink, phoneState } from '$lib/states/phoneState.svelte';
 	import ConversationList from './ConversationList.svelte';
 	import VoiceDock from './VoiceDock.svelte';
 	import AccountRow from './AccountRow.svelte';
@@ -11,6 +11,8 @@
 	use:closeNavOnPageLink
 >
 	<ConversationList />
-	<VoiceDock />
+	{#if !phoneState.phone}
+		<VoiceDock />
+	{/if}
 	<AccountRow />
 </aside>

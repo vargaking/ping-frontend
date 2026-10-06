@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { closeNavOnPageLink } from '$lib/states/phoneState.svelte';
+	import { closeNavOnPageLink, phoneState } from '$lib/states/phoneState.svelte';
 	import ChannelList from './ChannelList.svelte';
 	import VoiceDock from './VoiceDock.svelte';
 	import AccountRow from './AccountRow.svelte';
@@ -14,6 +14,8 @@
 	<Tooltip.Provider>
 		<ChannelList />
 	</Tooltip.Provider>
-	<VoiceDock />
+	{#if !phoneState.phone}
+		<VoiceDock />
+	{/if}
 	<AccountRow />
 </aside>

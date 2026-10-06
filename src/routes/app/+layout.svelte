@@ -5,6 +5,7 @@
 	import ServerRail from '$lib/components/ui/shell/ServerRail.svelte';
 	import ChannelSidebar from '$lib/components/ui/shell/ChannelSidebar.svelte';
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
+	import VoiceDock from '$lib/components/ui/shell/VoiceDock.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
@@ -97,6 +98,9 @@
 	class="app-shell-root flex h-screen w-screen flex-col overflow-hidden bg-rail pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)]"
 >
 	<TopBar />
+	{#if phoneState.phone}
+		<VoiceDock compact />
+	{/if}
 	<div class="flex min-h-0 flex-1 max-md:relative">
 		<!-- On a phone the navigation slides over the page, which stays mounted underneath. -->
 		<div
