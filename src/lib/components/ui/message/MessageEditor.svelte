@@ -8,6 +8,7 @@
 	import MentionList from '$lib/components/ui/MentionList.svelte';
 	import type { User } from '$lib/types/auth.types';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 
 	let {
 		content = '',
@@ -66,6 +67,8 @@
 			addKeyboardShortcuts() {
 				return {
 					Enter: ({ editor }) => {
+						// Touch keyboards have no Shift+Enter, so Enter is a newline and the send button sends.
+						if (phoneState.touch) return false;
 						const multilineNodes = [
 							'bulletList',
 							'orderedList',

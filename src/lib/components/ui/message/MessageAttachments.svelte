@@ -54,7 +54,7 @@
 				target="_blank"
 				rel="noopener"
 				onclick={(e) => openImage(e, a)}
-				class="block overflow-hidden rounded-[10px] border border-border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				class="block overflow-hidden rounded-[10px] border border-border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-md:max-w-full"
 				style={imageBox(a)}
 			>
 				<img
@@ -66,7 +66,7 @@
 			</a>
 		{:else if kind === 'video'}
 			<div
-				class="group relative overflow-hidden rounded-[10px] border border-border bg-black"
+				class="group relative overflow-hidden rounded-[10px] border border-border bg-black max-md:max-w-full"
 				style={videoBox(a)}
 			>
 				<!-- svelte-ignore a11y_media_has_caption -->

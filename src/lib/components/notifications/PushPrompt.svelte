@@ -40,7 +40,7 @@
 </script>
 
 <div
-	class="pointer-events-none fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)]"
+	class="pointer-events-none fixed right-4 bottom-4 z-40 w-80 max-w-[calc(100vw-2rem)] max-md:inset-x-3 max-md:top-[calc(env(safe-area-inset-top,0px)+2.75rem+0.5rem)] max-md:bottom-auto max-md:w-auto max-md:max-w-none"
 	aria-live="polite"
 >
 	{#if visible}
