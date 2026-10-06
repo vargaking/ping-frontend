@@ -63,7 +63,7 @@
 	);
 
 	const iconButton =
-		'flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
+		'flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11';
 </script>
 
 <svelte:window onkeydowncapture={handleKeydown} />
@@ -220,7 +220,7 @@
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger
 									aria-label="Screen share options"
-									class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+									class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-8"
 								>
 									<ChevronUp size={14} strokeWidth={1.75} />
 								</DropdownMenu.Trigger>

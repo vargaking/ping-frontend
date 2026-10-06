@@ -53,7 +53,7 @@
 			<Popover.Trigger
 				aria-label={label}
 				title={label}
-				class="{overlay} flex h-7 w-7 items-center justify-center transition-colors hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				class="{overlay} relative flex h-7 w-7 items-center justify-center transition-colors hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:before:absolute pointer-coarse:before:-inset-2"
 			>
 				{#if silenced}
 					<VolumeX size={14} strokeWidth={1.75} />
@@ -70,7 +70,7 @@
 							aria-label={audio.muted ? 'Unmute stream' : 'Mute stream'}
 							title={audio.muted ? 'Unmute stream' : 'Mute stream'}
 							onclick={() => voiceState.setStreamMuted(userId, !audio.muted)}
-							class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {audio.muted
+							class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11 {audio.muted
 								? 'text-destructive'
 								: ''}"
 						>
@@ -91,7 +91,7 @@
 							aria-label={label}
 							oninput={(e) =>
 								voiceState.setStreamVolume(userId, e.currentTarget.valueAsNumber / 100)}
-							class="h-2 min-w-0 flex-1 cursor-pointer accent-primary"
+							class="h-2 min-w-0 flex-1 cursor-pointer accent-primary pointer-coarse:h-8"
 						/>
 						<span class="w-10 shrink-0 text-right text-sm text-foreground tabular-nums">
 							{percent}%

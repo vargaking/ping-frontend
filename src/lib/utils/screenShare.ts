@@ -45,6 +45,11 @@ export function screenShareSupported(): boolean {
 	return typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 }
 
+/** iPhone Safari has no Fullscreen API for elements; iPad and desktops do. */
+export function fullscreenSupported(): boolean {
+	return typeof document !== 'undefined' && document.fullscreenEnabled === true;
+}
+
 /** The user dismissed the browser's picker, which isn't an error worth a toast. */
 export function isPickerCancel(err: unknown): boolean {
 	return (

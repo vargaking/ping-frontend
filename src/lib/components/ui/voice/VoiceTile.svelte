@@ -47,7 +47,7 @@
 </script>
 
 <li
-	class="group relative flex aspect-video min-w-0 items-center justify-center overflow-hidden rounded-xl bg-card transition-shadow {speaking
+	class="group relative flex aspect-video min-w-0 items-center justify-center overflow-hidden rounded-xl bg-card transition-shadow max-md:aspect-[4/3] {speaking
 		? 'ring-2 ring-online'
 		: ''}"
 	aria-label="{name}{stateLabel}"
@@ -56,7 +56,7 @@
 		{@render media()}
 	{:else}
 		<span
-			class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold {avatar
+			class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full text-2xl font-semibold max-md:h-11 max-md:w-11 max-md:text-lg {avatar
 				? 'bg-accent'
 				: avatarToneClass(toneKey)}"
 		>
@@ -72,7 +72,7 @@
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger
 				aria-label="Actions for {name}"
-				class="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
+				class="absolute top-2 right-2 flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:opacity-100 pointer-coarse:before:absolute pointer-coarse:before:-inset-2 [@media(hover:none)]:opacity-100"
 			>
 				<Ellipsis size={16} strokeWidth={1.75} />
 			</DropdownMenu.Trigger>
