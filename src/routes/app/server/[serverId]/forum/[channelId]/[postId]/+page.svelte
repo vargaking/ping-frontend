@@ -118,11 +118,13 @@
 				</div>
 			{/if}
 		{:else if isForum}
-			<div class="flex shrink-0 items-start gap-3 border-b border-border px-6 py-3">
+			<div
+				class="flex shrink-0 items-start gap-3 border-b border-border px-6 py-3 max-md:gap-2 max-md:px-3"
+			>
 				<a
 					href={indexHref}
 					aria-label="Back to posts"
-					class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<ArrowLeft size={18} strokeWidth={1.75} />
 				</a>
@@ -153,7 +155,7 @@
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger
 							aria-label="Post actions"
-							class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+							class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11"
 						>
 							<Ellipsis size={18} strokeWidth={1.75} />
 						</DropdownMenu.Trigger>
@@ -201,7 +203,7 @@
 
 				<TypingIndicator names={typingState.names(postThreadKey(postId))} />
 				{#if locked}
-					<div class="px-8 pb-6">
+					<div class="px-8 pb-6 max-md:px-3 max-md:pb-[max(12px,var(--safe-bottom))]">
 						<div
 							class="flex items-center gap-2 rounded-xl border border-input bg-surface-input px-4 py-3.5 text-sm text-text-subtle"
 						>

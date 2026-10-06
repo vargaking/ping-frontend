@@ -83,12 +83,23 @@
 	>
 		<div class="flex min-w-0 flex-1 flex-col gap-1.5">
 			<div class="flex items-center gap-1.5">
-				<h3 class="truncate text-sm font-semibold">{post.title}</h3>
+				<h3
+					class="truncate text-sm font-semibold max-md:line-clamp-2 max-md:break-words max-md:whitespace-normal"
+				>
+					{post.title}
+				</h3>
 				{@render badges()}
 			</div>
 			<div class="flex min-w-0 items-center gap-1.5 text-xs text-text-subtle">
 				{@render meta()}
 			</div>
+			{#if postTags.length > 0}
+				<div class="flex flex-wrap gap-1 sm:hidden">
+					{#each postTags as tag (tag.id)}
+						<ForumTagChip {tag} />
+					{/each}
+				</div>
+			{/if}
 		</div>
 		{#if postTags.length > 0}
 			<div class="hidden max-w-[40%] flex-wrap justify-end gap-1 sm:flex">

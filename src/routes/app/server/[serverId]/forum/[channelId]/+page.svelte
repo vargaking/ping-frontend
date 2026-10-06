@@ -95,9 +95,9 @@
 	}
 
 	const selectClass =
-		'h-9 rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring';
+		'h-9 rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:h-11';
 	const toggleClass = (active: boolean) =>
-		`flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+		`flex h-9 w-9 items-center justify-center rounded-lg transition-colors pointer-coarse:h-11 pointer-coarse:w-11 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
 			active
 				? 'bg-accent text-foreground'
 				: 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -119,7 +119,7 @@
 				</div>
 			{/if}
 		{:else if isForum && channelId != null && serverId != null}
-			<div class="flex shrink-0 flex-col gap-3 border-b border-border px-6 py-3">
+			<div class="flex shrink-0 flex-col gap-3 border-b border-border px-6 py-3 max-md:px-3">
 				<div class="flex flex-wrap items-center gap-2">
 					<div class="relative min-w-[180px] flex-1 sm:max-w-xs">
 						<Search
@@ -133,7 +133,7 @@
 							placeholder="Filter by title"
 							value={index?.query ?? ''}
 							oninput={(e) => forumState.setQuery(channelId, e.currentTarget.value)}
-							class="h-9 pl-9"
+							class="h-9 pl-9 pointer-coarse:h-11"
 						/>
 					</div>
 					<select
@@ -188,7 +188,7 @@
 			<div
 				bind:this={scroller}
 				onscroll={handleScroll}
-				class="min-h-0 flex-1 overflow-y-auto px-6 py-4 scrollbar-stable"
+				class="min-h-0 flex-1 overflow-y-auto px-6 py-4 scrollbar-stable max-md:px-3"
 			>
 				{#if !index || index.status === 'loading'}
 					<LoadingList rows={6} />
