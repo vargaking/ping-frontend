@@ -9,6 +9,7 @@ export interface NormalizedError {
 }
 
 const GENERIC = 'Something went wrong. Please try again.';
+export const UNREACHABLE_MESSAGE = 'Cannot reach the server. Check your connection and try again.';
 
 /** Pull the first sensible string out of a FastAPI `detail` payload. */
 function detailToMessage(detail: unknown): string | null {
@@ -49,7 +50,7 @@ export function normalizeError(error: unknown): NormalizedError {
 			const message =
 				error.code === 'ECONNABORTED'
 					? 'The server took too long to respond. Please try again.'
-					: 'Cannot reach the server. Check your connection and try again.';
+					: UNREACHABLE_MESSAGE;
 			return { status, message };
 		}
 

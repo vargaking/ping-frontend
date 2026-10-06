@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { registerUser, sendMessageViaUi, uniqueName } from './helpers';
 
 test('a new user can register, create a server and channel, and send a message', async ({
@@ -44,4 +44,51 @@ test('a wrong password shows an error and stays on the login page', async ({ bro
 
 	await expect(page.getByRole('alert')).toHaveText('Incorrect username or password');
 	await expect(page).toHaveURL(/\/login/);
+});
+
+// The browser refusing the session cookie: the server says yes, but nothing sticks.
+async function dropSessionCookie(page: Page, path: string) {
+	await page.route(`**${path}`, async (route) => {
+		const response = await route.fetch();
+		const headers = { ...response.headers() };
+		delete headers['set-cookie'];
+		await route.fulfill({ response, headers });
+		await page.context().clearCookies();
+	});
+}
+
+test('a login that leaves no session says so and keeps the username', async ({ browser, page }) => {
+	const setup = await browser.newContext();
+	const user = await registerUser(setup);
+	await setup.close();
+
+	await dropSessionCookie(page, '/auth/login');
+	await page.goto('/login');
+	await page.getByLabel('Username').fill(user.username);
+	await page.getByLabel('Password').fill(user.password);
+	await page.getByRole('button', { name: 'Sign in' }).click();
+
+	await expect(page.getByRole('alert')).toHaveText(
+		"Signed in, but this browser didn't keep you logged in. Allow cookies for this site, or open Zeta in another browser."
+	);
+	await expect(page.getByLabel('Username')).toHaveValue(user.username);
+	await expect(page.getByLabel('Password')).toHaveValue('');
+	await expect(page).toHaveURL(/\/login/);
+});
+
+test('a registration that leaves no session says so and keeps the username', async ({ page }) => {
+	const username = uniqueName('nocookie');
+
+	await dropSessionCookie(page, '/auth/register');
+	await page.goto('/register');
+	await page.getByLabel('Username').fill(username);
+	await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery');
+	await page.getByLabel('Confirm password').fill('correct-horse-battery');
+	await page.getByRole('button', { name: 'Create account' }).click();
+
+	await expect(page.getByRole('alert')).toHaveText(
+		"Account created, but this browser didn't keep you logged in. Allow cookies for this site, or open Zeta in another browser."
+	);
+	await expect(page.getByLabel('Username')).toHaveValue(username);
+	await expect(page).toHaveURL(/\/register/);
 });
