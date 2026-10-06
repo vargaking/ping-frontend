@@ -71,8 +71,15 @@ async function usesApplePush(): Promise<boolean> {
 	}
 }
 
+async function hasVisibleWindow(): Promise<boolean> {
+	const windows = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+	return windows.some((client) => client.visibilityState === 'visible');
+}
+
 async function syncBadge(closedTag?: string) {
 	try {
+		// A visible window sets the badge itself, from the real unread total.
+		if (await hasVisibleWindow()) return;
 		const shown = await sw.registration.getNotifications();
 		setAppBadge(notificationBadgeCount(shown, closedTag));
 	} catch (e) {
