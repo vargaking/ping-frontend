@@ -11,7 +11,7 @@
 </script>
 
 <div
-	class="flex min-h-screen flex-col bg-background pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] text-foreground"
+	class="flex min-h-screen flex-col bg-background pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] text-foreground"
 >
 	<header class="flex items-center justify-between px-5 py-4">
 		<a

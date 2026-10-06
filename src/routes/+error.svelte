@@ -13,7 +13,7 @@
 </script>
 
 <div
-	class="flex min-h-screen items-center justify-center bg-background p-8 pt-[calc(2rem+env(safe-area-inset-top,0px))] pb-[calc(2rem+env(safe-area-inset-bottom,0px))]"
+	class="flex min-h-screen items-center justify-center bg-background p-8 pt-[calc(2rem+env(safe-area-inset-top,0px))] pr-[calc(2rem+env(safe-area-inset-right,0px))] pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pl-[calc(2rem+env(safe-area-inset-left,0px))]"
 >
 	<div class="flex max-w-md flex-col items-center gap-4 text-center">
 		<div class="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-text-subtle">

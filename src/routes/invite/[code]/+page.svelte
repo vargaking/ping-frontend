@@ -78,7 +78,7 @@
 </script>
 
 <div
-	class="flex min-h-screen w-full items-center justify-center bg-background p-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] text-foreground"
+	class="flex min-h-screen w-full items-center justify-center bg-background p-4 pt-[calc(1rem+env(safe-area-inset-top,0px))] pr-[calc(1rem+env(safe-area-inset-right,0px))] pb-[calc(1rem+env(safe-area-inset-bottom,0px))] pl-[calc(1rem+env(safe-area-inset-left,0px))] text-foreground"
 >
 	<div
 		class="flex w-full max-w-sm flex-col items-center gap-6 rounded-lg bg-card p-8 shadow-xl"

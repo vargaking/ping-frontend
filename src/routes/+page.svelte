@@ -67,7 +67,9 @@
 	<title>zeta — chat & voice for your server</title>
 </svelte:head>
 
-<div class="min-h-screen w-full overflow-x-clip bg-background text-foreground">
+<div
+	class="min-h-screen w-full overflow-x-clip bg-background pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)] text-foreground"
+>
 	<header
 		class="topbar sticky z-10 h-[calc(2.75rem+env(safe-area-inset-top,0px))] border-b border-border"
 	>
