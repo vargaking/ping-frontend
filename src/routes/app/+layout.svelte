@@ -22,6 +22,7 @@
 	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
 	import { isTextEntry, shellViewport, type RestingHeight } from '$lib/utils/shellViewport';
 	import { readInstallEnv } from '$lib/utils/install';
+	import { attachNavSwipe } from '$lib/utils/navSwipe';
 	import LayoutInfo from '$lib/components/ui/shell/LayoutInfo.svelte';
 
 	let { children } = $props();
@@ -62,6 +63,14 @@
 		void page.url.pathname;
 		void phoneState.phone;
 		untrack(() => membersPanelState.closeSheet());
+	});
+
+	let panes = $state<HTMLElement>();
+
+	// Dragging sideways moves between the navigation and the page on a phone.
+	$effect(() => {
+		if (!panes || !phoneState.phone || !phoneState.touch) return;
+		return attachNavSwipe(panes);
 	});
 
 	// The shell is locked to the screen: the document itself never scrolls.
@@ -152,10 +161,11 @@
 	{#if phoneState.phone}
 		<VoiceDock compact />
 	{/if}
-	<div class="flex min-h-0 flex-1 max-md:relative">
+	<div bind:this={panes} class="flex min-h-0 flex-1 max-md:relative">
 		<!-- On a phone the navigation slides over the page, which stays mounted underneath. -->
 		<div
-			class="flex min-h-0 motion-reduce:transition-none max-md:absolute max-md:inset-0 max-md:z-10 max-md:bg-background max-md:transition-transform max-md:duration-200 md:contents {phoneState.navOpen
+			data-nav-pane
+			class="flex min-h-0 max-md:absolute max-md:inset-0 max-md:z-10 max-md:bg-background max-md:transition-transform max-md:duration-200 max-md:motion-reduce:transition-none md:contents {phoneState.navOpen
 				? ''
 				: 'max-md:-translate-x-full'}"
 			inert={phoneState.phone && !phoneState.navOpen}
@@ -167,7 +177,7 @@
 				<ChannelSidebar />
 			{/if}
 		</div>
-		<div class="min-w-0 flex-1 bg-background" inert={phoneState.navCoversContent}>
+		<div class="min-w-0 flex-1 bg-background" inert={phoneState.phone && phoneState.navOpen}>
 			{@render children()}
 		</div>
 	</div>
