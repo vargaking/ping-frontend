@@ -48,6 +48,7 @@ const WS_CLOSE_UNAUTHENTICATED = 4401;
 const RECONNECT_DELAYS_MS = [2000, 4000, 8000, 10000];
 const PING_INTERVAL_MS = 10_000;
 const PONG_TIMEOUT_MS = 5_000;
+const RESUME_PONG_TIMEOUT_MS = 3_000;
 const MAX_MISSED_PONGS = 2;
 const TYPING_SEND_INTERVAL_MS = 3000;
 
@@ -94,9 +95,10 @@ class SocketState {
 		if (!this.listenersAttached) {
 			this.listenersAttached = true;
 			document.addEventListener('visibilitychange', () => {
-				if (document.hidden) return;
-				if (this.reconnecting) this.retryNow();
-				else this.sendPing();
+				if (!document.hidden) this.checkAfterResume();
+			});
+			window.addEventListener('pageshow', (event) => {
+				if (event.persisted) this.checkAfterResume();
 			});
 			window.addEventListener('online', () => {
 				this.retryNow();
@@ -188,6 +190,21 @@ class SocketState {
 		this.connect();
 	}
 
+	/** A phone can freeze the page for a long while and leave a socket that
+	 *  still says OPEN, so after coming back it has to answer a ping quickly. */
+	private checkAfterResume() {
+		if (this.reconnecting) {
+			this.retryNow();
+			return;
+		}
+		if (this.socket?.readyState !== WebSocket.OPEN || this.heartbeatUnsupported) return;
+
+		if (this.pongTimer) clearTimeout(this.pongTimer);
+		this.pongTimer = null;
+		this.outstandingPing = null;
+		this.sendPing(true);
+	}
+
 	private startHeartbeat() {
 		this.stopHeartbeat();
 		this.heartbeatUnsupported = false;
@@ -204,17 +221,22 @@ class SocketState {
 		this.missedPongs = 0;
 	}
 
-	private sendPing() {
+	/** `afterResume` pings are stricter: one missed pong drops the socket and
+	 *  the replacement connects at once instead of after the backoff. */
+	private sendPing(afterResume = false) {
 		if (this.heartbeatUnsupported || this.outstandingPing != null || document.hidden) return;
 		if (this.socket?.readyState !== WebSocket.OPEN) return;
 
 		const t = performance.now();
 		this.outstandingPing = t;
 		this.socket.send(JSON.stringify({ type: 'ping', t }));
-		this.pongTimer = setTimeout(() => this.pongTimedOut(t), PONG_TIMEOUT_MS);
+		this.pongTimer = setTimeout(
+			() => this.pongTimedOut(t, afterResume),
+			afterResume ? RESUME_PONG_TIMEOUT_MS : PONG_TIMEOUT_MS
+		);
 	}
 
-	private pongTimedOut(t: number) {
+	private pongTimedOut(t: number, afterResume: boolean) {
 		if (this.outstandingPing !== t) return;
 		this.outstandingPing = null;
 		// A background tab's timers are throttled, so a late pong proves nothing.
@@ -222,7 +244,7 @@ class SocketState {
 
 		this.missedPongs++;
 		connectionState.resetRtt(serverHost);
-		if (this.missedPongs < MAX_MISSED_PONGS) return;
+		if (!afterResume && this.missedPongs < MAX_MISSED_PONGS) return;
 
 		const socket = this.socket;
 		this.socket = null;
@@ -232,6 +254,7 @@ class SocketState {
 		typingState.clearAll();
 		this.outbox.connectionLost();
 		this.scheduleReconnect();
+		if (afterResume) this.retryNow();
 	}
 
 	private handlePong(t: number) {

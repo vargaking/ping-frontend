@@ -9,6 +9,7 @@
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
+	import InstallPrompt from '$lib/components/notifications/InstallPrompt.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
@@ -65,6 +66,7 @@
 </div>
 
 <Overlay />
+<InstallPrompt />
 <PushPrompt />
 <MicPrompt />
 <ShareScreenDialog />

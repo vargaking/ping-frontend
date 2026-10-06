@@ -2,20 +2,27 @@
 	import { BellRing } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import { installState } from '$lib/states/installState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
+	import { phoneBlockedHelp } from '$lib/utils/install';
 	import { dismissPushPrompt, isPushPromptSnoozed } from '$lib/utils/pushPrompt';
 
 	let snoozed = $state(isPushPromptSnoozed());
 
 	// Steps aside while the mic prompt for a voice join is up; they share this corner.
+	// On a phone the install hint goes first.
 	const visible = $derived(
 		notificationsState.pushChecked &&
 			notificationsState.push === 'off' &&
 			!snoozed &&
-			!voiceState.micPrompt
+			!voiceState.micPrompt &&
+			!installState.visible
 	);
 	const blocked = $derived(notificationsState.permission === 'denied');
+	const blockedHelp =
+		phoneBlockedHelp(installState.platform) ??
+		'Click the lock icon in the address bar, set Notifications to Allow, then reload.';
 
 	async function enable() {
 		const result = await notificationsState.setPush(true);
@@ -48,8 +55,7 @@
 					<span class="text-sm font-medium">Get notified about DMs and mentions</span>
 					{#if blocked}
 						<span class="text-xs text-muted-foreground">
-							Notifications are blocked. Click the lock icon in the address bar, set Notifications
-							to Allow, then reload.
+							Notifications are blocked. {blockedHelp}
 						</span>
 					{:else}
 						<span class="text-xs text-muted-foreground">

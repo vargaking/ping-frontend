@@ -11,6 +11,7 @@
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
+	import { installState } from '$lib/states/installState.svelte';
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
@@ -18,6 +19,7 @@
 	import DesktopTitleBar from '$lib/components/ui/shell/DesktopTitleBar.svelte';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
 	import { SITE_NAME } from '$lib/meta';
+	import { setAppBadge } from '$lib/utils/appBadge';
 
 	let { children } = $props();
 
@@ -32,6 +34,9 @@
 	onMount(() => {
 		if (frameless) document.documentElement.dataset.frameless = '';
 	});
+
+	// The install prompt event can fire before the app shell mounts.
+	onMount(() => installState.attach());
 
 	// A push notification click asks an already-open tab to move to its thread.
 	onMount(() => {
@@ -115,6 +120,10 @@
 			count: loggedIn ? unreadState.badgeTotal : 0,
 			unread: loggedIn && unreadState.anyUnread
 		});
+	});
+
+	$effect(() => {
+		if (!desktop) setAppBadge(loggedIn ? unreadState.badgeTotal : 0);
 	});
 
 	$effect(() => {
