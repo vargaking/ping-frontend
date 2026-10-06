@@ -7,6 +7,9 @@
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { getErrorMessage, normalizeError } from '$lib/requests/errors';
 	import { safeNext } from '$lib/auth/session';
+	import { authProblem } from '$lib/auth/afterAuth';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { reportClientError } from '$lib/utils/errorReporting';
 
 	let username = $state('');
 	let password = $state('');
@@ -51,7 +54,13 @@
 			await login(username, password);
 			// Populate state + open the socket now, so goto() lands in a working app
 			// without a full-page reload.
-			await initializeAppData();
+			const problem = authProblem(await initializeAppData(), !!usersState.loggedInUser, 'login');
+			if (problem) {
+				password = '';
+				formError = problem.message;
+				if (problem.report) reportClientError({ kind: 'error', message: problem.report });
+				return;
+			}
 			await goto(next ?? '/app', { replaceState: true });
 		} catch (error) {
 			credsInvalid = normalizeError(error).status === 401;
