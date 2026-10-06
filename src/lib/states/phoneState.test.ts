@@ -9,6 +9,7 @@ afterEach(() => {
 	phoneState.phone = false;
 	phoneState.touch = false;
 	phoneState.navOpen = false;
+	phoneState.navMoving = false;
 });
 
 describe('opensOnNavigation', () => {
@@ -47,6 +48,22 @@ describe('phone navigation', () => {
 		expect(phoneState.navCoversContent).toBe(false);
 		phoneState.openNav();
 		expect(phoneState.navCoversContent).toBe(true);
+	});
+});
+
+describe('navigation drag', () => {
+	it('covers the page while the navigation is dragged or sliding shut', () => {
+		phoneState.phone = true;
+		expect(phoneState.navCoversContent).toBe(false);
+		phoneState.navMoving = true;
+		expect(phoneState.navCoversContent).toBe(true);
+		phoneState.navMoving = false;
+		expect(phoneState.navCoversContent).toBe(false);
+	});
+
+	it('does not matter off a phone', () => {
+		phoneState.navMoving = true;
+		expect(phoneState.navCoversContent).toBe(false);
 	});
 });
 

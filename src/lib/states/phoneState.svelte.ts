@@ -16,10 +16,12 @@ class PhoneState {
 	touch = $state(false);
 	/** Phone only: the navigation (rail and sidebar) is slid over the page. */
 	navOpen = $state(false);
+	/** Phone only: the navigation is being dragged, or still sliding shut after a drag. */
+	navMoving = $state(false);
 
 	/** The page is mounted underneath but nobody is looking at it. */
 	get navCoversContent() {
-		return this.phone && this.navOpen;
+		return this.phone && (this.navOpen || this.navMoving);
 	}
 
 	constructor() {

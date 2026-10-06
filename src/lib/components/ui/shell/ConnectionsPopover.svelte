@@ -11,6 +11,9 @@
 	import { formatRtt } from '$lib/utils/formatRtt';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
+	import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
+	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
 
 	const chip: Record<ConnectionStatus, { label: string; dot: string; text: string }> = {
 		connected: { label: 'Connected', dot: 'bg-online', text: 'text-online' },
@@ -112,4 +115,15 @@
 			connectionState.voice?.serverId === server.id ? connectionState.voice : null
 		)}
 	{/each}
+
+	{#if phoneState.touch}
+		<div class="mt-2 border-t border-border px-4 pt-3 pb-1">
+			<SettingsSwitch
+				label="Layout info"
+				description="Show screen and viewport numbers on screen."
+				checked={shellViewportState.showInfo}
+				onclick={() => shellViewportState.toggleInfo()}
+			/>
+		</div>
+	{/if}
 </div>

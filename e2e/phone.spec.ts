@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { channelPath, createChannel, createServer, registerUser, uniqueName } from './helpers';
 
 const IPHONE_USER_AGENT =
@@ -72,4 +72,61 @@ test('on a phone the navigation and the channel take turns on screen', async ({
 	await expect(heading).toBeInViewport();
 	await expect(rail).not.toBeInViewport();
 	await expect(messages).toHaveCount(1);
+});
+
+/** A finger dragging in small, paced steps, slower than a flick. */
+async function drag(page: Page, from: [number, number], to: [number, number]) {
+	const cdp = await page.context().newCDPSession(page);
+	const steps = Math.max(Math.abs(to[0] - from[0]), Math.abs(to[1] - from[1])) / 6;
+	const at = (i: number) => ({
+		x: from[0] + ((to[0] - from[0]) * i) / steps,
+		y: from[1] + ((to[1] - from[1]) * i) / steps
+	});
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at(0)] });
+	for (let i = 1; i <= steps; i++) {
+		await page.waitForTimeout(20);
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [at(i)] });
+	}
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await cdp.detach();
+}
+
+test('on a phone a sideways swipe moves between the navigation and the channel', async ({
+	context,
+	page
+}) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Swipe Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+
+	const rail = page.getByRole('navigation', { name: 'Servers' });
+	const heading = page.getByRole('heading', { name: 'general' });
+	await expect(heading).toBeInViewport();
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	for (const word of ['alpha', 'bravo']) {
+		await composer.fill(`${word} `.repeat(250));
+		await page.getByRole('button', { name: 'Send message' }).tap();
+	}
+	await expect(page.locator('[data-message-id]')).toHaveCount(2);
+	const scroller = page
+		.locator('[data-message-id]')
+		.first()
+		.locator('xpath=ancestor::div[contains(@class, "overflow-y-auto")][1]');
+	const scrollTop = () => scroller.evaluate((el) => el.scrollTop);
+
+	await drag(page, [5, 400], [200, 400]);
+	await expect(rail).not.toBeInViewport();
+
+	await drag(page, [100, 400], [300, 400]);
+	await expect(rail).toBeInViewport();
+
+	await drag(page, [250, 400], [60, 400]);
+	await expect(rail).not.toBeInViewport();
+	await expect(heading).toBeInViewport();
+
+	const before = await scrollTop();
+	await drag(page, [200, 300], [200, 600]);
+	expect(await scrollTop()).toBeLessThan(before);
+	await expect(rail).not.toBeInViewport();
 });
