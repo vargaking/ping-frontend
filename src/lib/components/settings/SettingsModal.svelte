@@ -16,7 +16,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { X } from 'lucide-svelte';
+	import { ArrowLeft, X } from 'lucide-svelte';
 
 	type Category = 'account' | 'server' | 'channel';
 
@@ -144,6 +144,8 @@
 
 	let activeTabId = $state('');
 	let inviteOpen = $state(false);
+	// A phone shows either the tab list or one tab; it opens on the requested tab.
+	let phoneShowsList = $state(false);
 
 	// Land on the first tab of the requested scope, and fall back whenever the
 	// active tab disappears (e.g. the channel was deleted).
@@ -189,11 +191,36 @@
 	<NotificationSettings />
 {/snippet}
 
+{#snippet closeButton()}
+	<button
+		type="button"
+		aria-label="Close settings"
+		onclick={() => overlayState.close()}
+		class="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11"
+	>
+		<X size={18} strokeWidth={1.75} />
+	</button>
+{/snippet}
+
 <div
-	class="flex h-[min(680px,90vh)] w-[min(960px,90vw)] overflow-hidden rounded-xl border border-input bg-background text-foreground"
+	data-fullscreen
+	class="flex h-[min(680px,90vh)] w-[min(960px,90vw)] overflow-hidden rounded-xl border border-input bg-background text-foreground max-md:h-[var(--app-height,100dvh)] max-md:w-screen max-md:rounded-none max-md:border-0 max-md:pt-[env(safe-area-inset-top,0px)] max-md:pr-[env(safe-area-inset-right,0px)] max-md:pb-[var(--safe-bottom)] max-md:pl-[env(safe-area-inset-left,0px)]"
 >
-	<nav aria-label="Settings" class="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar">
-		<div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-4 scrollbar-stable">
+	<nav
+		aria-label="Settings"
+		class="flex w-60 shrink-0 flex-col border-r border-border bg-sidebar max-md:w-full max-md:border-r-0 {phoneShowsList
+			? ''
+			: 'max-md:hidden'}"
+	>
+		<header
+			class="hidden h-12 shrink-0 items-center border-b border-border pr-1.5 pl-4 max-md:flex"
+		>
+			<h1 class="text-[15px] font-semibold">Settings</h1>
+			{@render closeButton()}
+		</header>
+		<div
+			class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-2 py-4 scrollbar-stable max-md:px-3"
+		>
 			{#each sections as section (section.scope)}
 				<div class="flex flex-col gap-0.5">
 					<h2
@@ -215,8 +242,11 @@
 						<button
 							type="button"
 							aria-current={tab.id === currentTab?.id ? 'page' : undefined}
-							onclick={() => (activeTabId = tab.id)}
-							class="flex h-9 items-center rounded-lg px-2 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {tab.id ===
+							onclick={() => {
+								activeTabId = tab.id;
+								phoneShowsList = false;
+							}}
+							class="flex h-9 items-center rounded-lg px-2 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-md:h-12 max-md:text-[15px] {tab.id ===
 							currentTab?.id
 								? 'bg-accent font-medium text-foreground'
 								: 'text-muted-foreground hover:bg-card hover:text-foreground'}"
@@ -232,17 +262,20 @@
 		</div>
 	</nav>
 
-	<div class="flex min-w-0 flex-1 flex-col">
-		<header class="flex h-14 shrink-0 items-center border-b border-border pr-3 pl-7">
-			<h1 class="text-[15px] font-semibold">{currentTab?.label}</h1>
+	<div class="flex min-w-0 flex-1 flex-col {phoneShowsList ? 'max-md:hidden' : ''}">
+		<header
+			class="flex h-14 shrink-0 items-center border-b border-border pr-3 pl-7 max-md:h-12 max-md:gap-1 max-md:pr-1.5 max-md:pl-1.5"
+		>
 			<button
 				type="button"
-				aria-label="Close settings"
-				onclick={() => overlayState.close()}
-				class="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				aria-label="Back to settings"
+				onclick={() => (phoneShowsList = true)}
+				class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-md:flex pointer-coarse:h-11 pointer-coarse:w-11"
 			>
-				<X size={18} strokeWidth={1.75} />
+				<ArrowLeft size={18} strokeWidth={1.75} />
 			</button>
+			<h1 class="min-w-0 truncate text-[15px] font-semibold">{currentTab?.label}</h1>
+			{@render closeButton()}
 		</header>
 
 		{#if currentTab}
@@ -250,7 +283,7 @@
 				{#if currentTab.form}
 					{@render currentTab.render()}
 				{:else}
-					<div class="min-h-0 flex-1 overflow-y-auto p-7 scrollbar-stable">
+					<div class="min-h-0 flex-1 overflow-y-auto p-7 scrollbar-stable max-md:p-4">
 						{@render currentTab.render()}
 					</div>
 				{/if}

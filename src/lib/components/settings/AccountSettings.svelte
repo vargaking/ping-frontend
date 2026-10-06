@@ -146,10 +146,10 @@
 
 <SettingsForm {dirty} {saving} onsave={save} onreset={reset}>
 	<div class="flex items-center gap-5">
-		<div class="overflow-hidden rounded-full">
+		<div class="shrink-0 overflow-hidden rounded-full">
 			<Avatar src={avatarPreview} user={usersState.loggedInUser} size="xl" />
 		</div>
-		<div class="flex flex-col gap-1.5">
+		<div class="flex min-w-0 flex-col gap-1.5">
 			<div>
 				<Button
 					variant="secondary"

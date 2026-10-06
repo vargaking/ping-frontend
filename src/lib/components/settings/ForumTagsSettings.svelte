@@ -101,7 +101,7 @@
 				aria-pressed={selected === color}
 				onclick={() => pick(color)}
 				style:background-color={color}
-				class="h-5 w-5 rounded-full ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {selected ===
+				class="h-5 w-5 rounded-full ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-8 pointer-coarse:w-8 {selected ===
 				color
 					? 'ring-2 ring-foreground'
 					: ''}"
@@ -134,7 +134,7 @@
 							aria-label="Move {tag.name} up"
 							disabled={i === 0}
 							onclick={() => move(i, -1)}
-							class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30"
+							class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30 pointer-coarse:h-10 pointer-coarse:w-10"
 						>
 							<ArrowUp size={16} strokeWidth={1.75} />
 						</button>
@@ -143,7 +143,7 @@
 							aria-label="Move {tag.name} down"
 							disabled={i === tags.length - 1}
 							onclick={() => move(i, 1)}
-							class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30"
+							class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30 pointer-coarse:h-10 pointer-coarse:w-10"
 						>
 							<ArrowDown size={16} strokeWidth={1.75} />
 						</button>
@@ -151,7 +151,7 @@
 							type="button"
 							aria-label="Delete {tag.name}"
 							onclick={() => remove(tag)}
-							class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+							class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-10 pointer-coarse:w-10"
 						>
 							<Trash2 size={16} strokeWidth={1.75} />
 						</button>

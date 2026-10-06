@@ -150,7 +150,10 @@
 		<RoleEditor role={editing} onback={() => (editingId = null)} />
 	{/key}
 {:else}
-	<div class="min-h-0 flex-1 overflow-y-auto p-7 scrollbar-stable" in:fade={{ duration: 150 }}>
+	<div
+		class="min-h-0 flex-1 overflow-y-auto p-7 scrollbar-stable max-md:p-4"
+		in:fade={{ duration: 150 }}
+	>
 		{#if roles == null && loadError}
 			<ErrorState
 				title="Couldn’t load roles"

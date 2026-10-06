@@ -1,6 +1,7 @@
 <script lang="ts" module>
-	const MANAGER_COLUMNS = 'grid-cols-[88px_1fr_72px_112px_72px_72px]';
-	const OWN_COLUMNS = 'grid-cols-[1fr_72px_112px_72px_72px]';
+	const MANAGER_COLUMNS =
+		'grid-cols-[88px_1fr_72px_112px_72px_72px] max-md:grid-cols-[auto_minmax(0,1fr)_auto]';
+	const OWN_COLUMNS = 'grid-cols-[1fr_72px_112px_72px_72px] max-md:grid-cols-[minmax(0,1fr)_auto]';
 	const COPIED_MS = 2000;
 	const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
@@ -105,7 +106,7 @@
 {#snippet inviteRow(invite: InviteResponse, dimmed: boolean)}
 	<div
 		role="row"
-		class="grid h-12 {columns} items-center gap-3 rounded-lg px-3 focus-within:bg-card hover:bg-card {dimmed
+		class="grid h-12 {columns} items-center gap-3 rounded-lg px-3 focus-within:bg-card hover:bg-card max-md:h-auto max-md:gap-x-2 max-md:gap-y-0 max-md:py-1.5 {dimmed
 			? 'text-text-subtle'
 			: ''}"
 	>
@@ -126,11 +127,22 @@
 		{#if canManage}
 			<span role="cell" class="truncate text-sm">{invite.created_by_username}</span>
 		{/if}
-		<span role="cell" class="font-mono text-xs">
-			{invite.use_count} / {invite.max_uses ?? '∞'}
+		<span
+			class="contents max-md:order-1 max-md:col-span-full max-md:flex max-md:flex-wrap max-md:gap-x-3 max-md:text-text-subtle"
+		>
+			<span role="cell" class="font-mono text-xs">
+				<span class="md:hidden">Uses</span>
+				{invite.use_count} / {invite.max_uses ?? '∞'}
+			</span>
+			<span role="cell" class="text-[13px]">
+				<span class="md:hidden">Expires</span>
+				{expiresIn(invite.valid_until)}
+			</span>
+			<span role="cell" class="text-[13px]">
+				<span class="md:hidden">Password</span>
+				{invite.has_password ? 'Yes' : 'No'}
+			</span>
 		</span>
-		<span role="cell" class="text-[13px]">{expiresIn(invite.valid_until)}</span>
-		<span role="cell" class="text-[13px]">{invite.has_password ? 'Yes' : 'No'}</span>
 		<span role="cell" class="flex items-center justify-end">
 			{#if isInviteActive(invite)}
 				<Button
@@ -163,7 +175,7 @@
 {/snippet}
 
 <div class="flex flex-col gap-4" in:fade={{ duration: 150 }}>
-	<div class="flex items-center justify-between gap-3">
+	<div class="flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch">
 		<p class="text-sm text-muted-foreground">
 			{canManage
 				? 'Invite links for this server.'
@@ -201,7 +213,7 @@
 			<div role="table" aria-label="Active invites" class="flex flex-col">
 				<div
 					role="row"
-					class="grid {columns} gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle"
+					class="grid {columns} gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle max-md:hidden"
 				>
 					<span role="columnheader">Code</span>
 					{#if canManage}

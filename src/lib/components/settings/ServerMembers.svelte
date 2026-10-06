@@ -142,7 +142,7 @@
 		<div role="table" aria-label="Members" class="flex flex-col">
 			<div
 				role="row"
-				class="grid grid-cols-[1fr_minmax(140px,1.3fr)_100px_36px] gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle"
+				class="grid grid-cols-[1fr_minmax(140px,1.3fr)_100px_36px] gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle max-md:hidden"
 			>
 				<span role="columnheader">Member</span>
 				<span role="columnheader">Role</span>
@@ -155,9 +155,9 @@
 				{@const isMe = member.user.id === myId}
 				<div
 					role="row"
-					class="group grid min-h-14 grid-cols-[1fr_minmax(140px,1.3fr)_100px_36px] items-center gap-3 rounded-lg px-3 py-2 focus-within:bg-card hover:bg-card"
+					class="group grid min-h-14 grid-cols-[1fr_minmax(140px,1.3fr)_100px_36px] items-center gap-3 rounded-lg px-3 py-2 focus-within:bg-card hover:bg-card max-md:grid-cols-[minmax(0,1fr)_auto_44px] max-md:gap-x-2 max-md:gap-y-1"
 				>
-					<span role="cell" class="flex min-w-0 items-center gap-3">
+					<span role="cell" class="flex min-w-0 items-center gap-3 max-md:col-span-2">
 						<span class="relative shrink-0">
 							<Avatar user={member.user} size="sm" rounded="rounded-[9px]" />
 							<span
@@ -179,7 +179,7 @@
 							{/if}
 						</span>
 					</span>
-					<span role="cell">
+					<span role="cell" class="max-md:col-start-1 max-md:row-start-2 max-md:min-w-0">
 						{#if member.is_owner}
 							<span class="rounded-md bg-primary/15 px-2 py-[3px] text-xs font-medium text-primary">
 								Owner
@@ -194,15 +194,18 @@
 							</span>
 						{/if}
 					</span>
-					<span role="cell" class="font-mono text-xs text-muted-foreground">
+					<span
+						role="cell"
+						class="font-mono text-xs text-muted-foreground max-md:col-start-2 max-md:row-start-2 max-md:text-[11px]"
+					>
 						{joinedFormat.format(new Date(member.joined_at))}
 					</span>
-					<span role="cell">
+					<span role="cell" class="max-md:col-start-3 max-md:row-span-2 max-md:row-start-1">
 						{#if canKick(member) || canChangeRole(member)}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger
 									aria-label="Actions for {member.user.username}"
-									class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-colors group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent data-[state=open]:opacity-100"
+									class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-colors group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent data-[state=open]:opacity-100 max-md:h-11 max-md:w-11 pointer-coarse:opacity-100"
 								>
 									<EllipsisVertical size={16} strokeWidth={2} />
 								</DropdownMenu.Trigger>

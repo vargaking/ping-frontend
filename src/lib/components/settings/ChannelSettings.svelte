@@ -171,7 +171,7 @@
 		/>
 	</SettingsForm>
 {:else}
-	<div class="p-7">
+	<div class="p-7 max-md:p-4">
 		<EmptyState title="Channel not found" description="It may have been deleted.">
 			{#snippet icon()}
 				<Hash size={20} strokeWidth={1.75} />
