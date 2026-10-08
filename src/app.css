@@ -239,6 +239,13 @@ html[data-keyboard] {
 html.app-shell {
 	overscroll-behavior: none;
 	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+/* Safari takes no input in a contenteditable under user-select: none. */
+html.app-shell :is(input, textarea, [contenteditable], .ProseMirror, [role='alert']) {
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 @media (pointer: coarse) {
@@ -256,11 +263,5 @@ html.app-shell {
 	textarea,
 	.ProseMirror {
 		font-size: 16px;
-	}
-	.ProseMirror,
-	input,
-	textarea {
-		-webkit-user-select: text;
-		user-select: text;
 	}
 }

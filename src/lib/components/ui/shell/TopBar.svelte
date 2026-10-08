@@ -20,7 +20,7 @@
 
 <header
 	class={[
-		'grid h-[calc(2.75rem+env(safe-area-inset-top,0px))] shrink-0 grid-cols-3 items-center border-b border-border bg-rail px-3 pt-[env(safe-area-inset-top,0px)] select-none max-md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]',
+		'grid h-[calc(2.75rem+env(safe-area-inset-top,0px))] shrink-0 grid-cols-3 items-center border-b border-border bg-rail px-3 pt-[env(safe-area-inset-top,0px)] max-md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]',
 		frameless && 'app-drag'
 	]}
 	style={frameless

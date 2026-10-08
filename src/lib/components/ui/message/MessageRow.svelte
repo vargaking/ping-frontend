@@ -225,7 +225,7 @@
 					<MessageReactions {message} />
 				</div>
 				{#if failed}
-					<div class="mt-0.5 flex items-center gap-2 text-xs text-destructive">
+					<div class="mt-0.5 flex items-center gap-2 text-xs text-destructive select-none">
 						<span>Not sent</span>
 						<button
 							type="button"
