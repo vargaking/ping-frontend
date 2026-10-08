@@ -80,4 +80,17 @@
 	{#each rows as [name, value] (name)}
 		<div class="flex justify-between gap-3"><span class="opacity-60">{name}</span>{value}</div>
 	{/each}
+	{#if shellViewportState.trace.length}
+		<div class="mt-1 border-t border-white/30 pt-1 opacity-60">ms event vv top sy app</div>
+		{#each shellViewportState.trace as entry (entry.seq)}
+			<div class="whitespace-pre">
+				{entry.t}
+				{entry.event}
+				{px(entry.viewport)}
+				{px(entry.offsetTop)}
+				{px(entry.scrollY)}
+				{px(entry.appHeight)}
+			</div>
+		{/each}
+	{/if}
 </div>

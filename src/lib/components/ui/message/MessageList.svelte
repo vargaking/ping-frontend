@@ -65,9 +65,14 @@
 	// is never yanked back down when a new message arrives.
 	let stickToBottom = true;
 
+	// Height of the scroller as last observed. A scroll while it differs comes from a resize
+	// (the keyboard opening), which says nothing about where the user wants to be.
+	let viewHeight = 0;
+
 	function handleScroll() {
 		const el = messageWrapper;
-		if (el) stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+		if (!el || el.clientHeight !== viewHeight) return;
+		stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 	}
 
 	// Id of the last message read before this open (from unreadState/conversationsState,
@@ -340,6 +345,20 @@
 	$effect(() => {
 		const key = threadKey;
 		untrack(() => loadMessages(key));
+	});
+
+	// Stay at the bottom when the list gets shorter or taller, if it was there before.
+	$effect(() => {
+		const el = messageWrapper;
+		if (!el) return;
+		viewHeight = el.clientHeight;
+		const observer = new ResizeObserver(() => {
+			if (el.clientHeight === viewHeight) return;
+			viewHeight = el.clientHeight;
+			if (stickToBottom) scrollToBottom();
+		});
+		observer.observe(el);
+		return () => observer.disconnect();
 	});
 
 	// Load older history when the top of the list scrolls into view.
