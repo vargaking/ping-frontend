@@ -91,3 +91,38 @@ export function measuredKeyboardHeight(view: ShellViewport): number | null {
 	if (!view.keyboardOpen || view.anticipating) return null;
 	return view.resting.height - view.height;
 }
+
+export type TopEdge = { position: 'fixed' | 'sticky'; background: string; backdrop: boolean };
+
+function hasBackdropFilter(style: CSSStyleDeclaration): boolean {
+	const value =
+		style.getPropertyValue('backdrop-filter') || style.getPropertyValue('-webkit-backdrop-filter');
+	return value !== '' && value !== 'none';
+}
+
+/** The box iOS looks for along the top edge: from whatever sits at the top centre, the
+ *  nearest ancestor that is fixed or sticky and nearly as wide as the viewport. iOS
+ *  shows its scroll-edge blur when there is none. */
+export function findTopEdge(doc: Document, ignore: (element: Element) => boolean): TopEdge | null {
+	const view = doc.defaultView;
+	if (!view) return null;
+	const hit = doc.elementsFromPoint(view.innerWidth / 2, 4).find((element) => !ignore(element));
+	let backdrop = false;
+	for (let element = hit ?? null; element; element = element.parentElement) {
+		const style = view.getComputedStyle(element);
+		backdrop ||= hasBackdropFilter(style);
+		const { position } = style;
+		if (
+			(position === 'fixed' || position === 'sticky') &&
+			element.getBoundingClientRect().width >= 0.9 * view.innerWidth
+		) {
+			return { position, background: style.backgroundColor, backdrop };
+		}
+	}
+	return null;
+}
+
+export function describeTopEdge(edge: TopEdge | null): string {
+	if (!edge) return 'none';
+	return `${edge.position} ${edge.background}${edge.backdrop ? ' +backdrop' : ''}`;
+}

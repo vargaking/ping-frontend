@@ -3,6 +3,8 @@ import {
 	expectedKeyboardHeight,
 	measuredKeyboardHeight,
 	orientationOf,
+	describeTopEdge,
+	findTopEdge,
 	shellViewport,
 	type RestingHeight,
 	type ShellViewportInput
@@ -170,5 +172,106 @@ describe('keyboard height', () => {
 		const anticipated = decide({ editableFocused: true, resting: rest(844), anticipated: 508 });
 		expect(measuredKeyboardHeight(anticipated)).toBeNull();
 		expect(measuredKeyboardHeight(decide())).toBeNull();
+	});
+});
+
+type Box = {
+	position?: string;
+	width?: number;
+	background?: string;
+	backdrop?: string;
+	parent?: Box;
+};
+
+function documentWith(hits: Box[], innerWidth = 390): Document {
+	const style = (box: Box) => ({
+		position: box.position ?? 'static',
+		backgroundColor: box.background ?? 'rgba(0, 0, 0, 0)',
+		getPropertyValue: (name: string) => (name === 'backdrop-filter' ? (box.backdrop ?? 'none') : '')
+	});
+	const elements = new Map<Element, Box>();
+	const element = (box: Box): Element => {
+		const wrapper = {
+			parentElement: box.parent ? element(box.parent) : null,
+			getBoundingClientRect: () => ({ width: box.width ?? innerWidth })
+		} as unknown as Element;
+		elements.set(wrapper, box);
+		return wrapper;
+	};
+	const hit = hits.map(element);
+	return {
+		elementsFromPoint: () => hit,
+		defaultView: {
+			innerWidth,
+			getComputedStyle: (el: Element) => style(elements.get(el)!)
+		}
+	} as unknown as Document;
+}
+
+const none = () => false;
+
+describe('findTopEdge', () => {
+	it('finds a sticky bar the hit element sits in', () => {
+		const bar = { position: 'sticky', background: 'rgb(13, 15, 17)' };
+		const doc = documentWith([{ parent: bar }]);
+		expect(findTopEdge(doc, none)).toEqual({
+			position: 'sticky',
+			background: 'rgb(13, 15, 17)',
+			backdrop: false
+		});
+	});
+
+	it('finds nothing when no ancestor is fixed or sticky', () => {
+		expect(findTopEdge(documentWith([{ parent: { parent: {} } }]), none)).toBeNull();
+	});
+
+	it('ignores a fixed or sticky box narrower than 90% of the viewport', () => {
+		const doc = documentWith([{ position: 'fixed', width: 300 }]);
+		expect(findTopEdge(doc, none)).toBeNull();
+	});
+
+	it('walks past a narrow fixed box to a wide one above it', () => {
+		const doc = documentWith([
+			{ position: 'fixed', width: 100, parent: { position: 'fixed', background: 'red' } }
+		]);
+		expect(findTopEdge(doc, none)?.position).toBe('fixed');
+		expect(findTopEdge(doc, none)?.background).toBe('red');
+	});
+
+	it('skips ignored elements and uses the next one down', () => {
+		const readout = { position: 'fixed', background: 'black' };
+		const bar = { position: 'sticky', background: 'white' };
+		const doc = documentWith([readout, bar]);
+		const hit = doc.elementsFromPoint(0, 0);
+		const edge = findTopEdge(doc, (element) => element === hit[0]);
+		expect(edge?.background).toBe('white');
+	});
+
+	it('flags a backdrop filter anywhere on the walk up to the match', () => {
+		const bar = { position: 'sticky', background: 'white' };
+		const above = { backdrop: 'blur(8px)' };
+		expect(
+			findTopEdge(documentWith([{ backdrop: 'blur(8px)', parent: bar }]), none)?.backdrop
+		).toBe(true);
+		expect(
+			findTopEdge(documentWith([{ parent: { ...bar, backdrop: 'blur(4px)' } }]), none)?.backdrop
+		).toBe(true);
+		expect(findTopEdge(documentWith([{ parent: { ...bar, parent: above } }]), none)?.backdrop).toBe(
+			false
+		);
+	});
+});
+
+describe('describeTopEdge', () => {
+	it('prints none when nothing was found', () => {
+		expect(describeTopEdge(null)).toBe('none');
+	});
+
+	it('prints the position and colour, with a marker for a backdrop filter', () => {
+		const edge = { position: 'sticky', background: 'rgb(13, 15, 17)', backdrop: false } as const;
+		expect(describeTopEdge(edge)).toBe('sticky rgb(13, 15, 17)');
+		expect(describeTopEdge({ ...edge, position: 'fixed', backdrop: true })).toBe(
+			'fixed rgb(13, 15, 17) +backdrop'
+		);
 	});
 });
