@@ -151,6 +151,8 @@ test('on a phone Members in the server menu opens the member sheet', async ({ co
 	await sheet.getByRole('button', { name: 'Close members' }).tap();
 	await expect(sheet).toBeHidden();
 	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+});
+
 test('on a phone the list stays at the bottom when the shell shrinks for the keyboard', async ({
 	context,
 	page
