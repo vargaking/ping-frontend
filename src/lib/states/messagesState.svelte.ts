@@ -88,6 +88,11 @@ class MessagesState {
 		this.threads[key] = { messages: [...messages, ...unsent], hasMore };
 	}
 
+	/** Swap in an already merged list as is. */
+	replace(key: string, messages: MessageType[], hasMore: boolean) {
+		this.threads[key] = { messages, hasMore };
+	}
+
 	/** Prepend an older page (oldest first) ahead of what's already loaded. */
 	prependOlder(key: string, older: MessageType[], hasMore: boolean) {
 		const thread = this.ensure(key);
