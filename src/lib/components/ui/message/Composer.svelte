@@ -474,9 +474,11 @@
 				</Popover.Content>
 			</Popover.Root>
 
+			<!-- Keeps focus in the editor, so the keyboard stays up after sending. -->
 			<button
 				type="button"
 				aria-label="Send message"
+				onmousedown={(event) => event.preventDefault()}
 				onclick={() => editor?.submit()}
 				disabled={!canSend}
 				class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-input focus-visible:outline-none disabled:opacity-40"
