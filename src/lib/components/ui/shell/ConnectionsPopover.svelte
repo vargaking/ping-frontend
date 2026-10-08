@@ -11,6 +11,9 @@
 	import { formatRtt } from '$lib/utils/formatRtt';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
+	import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
+	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
 
 	const chip: Record<ConnectionStatus, { label: string; dot: string; text: string }> = {
 		connected: { label: 'Connected', dot: 'bg-online', text: 'text-online' },
@@ -65,13 +68,13 @@
 			<span class="h-1.5 w-1.5 rounded-full {chip[status].dot}"></span>
 			<span class="text-[11px]">{chip[status].label}</span>
 		</span>
-		<span class="w-12 shrink-0 text-right font-mono text-[11px] text-text-subtle"
+		<span class="w-12 shrink-0 translate-y-px text-right font-mono text-[11px] text-text-subtle"
 			>{formatRtt(rttMs)}</span
 		>
 	</div>
 {/snippet}
 
-<div class="w-[420px] py-2">
+<div class="w-[420px] py-2 max-md:w-[min(420px,calc(100vw-1rem))]">
 	{#if connectionState.identity}
 		<div class="px-4 pt-1 pb-1.5 text-xs font-medium text-text-subtle">Identity</div>
 		{@render row(
@@ -112,4 +115,15 @@
 			connectionState.voice?.serverId === server.id ? connectionState.voice : null
 		)}
 	{/each}
+
+	{#if phoneState.touch}
+		<div class="mt-2 border-t border-border px-4 pt-3 pb-1">
+			<SettingsSwitch
+				label="Layout info"
+				description="Show screen and viewport numbers on screen."
+				checked={shellViewportState.showInfo}
+				onclick={() => shellViewportState.toggleInfo()}
+			/>
+		</div>
+	{/if}
 </div>

@@ -11,10 +11,17 @@
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
+	import { installState } from '$lib/states/installState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
+	import { desktop, frameless } from '$lib/desktop';
+	import DesktopTitleBar from '$lib/components/ui/shell/DesktopTitleBar.svelte';
 	import { primeNotificationSound } from '$lib/utils/notificationSound';
+	import { APP_THEME_COLOR, SITE_NAME, THEME_COLOR } from '$lib/meta';
+	import { readInstallEnv } from '$lib/utils/install';
+	import { setAppBadge } from '$lib/utils/appBadge';
 
 	let { children } = $props();
 
@@ -26,13 +33,33 @@
 		window.addEventListener('keydown', primeNotificationSound, { once: true });
 	});
 
+	onMount(() => {
+		if (frameless) document.documentElement.dataset.frameless = '';
+	});
+
+	// The install prompt event can fire before the app shell mounts.
+	onMount(() => installState.attach());
+
+	// The status bar of an installed app takes its colour from theme-color. Server-rendered
+	// pages carry the brand colour for link embeds, so the app overrides it on every page.
+	let themeColor = $state(THEME_COLOR);
+	onMount(() => {
+		if (!readInstallEnv().standalone) return;
+		themeColor = APP_THEME_COLOR;
+		for (const tag of document.querySelectorAll('meta[name="theme-color"]')) {
+			tag.setAttribute('content', APP_THEME_COLOR);
+		}
+	});
+
 	// A push notification click asks an already-open tab to move to its thread.
 	onMount(() => {
 		if (!('serviceWorker' in navigator)) return;
 		const onMessage = (event: MessageEvent) => {
 			if (event.data?.type !== 'navigate') return;
 			const url = safeNext(event.data.url);
-			if (url) goto(url);
+			if (!url) return;
+			phoneState.closeNav();
+			goto(url);
 		};
 		navigator.serviceWorker.addEventListener('message', onMessage);
 		return () => navigator.serviceWorker.removeEventListener('message', onMessage);
@@ -64,10 +91,65 @@
 	// a logged-in user never sees /login before bouncing to /app.
 	let ready = $state(false);
 
+	let unreachable = $state(false);
+
+	const inApp = $derived(page.route.id?.startsWith('/app') ?? false);
+
+	// On a phone toasts sit at the top, under the app's top bar, so they never cover the composer.
+	const toastInset = $derived(
+		phoneState.phone
+			? {
+					top: inApp ? 'var(--notice-top)' : 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+					left: 12,
+					right: 12
+				}
+			: undefined
+	);
+
+	// When the server can't be reached, stay on the loading screen and keep trying
+	// instead of treating the user as logged out.
 	onMount(() => {
-		initializeAppData().finally(() => {
-			authChecked = true;
+		const retryDelays = [2000, 4000, 8000, 10000];
+		let attempt = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let running = false;
+		let finished = false;
+
+		async function load() {
+			if (running || finished) return;
+			running = true;
+			clearTimeout(timer);
+			const result = await initializeAppData();
+			running = false;
+			if (finished) return;
+			if (result === 'ok') {
+				finished = true;
+				unreachable = false;
+				authChecked = true;
+				return;
+			}
+			unreachable = true;
+			timer = setTimeout(load, retryDelays[Math.min(attempt++, retryDelays.length - 1)]);
+		}
+
+		window.addEventListener('online', load);
+		void load();
+		return () => {
+			finished = true;
+			clearTimeout(timer);
+			window.removeEventListener('online', load);
+		};
+	});
+
+	$effect(() => {
+		desktop?.setUnread({
+			count: loggedIn ? unreadState.badgeTotal : 0,
+			unread: loggedIn && unreadState.anyUnread
 		});
+	});
+
+	$effect(() => {
+		if (!desktop) setAppBadge(loggedIn ? unreadState.badgeTotal : 0);
 	});
 
 	$effect(() => {
@@ -88,30 +170,51 @@
 			return;
 		}
 
-		if (isPublicPath(path)) {
+		if (isPublicPath(path) && !(desktop && path === '/')) {
 			ready = true;
 			return;
 		}
 
 		// Protected route while logged out: remember where they were headed.
 		ready = false;
-		const target = safeNext(path + url.search);
+		const target = path === '/' ? null : safeNext(path + url.search);
 		goto(target ? `/login?next=${encodeURIComponent(target)}` : '/login', { replaceState: true });
 	});
 </script>
 
 <svelte:head><link rel="icon" href={icon} /></svelte:head>
-{#if page.data.meta}<MetaTags meta={page.data.meta} />{/if}
+{#if page.data.meta}<MetaTags meta={page.data.meta} {themeColor} />{/if}
 <ModeWatcher defaultMode="dark" />
-<Toaster position="bottom-right" />
+<Toaster
+	position={phoneState.phone ? 'top-center' : 'bottom-right'}
+	offset={toastInset}
+	mobileOffset={toastInset}
+/>
 
-{#if ready}
-	{@render children()}
-{:else}
-	<div class="flex h-screen w-screen items-center justify-center bg-background">
-		<div class="flex flex-col items-center gap-3">
-			<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
-			<span class="sr-only">Loading…</span>
+{#snippet content()}
+	{#if ready}
+		{@render children()}
+	{:else}
+		<div class="flex h-screen w-screen items-center justify-center bg-background">
+			<div class="flex flex-col items-center gap-3">
+				<img src={logo} alt="" class="h-11 w-11 animate-pulse" />
+				{#if unreachable}
+					<span class="text-sm text-muted-foreground">Can't reach {SITE_NAME}. Reconnecting…</span>
+				{:else}
+					<span class="sr-only">Loading…</span>
+				{/if}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+{#if frameless && !(ready && inApp)}
+	<div class="flex h-screen w-screen flex-col">
+		<DesktopTitleBar />
+		<div class="desktop-page relative min-h-0 flex-1 overflow-auto">
+			{@render content()}
 		</div>
 	</div>
+{:else}
+	{@render content()}
 {/if}

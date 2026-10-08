@@ -13,23 +13,18 @@
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import { Hash, Volume2, Users, UserPlus, Settings, Plus } from 'lucide-svelte';
+	import { channelPath } from '$lib/utils/channelRoutes';
+	import { Hash, MessagesSquare, Volume2, Users, UserPlus, Settings, Plus } from 'lucide-svelte';
 
 	const server = $derived(serversState.selectedServer);
 	const channels = $derived(serversState.selectedServerChannelsList);
-	const textChannels = $derived(channels.filter((c) => c.type === 'text'));
-	const voiceChannels = $derived(channels.filter((c) => c.type === 'voice'));
+	const layout = $derived(serversState.selectedServerLayout);
 	const welcomeMessage = $derived(server?.server_profile?.welcome_message?.trim());
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 	const canManageServer = $derived(serversState.can(Permission.MANAGE_SERVER));
 
 	let inviteOpen = $state(false);
 	let createOpen = $state(false);
-
-	function href(channel: Channel) {
-		const route = channel.type === 'text' ? 'channel' : 'voice';
-		return `/app/server/${server?.id}/${route}/${channel.id}/`;
-	}
 
 	const rowClass =
 		'flex min-h-11 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
@@ -38,10 +33,12 @@
 {#snippet channelRow(channel: Channel)}
 	{@const members = channel.type === 'voice' ? voiceRoster(channel.id) : []}
 	<li>
-		<a href={href(channel)} class={rowClass}>
+		<a href={channelPath(server?.id ?? 0, channel)} class={rowClass}>
 			<span class="shrink-0 text-text-subtle">
 				{#if channel.type === 'voice'}
 					<Volume2 size={18} strokeWidth={1.75} />
+				{:else if channel.type === 'forum'}
+					<MessagesSquare size={18} strokeWidth={1.75} />
 				{:else}
 					<Hash size={18} strokeWidth={1.75} />
 				{/if}
@@ -80,10 +77,12 @@
 	</li>
 {/snippet}
 
-{#snippet channelGroup(title: string, list: Channel[])}
+{#snippet channelGroup(title: string | null, list: Channel[])}
 	{#if list.length > 0}
-		<section aria-label={title}>
-			<h2 class="mb-1 px-3 text-xs font-medium tracking-[0.02em] text-text-subtle">{title}</h2>
+		<section aria-label={title ?? 'Channels'}>
+			{#if title}
+				<h2 class="mb-1 px-3 text-xs font-medium tracking-[0.02em] text-text-subtle">{title}</h2>
+			{/if}
 			<ul class="flex flex-col">
 				{#each list as channel (channel.id)}
 					{@render channelRow(channel)}
@@ -169,8 +168,10 @@
 			</EmptyState>
 		{:else}
 			<div class="flex flex-col gap-5">
-				{@render channelGroup('Text channels', textChannels)}
-				{@render channelGroup('Voice channels', voiceChannels)}
+				{@render channelGroup(null, layout.ungrouped)}
+				{#each layout.groups as { group, channels: list } (group.id)}
+					{@render channelGroup(group.name, list)}
+				{/each}
 			</div>
 		{/if}
 	</div>

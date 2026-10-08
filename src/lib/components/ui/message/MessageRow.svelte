@@ -8,6 +8,7 @@
 	import MessageReactions from './MessageReactions.svelte';
 	import ReactionPicker from './ReactionPicker.svelte';
 	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
 	import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
@@ -18,6 +19,7 @@
 	import { mentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
 	import { socketState } from '$lib/states/socketState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import {
 		canDeleteMessage,
 		canEditMessage,
@@ -46,7 +48,17 @@
 	const pending = $derived(message.status === 'pending');
 	const failed = $derived(message.status === 'failed');
 	let pickerOpen = $state(false);
+	let row = $state<HTMLElement>();
+	let editor = $state<ReturnType<typeof MessageEditor>>();
+	let editorEmpty = $state(true);
 	const editing = $derived(messageEditState.isEditing(message.id));
+
+	// The keyboard shrinks the list as the editor opens, which can push Save out of view.
+	$effect(() => {
+		if (!editing || !phoneState.touch) return;
+		const timer = setTimeout(() => row?.scrollIntoView({ block: 'nearest' }), 350);
+		return () => clearTimeout(timer);
+	});
 	const actions = $derived(
 		pending || failed ? [] : messageActions(message, { onReact: () => (pickerOpen = true) })
 	);
@@ -77,6 +89,7 @@
 		<!-- Focusable so Shift+F10 can open the row's menu. -->
 		<div
 			{...menuProps}
+			bind:this={row}
 			class="group/row relative rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 			tabindex="0"
 			data-message-id={message.id}
@@ -84,6 +97,8 @@
 			{#if editing}
 				<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
 					<MessageEditor
+						bind:this={editor}
+						bind:isEmpty={editorEmpty}
 						content={parsedContent}
 						autofocus
 						allowEmpty={attachments.length > 0}
@@ -96,7 +111,7 @@
 						onCancel={() => messageEditState.stop()}
 						editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 					/>
-					<div class="mt-1 text-[11px] text-text-subtle">
+					<div class="mt-1 text-[11px] text-text-subtle pointer-coarse:hidden">
 						escape to
 						<button
 							type="button"
@@ -105,11 +120,25 @@
 						>
 						· enter to save
 					</div>
+					<div class="mt-2 hidden justify-end gap-2 pointer-coarse:flex">
+						<Button
+							size="sm"
+							variant="ghost"
+							class="pointer-coarse:h-10"
+							onclick={() => messageEditState.stop()}>Cancel</Button
+						>
+						<Button
+							size="sm"
+							class="pointer-coarse:h-10"
+							disabled={editorEmpty && attachments.length === 0}
+							onclick={() => editor?.submit()}>Save</Button
+						>
+					</div>
 				</div>
 			{:else}
 				{#if showHoverTime}
 					<span
-						class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block"
+						class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block pointer-coarse:hidden!"
 						aria-hidden="true"
 					>
 						{hoverTime}
@@ -119,8 +148,8 @@
 				{#if !pending && !failed}
 					<div
 						class="absolute -top-3 right-0 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex {pickerOpen
-							? 'flex'
-							: 'hidden'}"
+							? 'flex pointer-coarse:invisible'
+							: 'hidden pointer-coarse:hidden!'}"
 					>
 						<ReactionPicker {message} bind:open={pickerOpen}>
 							{#snippet trigger(props)}

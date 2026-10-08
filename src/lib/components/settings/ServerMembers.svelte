@@ -6,15 +6,20 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
-	import { updateMemberRoles } from '$lib/requests/servers/updateMemberRoles';
-	import { Permission } from '$lib/permissions';
 	import { canKickMember, kickMember } from '$lib/utils/kickMember';
 	import { getErrorMessage } from '$lib/requests/errors';
+	import {
+		assignableRoles,
+		canAssign,
+		canChangeRolesOf,
+		setMemberRole
+	} from '$lib/utils/memberRoles';
 	import type { ServerMember } from '$lib/types/server.types';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import RoleBadge from './RoleBadge.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
 	import { EllipsisVertical, LogOut, MessageSquare, Search, Shield } from 'lucide-svelte';
@@ -22,8 +27,6 @@
 	let { onInvite }: { onInvite?: () => void } = $props();
 
 	const serverId = $derived(serversState.selectedServer?.id);
-	const roles = $derived(serverId != null ? (serversState.roles[serverId] ?? []) : []);
-	const assignableRoles = $derived(roles.filter((r) => !r.is_default));
 	const myId = $derived(usersState.loggedInUser?.id);
 	// Changes when someone joins or leaves over the socket, which refetches.
 	const memberCount = $derived(serversState.selectedServer?.members?.length ?? 0);
@@ -78,26 +81,7 @@
 	}
 
 	function canChangeRole(member: Row) {
-		return (
-			serversState.can(Permission.MANAGE_ROLES) &&
-			member.user.id !== myId &&
-			!member.is_owner &&
-			assignableRoles.length > 0
-		);
-	}
-
-	async function changeRole(member: Row, value: string) {
-		if (serverId == null) return;
-		const role = assignableRoles.find((r) => String(r.id) === value);
-		const roleName = role?.name ?? 'Member';
-		try {
-			const updated = await updateMemberRoles(serverId, member.user.id, role ? [role.id] : []);
-			serversState.setMemberRoles(serverId, member.user.id, updated.role_ids);
-			const article = /^[aeiou]/i.test(roleName) ? 'an' : 'a';
-			toast.success(`${member.user.username} is now ${article} ${roleName}`);
-		} catch (e) {
-			toast.error(`Couldn't change ${member.user.username}'s role: ${getErrorMessage(e)}`);
-		}
+		return serverId != null && canChangeRolesOf(serverId, member.user.id);
 	}
 
 	async function message(member: Row) {
@@ -158,7 +142,7 @@
 		<div role="table" aria-label="Members" class="flex flex-col">
 			<div
 				role="row"
-				class="grid grid-cols-[1fr_120px_120px_36px] gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle"
+				class="grid grid-cols-[1fr_minmax(140px,1.3fr)_100px_36px] gap-3 border-b border-border px-3 pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle max-md:hidden"
 			>
 				<span role="columnheader">Member</span>
 				<span role="columnheader">Role</span>
@@ -171,9 +155,9 @@
 				{@const isMe = member.user.id === myId}
 				<div
 					role="row"
-					class="group grid h-14 grid-cols-[1fr_120px_120px_36px] items-center gap-3 rounded-lg px-3 focus-within:bg-card hover:bg-card"
+					class="group grid min-h-14 grid-cols-[1fr_minmax(140px,1.3fr)_100px_36px] items-center gap-3 rounded-lg px-3 py-2 focus-within:bg-card hover:bg-card max-md:grid-cols-[minmax(0,1fr)_auto_44px] max-md:gap-x-2 max-md:gap-y-1"
 				>
-					<span role="cell" class="flex min-w-0 items-center gap-3">
+					<span role="cell" class="flex min-w-0 items-center gap-3 max-md:col-span-2">
 						<span class="relative shrink-0">
 							<Avatar user={member.user} size="sm" rounded="rounded-[9px]" />
 							<span
@@ -184,7 +168,10 @@
 							<span class="sr-only">{online ? 'Online' : 'Offline'}</span>
 						</span>
 						<span class="flex min-w-0 flex-col">
-							<span class="truncate text-sm font-medium {online ? '' : 'text-muted-foreground'}">
+							<span
+								class="truncate text-sm font-medium {online ? '' : 'text-muted-foreground'}"
+								style:color={serversState.nameColorOf(serverId, member.user.id)}
+							>
 								{member.user.username}
 							</span>
 							{#if isMe}
@@ -192,7 +179,7 @@
 							{/if}
 						</span>
 					</span>
-					<span role="cell">
+					<span role="cell" class="max-md:col-start-1 max-md:row-start-2 max-md:min-w-0">
 						{#if member.is_owner}
 							<span class="rounded-md bg-primary/15 px-2 py-[3px] text-xs font-medium text-primary">
 								Owner
@@ -200,29 +187,25 @@
 						{:else if member.roleIds.length === 0}
 							<span class="text-[13px] text-muted-foreground">Member</span>
 						{:else}
-							{@const names = serversState.roleNames(serverId ?? -1, member.user.id)}
-							{#each names as name (name)}
-								{#if name === 'Admin'}
-									<span
-										class="rounded-md border border-input px-2 py-[3px] text-xs font-medium text-foreground"
-									>
-										{name}
-									</span>
-								{:else}
-									<span class="text-[13px] text-muted-foreground">{name}</span>
-								{/if}
-							{/each}
+							<span class="flex flex-wrap gap-1">
+								{#each serversState.rolesOf(serverId ?? -1, member.user.id) as role (role.id)}
+									<RoleBadge name={role.name} color={role.color} />
+								{/each}
+							</span>
 						{/if}
 					</span>
-					<span role="cell" class="font-mono text-xs text-muted-foreground">
+					<span
+						role="cell"
+						class="font-mono text-xs text-muted-foreground max-md:col-start-2 max-md:row-start-2 max-md:text-[11px]"
+					>
 						{joinedFormat.format(new Date(member.joined_at))}
 					</span>
-					<span role="cell">
+					<span role="cell" class="max-md:col-start-3 max-md:row-span-2 max-md:row-start-1">
 						{#if canKick(member) || canChangeRole(member)}
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger
 									aria-label="Actions for {member.user.username}"
-									class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-colors group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent data-[state=open]:opacity-100"
+									class="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-colors group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent data-[state=open]:opacity-100 max-md:h-11 max-md:w-11 pointer-coarse:opacity-100"
 								>
 									<EllipsisVertical size={16} strokeWidth={2} />
 								</DropdownMenu.Trigger>
@@ -232,24 +215,31 @@
 										Message
 									</DropdownMenu.Item>
 									<DropdownMenu.Separator />
-									{#if canChangeRole(member)}
+									{#if serverId != null && canChangeRole(member)}
 										<DropdownMenu.Sub>
 											<DropdownMenu.SubTrigger>
 												<Shield size={16} strokeWidth={1.75} />
-												Change role
+												Roles
 											</DropdownMenu.SubTrigger>
-											<DropdownMenu.SubContent class="w-40">
-												<DropdownMenu.RadioGroup
-													value={String(member.roleIds[0] ?? 'member')}
-													onValueChange={(value) => changeRole(member, value)}
-												>
-													<DropdownMenu.RadioItem value="member">Member</DropdownMenu.RadioItem>
-													{#each assignableRoles as role (role.id)}
-														<DropdownMenu.RadioItem value={String(role.id)}>
-															{role.name}
-														</DropdownMenu.RadioItem>
-													{/each}
-												</DropdownMenu.RadioGroup>
+											<DropdownMenu.SubContent class="w-48">
+												{#each assignableRoles(serverId) as role (role.id)}
+													<DropdownMenu.CheckboxItem
+														checked={member.roleIds.includes(role.id)}
+														disabled={!canAssign(serverId, role)}
+														closeOnSelect={false}
+														onCheckedChange={(assigned) =>
+															setMemberRole(serverId, member.user, role, assigned)}
+													>
+														<span
+															aria-hidden="true"
+															class="h-2 w-2 shrink-0 rounded-full {role.color
+																? ''
+																: 'bg-text-subtle'}"
+															style:background-color={role.color}
+														></span>
+														<span class="truncate">{role.name}</span>
+													</DropdownMenu.CheckboxItem>
+												{/each}
 											</DropdownMenu.SubContent>
 										</DropdownMenu.Sub>
 									{/if}

@@ -10,11 +10,13 @@
 	const host = $derived(page.url.host);
 </script>
 
-<div class="flex min-h-screen flex-col bg-background text-foreground">
+<div
+	class="flex min-h-screen flex-col bg-background pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] text-foreground"
+>
 	<header class="flex items-center justify-between px-5 py-4">
 		<a
 			href="/"
-			class="flex items-center gap-1.5 rounded-sm font-mono text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+			class="flex items-center gap-1.5 rounded-sm font-mono text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none pointer-coarse:min-h-11"
 			><Logo />zeta</a
 		>
 		<span class="font-mono text-[11px] text-text-subtle">{host}</span>

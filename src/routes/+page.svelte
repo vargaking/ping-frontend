@@ -1,6 +1,22 @@
 <script lang="ts">
 	import { ArrowRight } from 'lucide-svelte';
 	import Logo from '$lib/components/brand/Logo.svelte';
+	import { onMount } from 'svelte';
+	import { desktop } from '$lib/desktop';
+
+	const downloadOptions = [
+		{ platform: 'windows', label: 'Download for Windows' },
+		{ platform: 'linux', label: 'Download for Linux' }
+	];
+
+	let onLinux = $state(false);
+	const downloads = $derived(onLinux ? [...downloadOptions].reverse() : downloadOptions);
+
+	onMount(() => {
+		const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+		const platform = nav.userAgentData?.platform ?? navigator.userAgent;
+		onLinux = /Linux/i.test(platform) && !/Android/i.test(navigator.userAgent);
+	});
 
 	const roadmap = [
 		{
@@ -16,7 +32,10 @@
 				{ label: 'Screen sharing', detail: 'up to 1080p' },
 				{ label: 'Direct messages' },
 				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
-				{ label: 'Servers', detail: 'invites, roles, member management' }
+				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
+				{ label: 'Desktop app', detail: 'Windows and Linux, with tray and launch at login' },
+				{ label: 'Servers', detail: 'invites, roles, member management' },
+				{ label: 'Moving from Discord', detail: "import your server's history" }
 			]
 		},
 		{
@@ -24,10 +43,8 @@
 			note: 'in progress',
 			dot: 'next',
 			items: [
-				{ label: 'Desktop app' },
 				{ label: 'Mobile apps', detail: 'iOS and Android' },
-				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' },
-				{ label: 'More voice controls', detail: 'per-person volume' }
+				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' }
 			]
 		},
 		{
@@ -39,7 +56,6 @@
 				{ label: 'One account across every server' },
 				{ label: 'End-to-end encryption' },
 				{ label: 'Workspaces', detail: 'personal, work and university, on one account' },
-				{ label: 'Moving from Discord', detail: "import your server's history" },
 				{ label: 'Custom frontends' },
 				{ label: 'An automations / bot API' }
 			]
@@ -51,8 +67,12 @@
 	<title>zeta — chat & voice for your server</title>
 </svelte:head>
 
-<div class="min-h-screen w-full bg-background text-foreground">
-	<header class="topbar sticky z-10 h-11 border-b border-border">
+<div
+	class="min-h-screen w-full overflow-x-clip bg-background pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)] text-foreground"
+>
+	<header
+		class="topbar sticky z-10 h-[calc(2.75rem+env(safe-area-inset-top,0px))] border-b border-border"
+	>
 		<div class="mx-auto flex h-full max-w-[720px] items-center justify-between px-5">
 			<span class="flex items-center gap-1.5 font-mono text-sm font-medium tracking-tight"
 				><Logo />zeta</span
@@ -65,7 +85,9 @@
 		</div>
 	</header>
 
-	<div class="relative mx-auto flex min-h-[calc(100vh-44px)] max-w-[720px] flex-col px-5 pb-16">
+	<div
+		class="relative mx-auto flex min-h-[calc(100vh-44px)] max-w-[720px] flex-col px-5 pb-[calc(4rem+env(safe-area-inset-bottom,0px))]"
+	>
 		<div class="glow" aria-hidden="true"></div>
 
 		<section class="relative z-[1] mt-16 sm:mt-24">
@@ -95,7 +117,24 @@
 				>
 					Create account
 				</a>
+				{#if !desktop}
+					{#each downloads as item (item.platform)}
+						<a
+							href="/download/{item.platform}"
+							data-sveltekit-reload
+							class="inline-flex h-11 items-center rounded-[10px] border border-input bg-accent px-5 text-sm font-medium text-foreground transition-colors hover:bg-accent/70"
+						>
+							{item.label}
+						</a>
+					{/each}
+				{/if}
 			</div>
+			{#if !desktop}
+				<p class="mt-3 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+					The installer isn't signed yet, so Windows warns about an unknown publisher. Choose "More
+					info", then "Run anyway". On Linux, make the AppImage executable, then run it.
+				</p>
+			{/if}
 		</section>
 
 		<section class="relative z-[1] mt-24">
@@ -128,14 +167,19 @@
 			class="relative z-[1] mt-auto flex items-center justify-between pt-24 text-xs text-muted-foreground"
 		>
 			<span class="font-mono">zeta</span>
-			<a href="/login/" class="underline-offset-[3px] hover:underline">log in →</a>
+			<a
+				href="/login/"
+				class="underline-offset-[3px] hover:underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+				>log in →</a
+			>
 		</footer>
 	</div>
 </div>
 
 <style>
 	.topbar {
-		top: env(safe-area-inset-top, 0px);
+		top: 0;
+		padding-top: env(safe-area-inset-top, 0px);
 		background: color-mix(in oklab, var(--rail, var(--background)) 80%, transparent);
 		backdrop-filter: blur(8px);
 	}

@@ -3,6 +3,7 @@ import { subscribePush } from '$lib/requests/push/subscribePush';
 import { unsubscribePush } from '$lib/requests/push/unsubscribePush';
 import type { PushConfig, PushTestResult } from '$lib/types/push.types';
 import { urlBase64ToBytes } from '$lib/utils/base64url';
+import { desktop } from '$lib/desktop';
 
 export type EnablePushResult = 'enabled' | 'denied' | 'dismissed' | 'unsupported' | 'error';
 
@@ -17,24 +18,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 	]);
 }
 
-function isMobileBrowser(): boolean {
-	const uaData = (navigator as Navigator & { userAgentData?: { mobile: boolean } }).userAgentData;
-	if (uaData) return uaData.mobile;
-	const ua = navigator.userAgent;
-	return (
-		/Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
-		(/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
-	);
-}
-
-/** Web Push is offered on desktop browsers only. */
+/** Web Push isn't offered in the desktop app, which has no push service. iOS only
+ *  exposes PushManager to an installed app, so the checks below cover it too. */
 export function pushSupported(): boolean {
 	if (typeof window === 'undefined') return false;
 	return (
-		'serviceWorker' in navigator &&
-		'PushManager' in window &&
-		'Notification' in window &&
-		!isMobileBrowser()
+		'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && !desktop
 	);
 }
 

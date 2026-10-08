@@ -3,7 +3,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import axios from 'axios';
 	import { toast } from 'svelte-sonner';
-	import type { MessageTarget } from '$lib/types/messages.types';
+	import type { MessageDraft, MessageTarget } from '$lib/types/messages.types';
 	import type { Attachment } from '$lib/types/attachment.types';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
@@ -36,7 +36,19 @@
 		previewUrl?: string;
 	};
 
-	let { target }: { target: MessageTarget | null } = $props();
+	let {
+		target,
+		onSend,
+		compact = false,
+		placeholder
+	}: {
+		target: MessageTarget | null;
+		/** Takes the draft instead of sending it to the thread; false keeps it in the composer. */
+		onSend?: (draft: MessageDraft) => boolean | Promise<boolean>;
+		/** Drops the page padding, for use inside a dialog. */
+		compact?: boolean;
+		placeholder?: string;
+	} = $props();
 
 	let editor = $state<ReturnType<typeof MessageEditor>>();
 	let isEmpty = $state(true);
@@ -218,13 +230,22 @@
 
 	function handleChange(json: JSONContent) {
 		linkPreview.update(messagePlainText(json));
-		if (target && !isEmpty) socketState.sendTyping(target);
+		if (target && !isEmpty && !onSend) socketState.sendTyping(target);
 	}
 
-	function handleSubmit(message: JSONContent) {
+	async function handleSubmit(message: JSONContent) {
 		if (!target || !canSend) return;
 		const embed = linkPreview.embedFor(messagePlainText(message));
-		socketState.sendMessage(target, message, doneAttachments, replyTarget, embed ? [embed] : []);
+		if (onSend) {
+			const accepted = await onSend({
+				content: message,
+				attachments: $state.snapshot(doneAttachments),
+				embeds: embed ? [embed] : []
+			});
+			if (!accepted) return;
+		} else {
+			socketState.sendMessage(target, message, doneAttachments, replyTarget, embed ? [embed] : []);
+		}
 		editor?.clear();
 		linkPreview.reset();
 		clearPending();
@@ -247,7 +268,7 @@
 	}
 </script>
 
-<div class="px-8 pb-6">
+<div class={compact ? '' : 'px-8 pb-6 max-md:px-3 max-md:pb-[max(12px,var(--safe-bottom))]'}>
 	<p
 		aria-live="polite"
 		class="px-1 pb-1.5 text-xs text-text-subtle {socketState.reconnecting ? '' : 'sr-only'}"
@@ -390,6 +411,7 @@
 			<MessageEditor
 				bind:this={editor}
 				bind:isEmpty
+				{placeholder}
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
 				onChange={handleChange}

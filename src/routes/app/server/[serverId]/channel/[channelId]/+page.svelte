@@ -12,6 +12,8 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { db } from '$lib/utils/db';
+	import { goto } from '$app/navigation';
+	import { channelPath } from '$lib/utils/channelRoutes';
 	import { untrack } from 'svelte';
 
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
@@ -27,13 +29,26 @@
 		const channelId = currentChannelId;
 		untrack(() => serversState.setSelectedChannelId(channelId));
 	});
+
+	const channel = $derived(
+		currentChannelId != null
+			? (serversState.selectedServerChannels[currentChannelId] ?? null)
+			: null
+	);
+	const isText = $derived(channel == null || channel.type === 'text');
+
+	$effect(() => {
+		if (!channel || channel.type === 'text' || serverId == null) return;
+		const path = channelPath(serverId, channel);
+		untrack(() => goto(path, { replaceState: true }));
+	});
 </script>
 
 <div class="flex h-full min-h-0">
 	<div class="flex min-w-0 flex-1 flex-col">
 		<ChannelHeader />
 
-		{#if currentChannelId != null}
+		{#if currentChannelId != null && isText}
 			{@const channelId = currentChannelId}
 			<MessageList
 				threadKey={channelThreadKey(channelId)}

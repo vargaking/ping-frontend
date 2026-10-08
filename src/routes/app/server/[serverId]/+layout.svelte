@@ -17,6 +17,21 @@
 		});
 	});
 
+	// Roles and assignments colour names everywhere, so they load with the server.
+	// Refetch when someone joins or leaves so new members get their roles.
+	const memberCount = $derived(
+		serverId != null ? (serversState.servers[serverId]?.members?.length ?? 0) : 0
+	);
+
+	$effect(() => {
+		void memberCount;
+		const id = serverId;
+		if (id == null) return;
+		untrack(() => {
+			serversState.loadRoster(id).catch((e) => console.error('Failed to load roles', e));
+		});
+	});
+
 	// serverRemoved leaves the server's routes before dropping it, so by the time
 	// the server is missing here the path has already moved on.
 	$effect(() => {

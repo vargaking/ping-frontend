@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { desktop } from '$lib/desktop';
+	import { installState } from '$lib/states/installState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { testPush } from '$lib/requests/push/testPush';
 	import { normalizeError } from '$lib/requests/errors';
+	import { phoneBlockedHelp } from '$lib/utils/install';
 	import { describePushTestResult } from '$lib/utils/push';
 	import type { PushTestResult } from '$lib/types/push.types';
 	import SettingsSwitch from './SettingsSwitch.svelte';
@@ -13,10 +16,25 @@
 		notificationsState.refreshPermission();
 		notificationsState.attachPermissionListeners();
 		void notificationsState.refreshPush();
+		void desktop?.getLaunchAtLogin().then((value) => (launchAtLogin = value));
 	});
 
+	let launchAtLogin = $state<boolean | null>(null);
+
+	async function toggleLaunchAtLogin() {
+		if (!desktop || launchAtLogin === null) return;
+		launchAtLogin = await desktop.setLaunchAtLogin(!launchAtLogin);
+	}
+
+	const phoneHelp = phoneBlockedHelp(installState.platform);
+	const blockedMessage = phoneHelp
+		? `Notifications are blocked. ${phoneHelp}`
+		: 'Notifications are blocked in your browser. Allow them in your site settings to turn this on.';
+
 	const desktopDisabled = $derived(
-		notificationsState.permission === 'denied' || notificationsState.permission === 'unsupported'
+		installState.needsHomeScreenInstall ||
+			notificationsState.permission === 'denied' ||
+			notificationsState.permission === 'unsupported'
 	);
 
 	async function toggleDesktop() {
@@ -99,11 +117,12 @@
 			disabled={desktopDisabled}
 			onclick={toggleDesktop}
 		>
-			{#if notificationsState.permission === 'denied'}
-				<span class="text-xs text-destructive">
-					Notifications are blocked in your browser. Allow them in your site settings to turn this
-					on.
+			{#if installState.needsHomeScreenInstall}
+				<span class="text-xs text-muted-foreground">
+					Notifications need Zeta on your Home Screen. Tap Share, then Add to Home Screen.
 				</span>
+			{:else if notificationsState.permission === 'denied'}
+				<span class="text-xs text-destructive">{blockedMessage}</span>
 			{:else if notificationsState.permission === 'unsupported'}
 				<span class="text-xs text-destructive">
 					Your browser doesn't support desktop notifications.
@@ -128,10 +147,7 @@
 						Couldn't check closed-tab notifications. Try again later.
 					</span>
 				{:else if notificationsState.push === 'off' && notificationsState.permission === 'denied'}
-					<span class="text-xs text-destructive">
-						Notifications are blocked in your browser. Allow them in your site settings to turn this
-						on.
-					</span>
+					<span class="text-xs text-destructive">{blockedMessage}</span>
 				{:else if notificationsState.push === 'off' && !notificationsState.desktop}
 					<span class="text-xs text-muted-foreground">Turn on desktop notifications first.</span>
 				{/if}
@@ -170,5 +186,14 @@
 			checked={notificationsState.sound}
 			onclick={toggleSound}
 		/>
+
+		{#if launchAtLogin !== null}
+			<SettingsSwitch
+				label="Open Zet when your computer starts"
+				description="Starts in the tray, so you get notifications without opening it."
+				checked={launchAtLogin}
+				onclick={toggleLaunchAtLogin}
+			/>
+		{/if}
 	</div>
 </div>

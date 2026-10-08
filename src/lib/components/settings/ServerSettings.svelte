@@ -295,7 +295,7 @@
 					{iconTone}
 					class="h-[72px] w-[72px] rounded-[18px] text-2xl"
 				/>
-				<div class="flex flex-col gap-2">
+				<div class="flex min-w-0 flex-col gap-2">
 					<div role="group" aria-label="Icon type" class="flex w-fit rounded-[10px] bg-card p-0.5">
 						{#each [['image', 'Image'], ['text', 'Text']] as const as [mode, label] (mode)}
 							<button
@@ -312,7 +312,7 @@
 						{/each}
 					</div>
 					{#if iconMode === 'image'}
-						<div class="flex items-center gap-2">
+						<div class="flex items-center gap-2 max-md:flex-wrap">
 							<Button
 								variant="secondary"
 								class="border border-input"
@@ -368,7 +368,7 @@
 								aria-checked={iconTone === tone}
 								aria-label={TONE_NAMES[tone - 1]}
 								onclick={() => (iconTone = tone)}
-								class="flex h-8 w-8 items-center justify-center rounded-full {toneClass(
+								class="flex h-8 w-8 items-center justify-center rounded-full pointer-coarse:h-10 pointer-coarse:w-10 {toneClass(
 									tone
 								)} focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none {iconTone ===
 								tone

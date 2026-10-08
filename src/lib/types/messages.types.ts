@@ -1,9 +1,13 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Attachment } from './attachment.types';
 
+/** Original author of a message brought in from elsewhere; the row's owner is a shared account. */
+export type ImportedAuthor = { id: string; name: string };
+
 export type MessageType = {
 	id: string;
 	user_id: number;
+	imported_author?: ImportedAuthor | null;
 	content: JSONContent;
 	timestamp: string;
 	// Channel messages carry server_id/channel_id; direct messages carry
@@ -11,6 +15,8 @@ export type MessageType = {
 	server_id?: number | null;
 	channel_id?: number | null;
 	conversation_id?: number | null;
+	/** The forum post a message belongs to; null in text channels and DMs. */
+	post_id?: number | null;
 	edited_at?: string | null;
 	attachments?: Attachment[];
 	reactions?: Reaction[];
@@ -30,12 +36,25 @@ export type Embed = {
 };
 
 export type ReplyRef =
-	| { id: string; user_id: number; preview: string; deleted?: false }
+	| {
+			id: string;
+			user_id: number;
+			imported_author?: ImportedAuthor | null;
+			preview: string;
+			deleted?: false;
+	  }
 	| { id: string; deleted: true };
 
 export type Reaction = { emoji: string; user_ids: number[] };
 
+/** What the composer hands over when it doesn't send the message itself. */
+export type MessageDraft = {
+	content: JSONContent;
+	attachments: Attachment[];
+	embeds: Embed[];
+};
+
 /** Where a composed message goes: a server channel or a DM conversation. */
 export type MessageTarget =
-	| { kind: 'channel'; serverId: number; channelId: number }
+	| { kind: 'channel'; serverId: number; channelId: number; postId?: number }
 	| { kind: 'direct'; conversationId: number };

@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore: ['desktop/**']
   push:
     branches: [master]
+    paths-ignore: ['desktop/**']
 
 jobs:
   lint-and-check:
@@ -29,6 +31,9 @@ jobs:
 
       - name: Type check (svelte-check)
         run: npm run check
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build

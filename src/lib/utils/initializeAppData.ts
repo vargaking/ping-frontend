@@ -1,3 +1,4 @@
+import { isAxiosError } from 'axios';
 import { getMe } from '$lib/requests/auth/me';
 import { getMessages } from '$lib/requests/auth/getMessages';
 import { socketState } from '$lib/states/socketState.svelte';
@@ -7,11 +8,23 @@ import { serversState } from '$lib/states/serversState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { unreadState } from '$lib/states/unreadState.svelte';
 
-export const initializeAppData = async () => {
-	try {
-		const user = await getMe();
-		console.log('Fetched user:', user);
+/** No answer at all or a server error, as opposed to a definite "not logged in". */
+function isUnreachable(error: unknown): boolean {
+	if (!isAxiosError(error)) return false;
+	return !error.response || error.response.status >= 500;
+}
 
+export const initializeAppData = async (): Promise<'ok' | 'unreachable'> => {
+	let user;
+	try {
+		user = await getMe();
+		console.log('Fetched user:', user);
+	} catch (error) {
+		console.error('Error initializing app data:', error);
+		return isUnreachable(error) ? 'unreachable' : 'ok';
+	}
+
+	try {
 		if (user) {
 			usersState.setLoggedInUser(user);
 
@@ -44,4 +57,5 @@ export const initializeAppData = async () => {
 	} catch (error) {
 		console.error('Error initializing app data:', error);
 	}
+	return 'ok';
 };

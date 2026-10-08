@@ -32,6 +32,8 @@
 			speaking={member.speaking}
 			muted={member.muted}
 			deafened={member.deafened}
+			serverMuted={member.serverMuted}
+			localMuted={member.localMuted}
 			streaming={member.streaming}
 		/>
 	{/snippet}

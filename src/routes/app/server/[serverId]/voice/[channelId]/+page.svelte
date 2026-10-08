@@ -10,9 +10,12 @@
 	import PresenceTile from '$lib/components/ui/voice/PresenceTile.svelte';
 	import StreamTile from '$lib/components/ui/voice/StreamTile.svelte';
 	import StreamVideo from '$lib/components/ui/voice/StreamVideo.svelte';
+	import StreamSound from '$lib/components/ui/voice/StreamSound.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
+	import { channelPath } from '$lib/utils/channelRoutes';
+	import { fullscreenSupported } from '$lib/utils/screenShare';
 	import { Volume2, Maximize2, Minimize2, EyeOff } from 'lucide-svelte';
 
 	const channelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
@@ -49,6 +52,11 @@
 		});
 	});
 
+	function unfocus() {
+		if (document.fullscreenElement) return;
+		focusedId = null;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape' && focusedId && !document.fullscreenElement) focusedId = null;
 	}
@@ -60,9 +68,8 @@
 		if (!channel) return;
 		if (channel.type !== 'voice') {
 			untrack(() =>
-				goto(`/app/server/${page.params.serverId}/channel/${id}/`, { replaceState: true })
+				goto(channelPath(Number(page.params.serverId), channel), { replaceState: true })
 			);
-			return;
 		}
 	});
 
@@ -86,7 +93,7 @@
 	<div class="flex min-w-0 flex-1 flex-col">
 		<ChannelHeader />
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6 scrollbar-stable">
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-6 scrollbar-stable max-md:p-3">
 			{#if !channel}
 				{#if channelsLoaded}
 					<div class="m-auto">
@@ -112,8 +119,9 @@
 			{:else}
 				<!-- Keyed each rather than #if: focused turns null before the block is torn down. -->
 				{#each focused && !voiceState.previewHidden(focused) ? [focused] : [] as stream (stream.id)}
+					{@const name = stream.local ? 'Your screen' : `${stream.username}'s screen`}
 					<section
-						aria-label="{stream.local ? 'Your' : `${stream.username}'s`} screen"
+						aria-label={name}
 						class="relative mb-3 flex min-h-0 shrink-0 justify-center rounded-xl bg-black"
 					>
 						<StreamVideo
@@ -121,36 +129,50 @@
 							bind:el={stageVideo}
 							class="max-h-[70vh] rounded-xl"
 						/>
+						<button
+							type="button"
+							aria-label="Unfocus {name}"
+							onclick={unfocus}
+							class="absolute inset-0 cursor-pointer rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
+						></button>
+						<StreamSound {stream} class="absolute top-2 left-2 max-w-[40%]" />
 						<div class="absolute top-2 right-2 flex gap-2">
 							{#if voiceState.mirrorsSelf(stream)}
 								<Button
 									variant="secondary"
 									size="sm"
+									class="max-md:w-11 max-md:px-0"
 									onclick={() => (voiceState.selfPreview = false)}
 								>
 									<EyeOff size={14} strokeWidth={1.75} />
-									Hide preview
+									<span class="max-md:sr-only">Hide preview</span>
 								</Button>
-							{:else}
+							{:else if fullscreenSupported()}
 								<Button
 									variant="secondary"
 									size="sm"
+									class="max-md:w-11 max-md:px-0"
 									onclick={() => stageVideo?.requestFullscreen()}
 								>
 									<Maximize2 size={14} strokeWidth={1.75} />
-									Fullscreen
+									<span class="max-md:sr-only">Fullscreen</span>
 								</Button>
 							{/if}
-							<Button variant="secondary" size="sm" onclick={() => (focusedId = null)}>
+							<Button
+								variant="secondary"
+								size="sm"
+								class="max-md:w-11 max-md:px-0"
+								onclick={unfocus}
+							>
 								<Minimize2 size={14} strokeWidth={1.75} />
-								Exit focus
+								<span class="max-md:sr-only">Exit focus</span>
 							</Button>
 						</div>
 					</section>
 				{/each}
 				<ul
 					aria-label="In {channel.name}"
-					class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] content-start gap-3"
+					class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] content-start gap-3 max-md:grid-cols-2"
 				>
 					{#each tiles as stream (stream.id)}
 						<StreamTile {stream} onfocus={() => (focusedId = stream.id)} />

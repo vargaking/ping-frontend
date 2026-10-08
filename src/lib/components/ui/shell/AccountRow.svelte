@@ -6,7 +6,9 @@
 	import { Settings, Shield } from 'lucide-svelte';
 </script>
 
-<div class="flex items-center gap-2.5 border-t border-border px-3 py-2.5">
+<div
+	class="flex items-center gap-2.5 border-t border-border px-3 pt-2.5 pb-[calc(0.625rem+var(--safe-bottom))]"
+>
 	<Avatar user={usersState.loggedInUser} size="sm" rounded="rounded-[9px]" />
 	<div class="flex min-w-0 flex-1 flex-col">
 		<span class="truncate text-[13px] font-medium">{usersState.loggedInUser?.username ?? '—'}</span>
@@ -16,7 +18,7 @@
 		<a
 			href="/admin/"
 			aria-label="Admin"
-			class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11"
 		>
 			<Shield size={18} strokeWidth={1.75} />
 		</a>
@@ -25,7 +27,7 @@
 		type="button"
 		aria-label="Account settings"
 		onclick={() => overlayState.open(SettingsModal, { category: 'account' })}
-		class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11"
 	>
 		<Settings size={18} strokeWidth={1.75} />
 	</button>

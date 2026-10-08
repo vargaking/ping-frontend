@@ -17,6 +17,7 @@ import { toast } from 'svelte-sonner';
 import type { VoiceQuality } from './connectionState.svelte';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
+import { voicePeerAudioState, voiceStreamAudioState } from './voicePeerAudioState.svelte';
 import { DEFAULT_DEVICE, voiceSettingsState } from './voiceSettingsState.svelte';
 import { axiosClient } from '$lib/requests/axiosClient';
 import {
@@ -36,6 +37,7 @@ import {
 	type ScreenContent,
 	type ScreenPresetId
 } from '$lib/utils/screenShare';
+import { soundEnv, soundOption, soundResult } from '$lib/utils/shareSound';
 
 export interface VoicePeer {
 	id: string;
@@ -45,6 +47,8 @@ export interface VoicePeer {
 	/** No live mic: muted, deafened, or never published one. */
 	muted: boolean;
 	deafened: boolean;
+	/** A moderator took the microphone away. */
+	serverMuted: boolean;
 	streaming: boolean;
 }
 
@@ -57,10 +61,14 @@ export interface ScreenStream {
 	track: RemoteVideoTrack | LocalVideoTrack;
 	/** What the browser is capturing. Only known for your own share. */
 	surface?: 'monitor' | 'window' | 'browser';
+	/** The sharer is publishing sound with the video. */
+	sound: boolean;
 }
 
 /** Participant attribute other clients read to show someone as deafened. */
 const DEAFENED_ATTR = 'deafened';
+/** Participant attribute the server sets while a moderator has muted someone. */
+const SERVER_MUTED_ATTR = 'server_muted';
 const SCREEN_REPUBLISH_GRACE_MS = 1000;
 const STORAGE_KEY = 'voice.selfState';
 const REJOIN_DELAYS_MS = [1000, 3000, 10000];
@@ -109,6 +117,8 @@ class VoiceState {
 	deafened: boolean = $state(false);
 	/** What the mic button shows: deafening always silences the mic too. */
 	readonly micOff: boolean = $derived(this.muted || this.deafened);
+	/** A moderator took our microphone away. Our own mute choice is kept underneath. */
+	serverMuted: boolean = $state(false);
 	/** Why the mic isn't live although the user wants it. Not saved: the next join asks again. */
 	micError: MicIssue | null = $state(null);
 	/** The in-app explainer shown before the browser's own microphone prompt. */
@@ -117,6 +127,10 @@ class VoiceState {
 	peers: SvelteMap<string, VoicePeer> = $state(new SvelteMap());
 	/** The user's own screen share is live. */
 	sharing: boolean = $state(false);
+	/** A share is starting: the picker is open or the tracks are publishing. */
+	startingShare: boolean = $state(false);
+	/** Whether your own share carries sound, and why not. Null while not sharing. */
+	shareSound: { on: boolean; text: string } | null = $state(null);
 	// participant identity -> their screen share video
 	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
 	/** Identities LiveKit reported gone since they last connected to this room. */
@@ -188,6 +202,7 @@ class VoiceState {
 			isSpeaking: p.isSpeaking,
 			muted: !p.isMicrophoneEnabled,
 			deafened: p.attributes?.[DEAFENED_ATTR] === 'true',
+			serverMuted: p.attributes?.[SERVER_MUTED_ATTR] === 'true',
 			streaming: p.isScreenShareEnabled
 		});
 	}
@@ -206,8 +221,19 @@ class VoiceState {
 			username: p.name || 'Unknown',
 			local,
 			track,
-			surface: local ? this.captureSurface(track) : undefined
+			surface: local ? this.captureSurface(track) : undefined,
+			sound: this.hasScreenSound(p)
 		});
+	}
+
+	private hasScreenSound(p: Participant): boolean {
+		return p.getTrackPublication(Track.Source.ScreenShareAudio) !== undefined;
+	}
+
+	private refreshScreenSound(p: Participant) {
+		const stream = this.screens.get(p.identity);
+		const sound = this.hasScreenSound(p);
+		if (stream && stream.sound !== sound) this.screens.set(p.identity, { ...stream, sound });
 	}
 
 	private captureSurface(track: RemoteVideoTrack | LocalVideoTrack): ScreenStream['surface'] {
@@ -249,7 +275,8 @@ class VoiceState {
 		// Only publishes a mic when it should be live, so joining muted never opens one,
 		// and a mic that already failed isn't retried until the user asks.
 		let changed = false;
-		const micOn = !this.micOff && !this.micError;
+		this.serverMuted = room.localParticipant.attributes?.[SERVER_MUTED_ATTR] === 'true';
+		const micOn = !this.micOff && !this.micError && !this.serverMuted;
 		if (micOn !== room.localParticipant.isMicrophoneEnabled) {
 			await room.localParticipant.setMicrophoneEnabled(micOn);
 			changed = true;
@@ -330,6 +357,39 @@ class VoiceState {
 		if (room === this.room && this.channelId != null) refreshVoicePresence(this.channelId);
 	}
 
+	/** Apply this user's volume and mute-for-me choice to a person in the call. */
+	private applyPeerAudio(userId: number) {
+		const p = this.room?.remoteParticipants.get(String(userId));
+		if (p) this.seedPeerAudio(p);
+	}
+
+	/** Voice and screen share sound are separate sources, each with its own level. */
+	private seedPeerAudio(p: RemoteParticipant) {
+		const userId = Number(p.identity);
+		p.setVolume(voicePeerAudioState.level(userId), Track.Source.Microphone);
+		p.setVolume(voiceStreamAudioState.level(userId), Track.Source.ScreenShareAudio);
+	}
+
+	setPeerVolume(userId: number, volume: number) {
+		voicePeerAudioState.set(userId, { volume });
+		this.applyPeerAudio(userId);
+	}
+
+	setPeerMuted(userId: number, muted: boolean) {
+		voicePeerAudioState.set(userId, { muted });
+		this.applyPeerAudio(userId);
+	}
+
+	setStreamVolume(userId: number, volume: number) {
+		voiceStreamAudioState.set(userId, { volume });
+		this.applyPeerAudio(userId);
+	}
+
+	setStreamMuted(userId: number, muted: boolean) {
+		voiceStreamAudioState.set(userId, { muted });
+		this.applyPeerAudio(userId);
+	}
+
 	private removePeer(identity: string) {
 		this.peers.delete(identity);
 	}
@@ -352,10 +412,17 @@ class VoiceState {
 		const refresh = (_pub: TrackPublication, p: Participant) => this.upsertPeer(p);
 		r.on(RoomEvent.TrackMuted, refresh)
 			.on(RoomEvent.TrackUnmuted, refresh)
-			.on(RoomEvent.TrackPublished, (pub, p) => this.upsertPeer(p))
-			.on(RoomEvent.TrackUnpublished, (pub, p) => this.upsertPeer(p))
+			.on(RoomEvent.TrackPublished, (pub, p) => {
+				this.upsertPeer(p);
+				this.refreshScreenSound(p);
+			})
+			.on(RoomEvent.TrackUnpublished, (pub, p) => {
+				this.upsertPeer(p);
+				this.refreshScreenSound(p);
+			})
 			.on(RoomEvent.LocalTrackPublished, (pub, p) => {
 				this.upsertPeer(p);
+				this.refreshScreenSound(p);
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
 				if (pub.track?.kind === Track.Kind.Video) {
 					this.sharing = true;
@@ -365,13 +432,23 @@ class VoiceState {
 			})
 			.on(RoomEvent.LocalTrackUnpublished, (pub, p) => {
 				this.upsertPeer(p);
+				this.refreshScreenSound(p);
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
 				if (pub.kind === Track.Kind.Video && !this.swappingScreen) {
 					this.sharing = false;
+					this.shareSound = null;
 					this.screens.delete(p.identity);
+					const audio = p.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
+					if (audio) void p.unpublishTrack(audio).catch(() => {});
 				}
 			})
-			.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => this.upsertPeer(p));
+			.on(RoomEvent.ParticipantAttributesChanged, (_changed, p) => {
+				this.upsertPeer(p);
+				if (p.isLocal) void this.applySelfState().catch(() => {});
+			})
+			.on(RoomEvent.ParticipantPermissionsChanged, (_prev, p) => {
+				if (p.isLocal) void this.applySelfState().catch(() => {});
+			});
 
 		// Existing tracks are subscribed during room.connect(), before this.room is set,
 		// so screen handlers gate on the attempt's generation instead.
@@ -402,6 +479,7 @@ class VoiceState {
 				this.detachTrack(track);
 			})
 			.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
+				this.seedPeerAudio(p);
 				this.departed.delete(p.identity);
 				this.upsertPeer(p);
 			})
@@ -477,13 +555,20 @@ class VoiceState {
 
 	async startScreenShare() {
 		const room = this.room;
-		if (!room || this.sharing) return;
+		if (!room || this.sharing || this.startingShare) return;
+		const gen = this.generation;
+		const env = soundEnv();
+		const requested = voiceSettingsState.screenSound;
+		// The browser's picker can still switch to a tab, so only a device that can't share sound at all skips it.
+		const askForAudio = requested && soundOption(env, 'browser').available;
 		const { preset } = SCREEN_PRESETS[voiceSettingsState.screenPreset];
+		this.startingShare = true;
 		try {
 			await room.localParticipant.setScreenShareEnabled(
 				true,
 				{
-					audio: true,
+					audio: askForAudio,
+					video: env.desktop ? true : { displaySurface: voiceSettingsState.screenSurface },
 					resolution: preset.resolution,
 					contentHint: voiceSettingsState.screenContent,
 					selfBrowserSurface: 'exclude',
@@ -493,10 +578,23 @@ class VoiceState {
 				},
 				screenPublishOptions(voiceSettingsState.screenPreset)
 			);
+			const video = this.localScreenTrack;
+			if (gen === this.generation && this.sharing && video) {
+				const hasAudio =
+					room.localParticipant.getTrackPublication(Track.Source.ScreenShareAudio)?.track !==
+					undefined;
+				this.shareSound = soundResult(env, {
+					audioTracks: hasAudio ? 1 : 0,
+					surface: this.captureSurface(video),
+					requested
+				});
+			}
 		} catch (err) {
 			if (isPickerCancel(err)) return;
 			console.warn('Screen share failed:', err);
 			toast.error(`Couldn't start screen share${err instanceof Error ? `: ${err.message}` : '.'}`);
+		} finally {
+			if (gen === this.generation) this.startingShare = false;
 		}
 	}
 
@@ -552,6 +650,7 @@ class VoiceState {
 			mst.stop();
 			this.swappingScreen = false;
 			this.sharing = false;
+			this.shareSound = null;
 			this.screens.delete(lp.identity);
 			await this.stopScreenShare();
 			const audio = lp.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
@@ -631,6 +730,7 @@ class VoiceState {
 		this.sharedDeafened = null;
 		this.fallback = { audioinput: false, audiooutput: false };
 		this.peers = new SvelteMap();
+		this.serverMuted = false;
 		this.screenRemovals.forEach((timer) => clearTimeout(timer));
 		this.screenRemovals.clear();
 		this.swappingScreen = false;
@@ -638,6 +738,8 @@ class VoiceState {
 		this.screens = new SvelteMap();
 		this.departed = new SvelteSet();
 		this.sharing = false;
+		this.startingShare = false;
+		this.shareSound = null;
 		this.selfPreview = false;
 		this.quality = 'unknown';
 	}
@@ -716,6 +818,7 @@ class VoiceState {
 	/** Toggle the mic. Unmuting while deafened also undeafens, since a live mic
 	 *  you can't hear back through is never what was meant. */
 	async toggleMute() {
+		if (this.serverMuted) return;
 		if (this.micError) {
 			await this.retryMic();
 		} else if (this.deafened) {
@@ -811,6 +914,7 @@ class VoiceState {
 			// 4. Seed the peers map: self + everyone already in the room.
 			this.upsertPeer(room.localParticipant);
 			room.remoteParticipants.forEach((p) => {
+				this.seedPeerAudio(p);
 				this.upsertPeer(p);
 				// Existing tracks fire TrackSubscribed automatically on connect.
 			});
