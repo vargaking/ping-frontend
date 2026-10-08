@@ -454,9 +454,6 @@ class SocketState {
 		// on another tab — put avoids a ConstraintError from the duplicate id.
 		await db.messages.put(message);
 
-		// Save timestamp to localstorage for message sync
-		localStorage.setItem(`last_updated`, message.timestamp);
-
 		if (channelId == null || serverId == null) return;
 
 		const beingRead = unreadState.isBeingRead(channelThreadKey(channelId));

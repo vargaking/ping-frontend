@@ -30,6 +30,8 @@ export type ServerLayout = {
 const byPosition = (a: { position: number; id: number }, b: { position: number; id: number }) =>
 	a.position - b.position || a.id - b.id;
 
+const CHANNELS_FRESH_MS = 30_000;
+
 export class ServersState {
 	servers: Record<number, Server> = $state({});
 	/** Set once the first server fetch succeeds, so "no servers" isn't shown while loading. */
@@ -129,6 +131,8 @@ export class ServersState {
 		this.loaded = false;
 		this.channels = {};
 		this.channelGroups = {};
+		this.channelLoads = {};
+		this.channelsLoadedAt = {};
 		this.selectedServerId = null;
 		this.selectedChannelId = null;
 	}
@@ -236,8 +240,30 @@ export class ServersState {
 		return nameColor(this.roles[serverId] ?? [], this.memberRoles[serverId]?.[userId] ?? []);
 	}
 
+	private channelLoads: Record<number, Promise<Channel[]>> = {};
+	private channelsLoadedAt: Record<number, number> = {};
+
+	/** A server's channels, sharing a load that is still running or one that finished
+	 *  less than `maxAgeMs` ago, so startup and the server page don't fetch twice.
+	 *  The socket keeps loaded channels current in between. */
+	loadServerChannels(serverId: number, maxAgeMs = CHANNELS_FRESH_MS): Promise<Channel[]> {
+		const running = this.channelLoads[serverId];
+		if (running) return running;
+		const loadedAt = this.channelsLoadedAt[serverId];
+		const known = this.channels[serverId];
+		if (known && loadedAt != null && Date.now() - loadedAt < maxAgeMs) {
+			return Promise.resolve(Object.values(known));
+		}
+		const load = this.fetchServerChannels(serverId).finally(
+			() => delete this.channelLoads[serverId]
+		);
+		this.channelLoads[serverId] = load;
+		return load;
+	}
+
 	async fetchServerChannels(serverId: number): Promise<Channel[]> {
 		const { groups, channels } = await getServerChannelSnapshot(serverId);
+		this.channelsLoadedAt[serverId] = Date.now();
 		this.channelGroups[serverId] = Object.fromEntries(groups.map((g) => [g.id, g]));
 		this.channels[serverId] = Object.fromEntries(channels.map((ch) => [ch.id, ch]));
 		this.layoutVersion++;

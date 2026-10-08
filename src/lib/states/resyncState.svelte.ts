@@ -1,5 +1,4 @@
 import { serversState } from './serversState.svelte';
-import { unreadState } from './unreadState.svelte';
 import { conversationsState } from './conversationsState.svelte';
 
 export type ResyncReason = 'reconnect' | 'resume' | 'notification';
@@ -43,18 +42,13 @@ export class ResyncState {
 }
 
 async function refreshLists() {
-	const selected = serversState.selectedServerId;
-	const others = Object.keys(serversState.servers)
-		.map(Number)
-		.filter((id) => id !== selected);
 	await Promise.all([
 		conversationsState.fetch(),
-		unreadState.seedAllServers(others),
-		selected != null
-			? serversState
-					.fetchServerChannels(selected)
-					.catch((e) => console.warn('Resync failed to refresh channels', e))
-			: null
+		...Object.keys(serversState.servers).map((id) =>
+			serversState
+				.loadServerChannels(Number(id), 0)
+				.catch((e) => console.warn('Resync failed to refresh channels', e))
+		)
 	]);
 }
 

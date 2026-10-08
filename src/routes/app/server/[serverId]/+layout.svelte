@@ -12,7 +12,7 @@
 		if (id == null) return;
 		untrack(() => {
 			serversState.setSelectedServerId(id);
-			serversState.fetchServerChannels(id);
+			serversState.loadServerChannels(id).catch((e) => console.error('Failed to load channels', e));
 			voicePresenceState.load(id);
 		});
 	});
