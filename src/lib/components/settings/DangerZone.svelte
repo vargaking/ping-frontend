@@ -33,7 +33,7 @@
 
 <section
 	aria-label="Danger zone"
-	class="flex max-w-xl items-center gap-4 rounded-xl border border-destructive-border p-4"
+	class="flex max-w-xl items-center gap-4 rounded-xl border border-destructive-border p-4 max-md:flex-col max-md:items-stretch max-md:gap-3"
 >
 	<p class="flex-1 text-[13px] text-muted-foreground">{consequence}</p>
 	<Dialog.Root bind:open>

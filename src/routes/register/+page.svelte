@@ -7,6 +7,9 @@
 	import { initializeAppData } from '$lib/utils/initializeAppData';
 	import { getErrorMessage, fieldErrorsFrom, normalizeError } from '$lib/requests/errors';
 	import { safeNext } from '$lib/auth/session';
+	import { authProblem } from '$lib/auth/afterAuth';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { reportClientError } from '$lib/utils/errorReporting';
 
 	// Mirror the backend rules (see RegisterRequest) so validation is live and the
 	// server rarely has to reject anything.
@@ -90,7 +93,16 @@
 			// The register endpoint sets the session cookie, so we're logged in on
 			// success — populate state and go straight into the app.
 			await register(username, password);
-			await initializeAppData();
+			const problem = authProblem(await initializeAppData(), !!usersState.loggedInUser, 'register');
+			if (problem) {
+				password = '';
+				confirm = '';
+				submitAttempted = false;
+				touched = { username: false, password: false, confirm: false };
+				formError = problem.message;
+				if (problem.report) reportClientError({ kind: 'error', message: problem.report });
+				return;
+			}
 			await goto(next ?? '/app', { replaceState: true });
 		} catch (error) {
 			const status = normalizeError(error).status;
@@ -167,7 +179,9 @@
 	</form>
 
 	<p class="text-center text-sm text-muted-foreground">
-		Already have an account? <a href={loginHref} class="font-medium text-foreground hover:underline"
+		Already have an account? <a
+			href={loginHref}
+			class="font-medium text-foreground hover:underline pointer-coarse:inline-block pointer-coarse:py-3"
 			>Sign in</a
 		>
 	</p>

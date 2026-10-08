@@ -3,6 +3,7 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import ServerRailItem from './ServerRailItem.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import AddServerDialog from '$lib/components/servers/AddServerDialog.svelte';
@@ -25,10 +26,10 @@
 
 <nav
 	aria-label="Servers"
-	class="flex min-h-0 w-[60px] shrink-0 flex-col items-center gap-2 border-r border-border bg-rail py-2.5"
+	class="flex min-h-0 w-[60px] shrink-0 flex-col items-center gap-2 border-r border-border bg-rail pt-2.5 pb-[calc(0.625rem+var(--safe-bottom))]"
 >
 	<Tooltip.Provider>
-		<Tooltip.Root delayDuration={0}>
+		<Tooltip.Root delayDuration={0} disabled={phoneState.touch}>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
 					<a
@@ -86,7 +87,7 @@
 	{/if}
 
 	<Tooltip.Provider>
-		<Tooltip.Root delayDuration={0}>
+		<Tooltip.Root delayDuration={0} disabled={phoneState.touch}>
 			<Tooltip.Trigger>
 				{#snippet child({ props })}
 					<button

@@ -1,7 +1,6 @@
 import type { User } from './auth.types';
 
 export type ServerSettings = {
-	channel_order: number[];
 	/** Text channel that opening the server lands in; absent shows the welcome screen. */
 	default_channel_id?: number | null;
 	[key: string]: any;
@@ -41,4 +40,7 @@ export type Role = {
 	deny: string;
 	parent_id: number | null;
 	is_default: boolean;
+	/** Higher is more powerful; the default role is 0. */
+	position: number;
+	color: string | null;
 };

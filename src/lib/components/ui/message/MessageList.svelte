@@ -1,5 +1,6 @@
 <script lang="ts">
 	import MessageGroup from './MessageGroup.svelte';
+	import { continuesGroup } from '$lib/utils/messageGroups';
 	import DateDivider from './DateDivider.svelte';
 	import UnreadDivider from './UnreadDivider.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
@@ -31,6 +32,8 @@
 		errorDescription: string;
 		/** When set, a 404 calls this instead of falling back to the cache. */
 		onNotFound?: () => void;
+		/** False when something else marks the thread read (a forum post is read with its channel). */
+		trackRead?: boolean;
 	};
 
 	let {
@@ -40,7 +43,8 @@
 		readCache,
 		emptyDescription,
 		errorDescription,
-		onNotFound
+		onNotFound,
+		trackRead = true
 	}: Props = $props();
 
 	let messageWrapper = $state<HTMLDivElement>();
@@ -73,8 +77,6 @@
 	let unreadBoundaryId = $state<string | null>(null);
 	let unreadAnchorId = $state<string | null>(null);
 
-	const GROUP_GAP_MS = 5 * 60 * 1000;
-
 	function dayKey(ts: string) {
 		return new Date(ts).toDateString();
 	}
@@ -92,21 +94,20 @@
 	type RenderItem =
 		| { kind: 'date'; key: string; label: string }
 		| { kind: 'unread'; key: string }
-		| { kind: 'group'; key: string; userId: number; messages: MessageType[] };
+		| { kind: 'group'; key: string; messages: MessageType[] };
 
 	const items = $derived.by<RenderItem[]>(() => {
 		const result: RenderItem[] = [];
 		let lastDay: string | null = null;
-		let group: { userId: number; messages: MessageType[]; lastTs: string } | null = null;
+		let group: MessageType[] | null = null;
 		let unreadInserted = false;
 
 		const flush = () => {
 			if (group) {
 				result.push({
 					kind: 'group',
-					key: `g-${group.messages[0].id}`,
-					userId: group.userId,
-					messages: group.messages
+					key: `g-${group[0].id}`,
+					messages: group
 				});
 				group = null;
 			}
@@ -126,17 +127,11 @@
 				unreadInserted = true;
 			}
 
-			if (
-				group &&
-				group.userId === m.user_id &&
-				!m.reply_to &&
-				new Date(m.timestamp).getTime() - new Date(group.lastTs).getTime() < GROUP_GAP_MS
-			) {
-				group.messages.push(m);
-				group.lastTs = m.timestamp;
+			if (group && continuesGroup(group[group.length - 1], m)) {
+				group.push(m);
 			} else {
 				flush();
-				group = { userId: m.user_id, messages: [m], lastTs: m.timestamp };
+				group = [m];
 			}
 		}
 		flush();
@@ -157,7 +152,7 @@
 
 	/** Current read markers for `target`, read from the single source of truth. */
 	function readSnapshot(): ReadMarkers | null {
-		if (!target) return null;
+		if (!target || !trackRead) return null;
 		if (target.kind === 'channel') {
 			return {
 				lastReadId: unreadState.channelLastReadId(target.channelId),
@@ -375,14 +370,13 @@
 
 	documentFocusState.attach();
 
-	// The thread is "being read" when it's the one this list shows, the tab is
-	// visible, and the window is focused — never just because a message arrived
-	// while we're hidden or unfocused.
-	const beingRead = $derived(
-		target != null && documentFocusState.visible && documentFocusState.focused
-	);
+	// The thread is "being read" when it's the one this list shows and the page is
+	// in front of the user — never just because a message arrived while we're
+	// hidden, unfocused or covered by the phone navigation.
+	const beingRead = $derived(trackRead && target != null && documentFocusState.reading);
 
 	$effect(() => {
+		if (!trackRead) return;
 		const key = threadKey;
 		unreadState.setActiveThread(beingRead ? key : null);
 		return () => {
@@ -449,14 +443,14 @@
 <div
 	bind:this={messageWrapper}
 	onscroll={handleScroll}
-	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable"
+	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable pointer-coarse:select-none"
 >
 	{#if loadState === 'loading'}
-		<div class="px-8 pt-6">
+		<div class="px-8 pt-6 max-md:px-3">
 			<LoadingList rows={6} avatar />
 		</div>
 	{:else if loadState === 'error'}
-		<div class="flex h-full items-center justify-center px-8">
+		<div class="flex h-full items-center justify-center px-8 max-md:px-3">
 			<ErrorState
 				title="Couldn’t load messages"
 				description={errorDescription}
@@ -464,7 +458,7 @@
 			/>
 		</div>
 	{:else if items.length === 0}
-		<div class="flex h-full items-center justify-center px-8">
+		<div class="flex h-full items-center justify-center px-8 max-md:px-3">
 			<EmptyState title="No messages yet" description={emptyDescription}>
 				{#snippet icon()}
 					<MessagesSquare size={20} strokeWidth={1.75} />
@@ -472,7 +466,7 @@
 			</EmptyState>
 		</div>
 	{:else}
-		<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2">
+		<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2 max-md:px-3">
 			<div bind:this={topSentinel} aria-hidden="true"></div>
 			{#each items as item (item.key)}
 				{#if item.kind === 'date'}
@@ -480,11 +474,7 @@
 				{:else if item.kind === 'unread'}
 					<UnreadDivider />
 				{:else}
-					<MessageGroup
-						userId={item.userId}
-						messages={item.messages}
-						onJumpToMessage={jumpToMessage}
-					/>
+					<MessageGroup messages={item.messages} onJumpToMessage={jumpToMessage} />
 				{/if}
 			{/each}
 		</div>

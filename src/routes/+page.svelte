@@ -34,7 +34,8 @@
 				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
 				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
 				{ label: 'Desktop app', detail: 'Windows and Linux, with tray and launch at login' },
-				{ label: 'Servers', detail: 'invites, roles, member management' }
+				{ label: 'Servers', detail: 'invites, roles, member management' },
+				{ label: 'Moving from Discord', detail: "import your server's history" }
 			]
 		},
 		{
@@ -55,7 +56,6 @@
 				{ label: 'One account across every server' },
 				{ label: 'End-to-end encryption' },
 				{ label: 'Workspaces', detail: 'personal, work and university, on one account' },
-				{ label: 'Moving from Discord', detail: "import your server's history" },
 				{ label: 'Custom frontends' },
 				{ label: 'An automations / bot API' }
 			]
@@ -67,8 +67,12 @@
 	<title>zeta — chat & voice for your server</title>
 </svelte:head>
 
-<div class="min-h-screen w-full bg-background text-foreground">
-	<header class="topbar sticky z-10 h-11 border-b border-border">
+<div
+	class="min-h-screen w-full overflow-x-clip bg-background pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)] text-foreground"
+>
+	<header
+		class="topbar sticky z-10 h-[calc(2.75rem+env(safe-area-inset-top,0px))] border-b border-border"
+	>
 		<div class="mx-auto flex h-full max-w-[720px] items-center justify-between px-5">
 			<span class="flex items-center gap-1.5 font-mono text-sm font-medium tracking-tight"
 				><Logo />zeta</span
@@ -81,7 +85,9 @@
 		</div>
 	</header>
 
-	<div class="relative mx-auto flex min-h-[calc(100vh-44px)] max-w-[720px] flex-col px-5 pb-16">
+	<div
+		class="relative mx-auto flex min-h-[calc(100vh-44px)] max-w-[720px] flex-col px-5 pb-[calc(4rem+env(safe-area-inset-bottom,0px))]"
+	>
 		<div class="glow" aria-hidden="true"></div>
 
 		<section class="relative z-[1] mt-16 sm:mt-24">
@@ -161,14 +167,19 @@
 			class="relative z-[1] mt-auto flex items-center justify-between pt-24 text-xs text-muted-foreground"
 		>
 			<span class="font-mono">zeta</span>
-			<a href="/login/" class="underline-offset-[3px] hover:underline">log in →</a>
+			<a
+				href="/login/"
+				class="underline-offset-[3px] hover:underline pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center"
+				>log in →</a
+			>
 		</footer>
 	</div>
 </div>
 
 <style>
 	.topbar {
-		top: env(safe-area-inset-top, 0px);
+		top: 0;
+		padding-top: env(safe-area-inset-top, 0px);
 		background: color-mix(in oklab, var(--rail, var(--background)) 80%, transparent);
 		backdrop-filter: blur(8px);
 	}

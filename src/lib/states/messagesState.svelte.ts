@@ -26,10 +26,15 @@ type ThreadMessages = {
 	hasMore: boolean;
 };
 
-/** Key for a message thread. Channels keep their bare id; DMs are prefixed to
- *  avoid clashes with channel ids. */
+/** Key for a message thread. Channels keep their bare id; DMs and posts are
+ *  prefixed to avoid clashes with channel ids. */
 export function channelThreadKey(channelId: number): string {
 	return String(channelId);
+}
+
+/** A forum post's replies are their own thread, apart from the forum channel's id. */
+export function postThreadKey(postId: number): string {
+	return `post:${postId}`;
 }
 
 export function directThreadKey(conversationId: number): string {
@@ -37,19 +42,18 @@ export function directThreadKey(conversationId: number): string {
 }
 
 export function threadKey(target: MessageTarget): string {
-	return target.kind === 'channel'
-		? channelThreadKey(target.channelId)
-		: directThreadKey(target.conversationId);
+	if (target.kind === 'direct') return directThreadKey(target.conversationId);
+	return target.postId != null ? postThreadKey(target.postId) : channelThreadKey(target.channelId);
 }
 
 export function messageThreadKey(message: MessageType): string {
-	return message.conversation_id != null
-		? directThreadKey(message.conversation_id)
-		: channelThreadKey(message.channel_id ?? -1);
+	if (message.conversation_id != null) return directThreadKey(message.conversation_id);
+	if (message.post_id != null) return postThreadKey(message.post_id);
+	return channelThreadKey(message.channel_id ?? -1);
 }
 
 /**
- * Messages are kept per thread (a channel or a DM conversation): each has its
+ * Messages are kept per thread (a channel, a forum post or a DM conversation): each has its
  * own list (oldest first) and a hasMore flag telling whether older history can
  * still be loaded.
  */

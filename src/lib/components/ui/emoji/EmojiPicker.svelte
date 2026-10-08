@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { mode } from 'mode-watcher';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 
 	let { onpick, class: className = '' }: { onpick: (unicode: string) => void; class?: string } =
 		$props();
@@ -23,7 +24,8 @@
 		const handleClick = (event: Event) =>
 			onpick((event as CustomEvent<{ unicode: string }>).detail.unicode);
 		element.addEventListener('emoji-click', handleClick);
-		element.shadowRoot?.querySelector('input')?.focus();
+		// Focusing the search field would open the on-screen keyboard over the picker.
+		if (!phoneState.touch) element.shadowRoot?.querySelector('input')?.focus();
 		return () => element.removeEventListener('emoji-click', handleClick);
 	});
 </script>
@@ -44,6 +46,18 @@
 		width: 22rem;
 		height: 22rem;
 		max-width: calc(100vw - 2rem);
+	}
+
+	@media (max-width: 767.98px) {
+		.emoji-picker-host {
+			height: min(22rem, calc(var(--app-height, 100dvh) - 8rem));
+		}
+	}
+
+	@media (max-width: 359.98px) {
+		.emoji-picker-host :global(emoji-picker) {
+			--emoji-padding: 0.25rem;
+		}
 	}
 
 	.emoji-picker-host :global(emoji-picker) {

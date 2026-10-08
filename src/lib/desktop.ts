@@ -23,6 +23,10 @@ export type DesktopBridge = {
 	retry(): void;
 	/** True when the shell hides the native title bar and the page must draw one. */
 	frameless?: boolean;
+	/** Whether the shell can capture the PC's sound with a screen share. Shells before 0.3.0 don't say. */
+	canShareAudio?: boolean;
+	/** Everything that can be shared, for the page's own picker. Shells before 0.3.0 lack it and ask through onPickScreenSource instead. */
+	listScreenSources?(): Promise<ScreenSource[]>;
 	/** The shell calls the handler when the page asks to share its screen. Resolve with a source id, or null to cancel. Returns an unsubscribe. */
 	onPickScreenSource?(handler: (sources: ScreenSource[]) => Promise<string | null>): () => void;
 };

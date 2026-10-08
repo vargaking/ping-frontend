@@ -39,8 +39,10 @@
 		class="flex h-8 items-center gap-2 rounded-lg border border-border bg-card px-2.5 transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 	>
 		<span class="h-1.5 w-1.5 rounded-full {dots[status]}"></span>
-		<span class="max-w-40 truncate text-[13px]">{serverName}</span>
-		<span class="font-mono text-[11px] text-text-subtle">{formatRtt(info?.rttMs ?? null)}</span>
+		<span class="max-w-40 truncate text-[13px] max-md:max-w-[5.5rem]">{serverName}</span>
+		<span class="translate-y-px font-mono text-[11px] text-text-subtle"
+			>{formatRtt(info?.rttMs ?? null)}</span
+		>
 	</Popover.Trigger>
 	<Popover.Content align="center" sideOffset={8} class="p-0">
 		<ConnectionsPopover />

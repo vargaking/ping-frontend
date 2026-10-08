@@ -18,24 +18,34 @@
 	const channel = $derived(serversState.selectedServerChannels[channelId] ?? null);
 	const savedName = $derived(channel?.name ?? '');
 	const savedTopic = $derived(channel?.topic ?? '');
+	const savedGroup = $derived(channel?.group_id == null ? '' : String(channel.group_id));
+	const groups = $derived(serversState.selectedServerLayout.groups.map((g) => g.group));
 
 	let name = $state('');
 	let topic = $state('');
+	let group = $state('');
 	let errors = $state<{ name?: string; topic?: string }>({});
 	let saving = $state(false);
 
 	// What the fields were last synced from. While the form is clean, a change
 	// to the channel (e.g. someone else renamed it) flows into the fields.
-	let baseline = $state<{ name: string; topic: string } | null>(null);
+	let baseline = $state<{ name: string; topic: string; group: string } | null>(null);
 
-	const dirty = $derived(baseline !== null && (name !== baseline.name || topic !== baseline.topic));
+	const dirty = $derived(
+		baseline !== null &&
+			(name !== baseline.name || topic !== baseline.topic || group !== baseline.group)
+	);
 
 	$effect(() => {
-		const next = { name: savedName, topic: savedTopic };
+		const next = { name: savedName, topic: savedTopic, group: savedGroup };
 		untrack(() => {
-			if (baseline === null || (name === baseline.name && topic === baseline.topic)) {
+			if (
+				baseline === null ||
+				(name === baseline.name && topic === baseline.topic && group === baseline.group)
+			) {
 				name = next.name;
 				topic = next.topic;
+				group = next.group;
 				baseline = next;
 			}
 		});
@@ -44,7 +54,8 @@
 	function reset() {
 		name = savedName;
 		topic = savedTopic;
-		baseline = { name: savedName, topic: savedTopic };
+		group = savedGroup;
+		baseline = { name: savedName, topic: savedTopic, group: savedGroup };
 		errors = {};
 	}
 
@@ -61,6 +72,7 @@
 		const update: ChannelUpdate = {};
 		if (name !== baseline.name) update.name = trimmedName;
 		if (topic !== baseline.topic) update.topic = topic.trim() || null;
+		if (group !== baseline.group) update.group_id = group === '' ? null : Number(group);
 
 		errors = {};
 		saving = true;
@@ -69,7 +81,8 @@
 			serversState.updateChannel(serverId, updated);
 			name = updated.name;
 			topic = updated.topic ?? '';
-			baseline = { name, topic };
+			group = updated.group_id == null ? '' : String(updated.group_id);
+			baseline = { name, topic, group };
 			toast.success('Channel updated');
 		} catch (e) {
 			const message = getErrorMessage(e);
@@ -124,11 +137,28 @@
 			multiline
 		/>
 
+		<div class="flex max-w-md flex-col gap-1.5">
+			<label for="channel-group" class="text-[13px] font-medium text-text-label">Category</label>
+			<select
+				id="channel-group"
+				bind:value={group}
+				class="h-11 w-full rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+			>
+				<option value="">No category</option>
+				{#each groups as g (g.id)}
+					<option value={String(g.id)}>{g.name}</option>
+				{/each}
+			</select>
+		</div>
+
 		<div class="flex flex-col gap-1.5">
 			<span class="text-[13px] font-medium text-text-label">Type</span>
 			<p class="text-sm text-muted-foreground">
-				{channel.type === 'voice' ? 'Voice channel' : 'Text channel'}. A channel's type can't be
-				changed.
+				{channel.type === 'voice'
+					? 'Voice channel'
+					: channel.type === 'forum'
+						? 'Forum channel'
+						: 'Text channel'}. A channel's type can't be changed.
 			</p>
 		</div>
 
@@ -141,7 +171,7 @@
 		/>
 	</SettingsForm>
 {:else}
-	<div class="p-7">
+	<div class="p-7 max-md:p-4">
 		<EmptyState title="Channel not found" description="It may have been deleted.">
 			{#snippet icon()}
 				<Hash size={20} strokeWidth={1.75} />

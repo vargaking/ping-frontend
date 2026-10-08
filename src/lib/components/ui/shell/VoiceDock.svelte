@@ -4,7 +4,9 @@
 	import { micIssueText } from '$lib/utils/voiceErrors';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
+	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { Permission } from '$lib/permissions';
 	import {
 		SCREEN_CONTENT_LABELS,
@@ -23,8 +25,13 @@
 		PhoneOff,
 		ScreenShare,
 		ScreenShareOff,
-		ChevronUp
+		ChevronUp,
+		Volume2,
+		VolumeOff
 	} from 'lucide-svelte';
+
+	/** One bar across the top of a phone, so the call stays in reach on both panes. */
+	let { compact = false }: { compact?: boolean } = $props();
 
 	const channelName = $derived.by(() => {
 		const { channelId, serverId } = voiceState;
@@ -59,8 +66,21 @@
 		voiceState.micOff || voiceState.micError != null || voiceState.serverMuted
 	);
 
-	const iconButton =
-		'flex h-9 w-9 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
+	const active = $derived(voiceState.connecting || voiceState.connected || voiceState.reconnecting);
+
+	let barHeight = $state(0);
+	$effect(() => {
+		if (!compact || !active || barHeight === 0) return;
+		const root = document.documentElement;
+		root.style.setProperty('--call-bar', `${barHeight}px`);
+		return () => root.style.removeProperty('--call-bar');
+	});
+
+	const iconButton = $derived(
+		`flex items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+			compact ? 'h-11 w-11' : 'h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11'
+		}`
+	);
 </script>
 
 <svelte:window onkeydowncapture={handleKeydown} />
@@ -126,9 +146,14 @@
 	{/if}
 {/snippet}
 
-{#if voiceState.connecting || voiceState.connected || voiceState.reconnecting}
-	<div class="mx-2 mb-2 rounded-[10px] border border-input bg-card p-2.5">
-		<div class="mb-2 flex flex-col gap-0.5">
+{#if active}
+	<div
+		bind:offsetHeight={barHeight}
+		class={compact
+			? 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-b border-border bg-card px-3 py-0.5'
+			: 'mx-2 mb-2 rounded-[10px] border border-input bg-card p-2.5'}
+	>
+		<div class="flex flex-col gap-0.5 {compact ? 'min-w-0' : 'mb-2'}">
 			<span class="text-xs font-medium {voiceState.reconnecting ? 'text-idle' : 'text-online'}">
 				{voiceState.reconnecting
 					? 'Reconnecting…'
@@ -139,6 +164,7 @@
 			{#if channelHref}
 				<a
 					href={channelHref}
+					onclick={() => compact && phoneState.closeNav()}
 					class="truncate rounded-sm text-[13px] text-muted-foreground hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				>
 					{channelName}
@@ -150,8 +176,9 @@
 
 		{#if voiceState.micError && !voiceState.connecting}
 			<div
-				class="mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs {voiceState.micError ===
-				'off'
+				class="mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs {compact
+					? 'col-span-2'
+					: ''} {voiceState.micError === 'off'
 					? 'bg-muted text-muted-foreground'
 					: 'bg-destructive/10 text-destructive'}"
 				role="status"
@@ -160,15 +187,34 @@
 				<button
 					type="button"
 					onclick={() => voiceState.retryMic()}
-					class="shrink-0 rounded-sm font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					class="shrink-0 rounded-sm font-medium hover:underline {compact
+						? 'min-h-11 px-2'
+						: ''} focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				>
 					{voiceState.micError === 'off' ? 'Allow' : 'Try again'}
 				</button>
 			</div>
 		{/if}
 
+		{#if voiceState.sharing && voiceState.shareSound}
+			{@const { on, text } = voiceState.shareSound}
+			<div
+				class="mb-2 flex items-start gap-2 rounded-md bg-muted px-2 py-1.5 text-xs {compact
+					? 'col-span-2'
+					: ''} {on ? 'text-foreground' : 'text-muted-foreground'}"
+				role="status"
+			>
+				{#if on}
+					<Volume2 size={14} strokeWidth={1.75} class="mt-px shrink-0" />
+				{:else}
+					<VolumeOff size={14} strokeWidth={1.75} class="mt-px shrink-0" />
+				{/if}
+				<span class="min-w-0 flex-1">{text}</span>
+			</div>
+		{/if}
+
 		<Tooltip.Provider>
-			<div class="flex items-center gap-2">
+			<div class="flex items-center {compact ? 'col-start-2 row-start-1 gap-1' : 'gap-2'}">
 				{@render control(
 					voiceState.serverMuted ? 'Server muted' : micDown ? 'Unmute' : 'Mute',
 					VOICE_SHORTCUTS.mute.keys,
@@ -191,44 +237,47 @@
 							voiceState.sharing ? 'Stop sharing' : 'Share screen',
 							'',
 							voiceState.sharing,
-							() =>
-								voiceState.sharing ? voiceState.stopScreenShare() : voiceState.startScreenShare(),
+							() => (voiceState.sharing ? voiceState.stopScreenShare() : shareDialogState.show()),
 							shareIcon,
-							'primary'
+							'primary',
+							voiceState.startingShare
 						)}
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger
-								aria-label="Screen share options"
-								class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-							>
-								<ChevronUp size={14} strokeWidth={1.75} />
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Content side="top" align="start" class="w-48">
-								<DropdownMenu.Group>
-									<DropdownMenu.Label>Quality</DropdownMenu.Label>
-									<DropdownMenu.RadioGroup
-										value={voiceSettingsState.screenPreset}
-										onValueChange={(value) => voiceState.setScreenQuality(value as ScreenPresetId)}
-									>
-										{#each Object.entries(SCREEN_PRESETS) as [id, { label }] (id)}
-											<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
-										{/each}
-									</DropdownMenu.RadioGroup>
-								</DropdownMenu.Group>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Group>
-									<DropdownMenu.Label>Optimize for</DropdownMenu.Label>
-									<DropdownMenu.RadioGroup
-										value={voiceSettingsState.screenContent}
-										onValueChange={(value) => voiceState.setScreenContent(value as ScreenContent)}
-									>
-										{#each Object.entries(SCREEN_CONTENT_LABELS) as [id, label] (id)}
-											<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
-										{/each}
-									</DropdownMenu.RadioGroup>
-								</DropdownMenu.Group>
-							</DropdownMenu.Content>
-						</DropdownMenu.Root>
+						{#if voiceState.sharing}
+							<DropdownMenu.Root>
+								<DropdownMenu.Trigger
+									aria-label="Screen share options"
+									class="flex h-9 w-5 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-8"
+								>
+									<ChevronUp size={14} strokeWidth={1.75} />
+								</DropdownMenu.Trigger>
+								<DropdownMenu.Content side="top" align="start" class="w-48">
+									<DropdownMenu.Group>
+										<DropdownMenu.Label>Quality</DropdownMenu.Label>
+										<DropdownMenu.RadioGroup
+											value={voiceSettingsState.screenPreset}
+											onValueChange={(value) =>
+												voiceState.setScreenQuality(value as ScreenPresetId)}
+										>
+											{#each Object.entries(SCREEN_PRESETS) as [id, { label }] (id)}
+												<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
+											{/each}
+										</DropdownMenu.RadioGroup>
+									</DropdownMenu.Group>
+									<DropdownMenu.Separator />
+									<DropdownMenu.Group>
+										<DropdownMenu.Label>Optimize for</DropdownMenu.Label>
+										<DropdownMenu.RadioGroup
+											value={voiceSettingsState.screenContent}
+											onValueChange={(value) => voiceState.setScreenContent(value as ScreenContent)}
+										>
+											{#each Object.entries(SCREEN_CONTENT_LABELS) as [id, label] (id)}
+												<DropdownMenu.RadioItem value={id}>{label}</DropdownMenu.RadioItem>
+											{/each}
+										</DropdownMenu.RadioGroup>
+									</DropdownMenu.Group>
+								</DropdownMenu.Content>
+							</DropdownMenu.Root>
+						{/if}
 					</div>
 				{/if}
 				<button

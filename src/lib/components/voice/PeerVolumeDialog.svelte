@@ -21,7 +21,7 @@
 			value={percent}
 			aria-label="Volume for {name}"
 			oninput={(e) => voiceState.setPeerVolume(userId, e.currentTarget.valueAsNumber / 100)}
-			class="h-2 min-w-0 flex-1 cursor-pointer accent-primary"
+			class="h-2 min-w-0 flex-1 cursor-pointer accent-primary pointer-coarse:h-8"
 		/>
 		<span class="w-10 shrink-0 text-right text-sm text-foreground tabular-nums">{percent}%</span>
 	</div>
@@ -30,7 +30,7 @@
 		<button
 			type="button"
 			onclick={() => overlayState.close()}
-			class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-3"
 		>
 			Done
 		</button>

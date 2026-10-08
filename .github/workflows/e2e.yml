@@ -37,6 +37,7 @@ jobs:
       ATTACHMENT_URL_KEY: e2e-attachment-key-0123456789-abcdefghijklmnop
       MEDIA_ROOT: /tmp/ping-e2e/media
       ATTACHMENTS_ROOT: /tmp/ping-e2e/attachments
+      IMPORTS_ROOT: /tmp/ping-e2e/imports
       LOG_DIR: /tmp/ping-e2e/logs
     steps:
       - uses: actions/checkout@v4

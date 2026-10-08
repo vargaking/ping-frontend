@@ -15,7 +15,7 @@
 </script>
 
 <div class="flex items-start justify-between gap-4">
-	<div class="flex flex-col gap-1">
+	<div class="flex min-w-0 flex-col gap-1">
 		<span class="text-sm font-medium">{label}</span>
 		<span class="text-xs text-muted-foreground">{description}</span>
 		{@render children?.()}

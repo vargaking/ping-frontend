@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Popover as PopoverPrimitive } from 'bits-ui';
 	import { cn } from '$lib/utils.js';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 
 	let {
 		ref = $bindable(null),
@@ -20,8 +21,9 @@
 		{sideOffset}
 		{align}
 		{side}
+		collisionPadding={phoneState.phone ? 8 : 0}
 		class={cn(
-			'z-50 origin-(--bits-popover-content-transform-origin) rounded-xl border border-input bg-popover text-popover-foreground shadow-[0_16px_40px_rgba(0,0,0,0.5)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+			'z-50 origin-(--bits-popover-content-transform-origin) rounded-xl border border-input bg-popover text-popover-foreground shadow-[0_16px_40px_rgba(0,0,0,0.5)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 max-md:max-h-(--bits-popover-content-available-height) max-md:max-w-[calc(100vw-1rem)] max-md:overflow-y-auto',
 			className
 		)}
 		{...restProps}
