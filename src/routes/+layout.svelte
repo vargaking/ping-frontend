@@ -13,6 +13,7 @@
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { installState } from '$lib/states/installState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
+	import { resyncState } from '$lib/states/resyncState.svelte';
 	import { safeNext } from '$lib/auth/session';
 	import MetaTags from '$lib/components/MetaTags.svelte';
 	import { Toaster } from '$lib/components/ui/sonner/index';
@@ -51,6 +52,12 @@
 		}
 	});
 
+	function samePath(url: string, current: URL): boolean {
+		const trim = (path: string) => path.replace(/\/+$/, '');
+		const target = new URL(url, current.origin);
+		return trim(target.pathname) === trim(current.pathname) && target.search === current.search;
+	}
+
 	// A push notification click asks an already-open tab to move to its thread.
 	onMount(() => {
 		if (!('serviceWorker' in navigator)) return;
@@ -59,7 +66,9 @@
 			const url = safeNext(event.data.url);
 			if (!url) return;
 			phoneState.closeNav();
-			goto(url);
+			// The thread is already on screen, so navigating wouldn't reload it.
+			if (samePath(url, page.url)) void resyncState.request('notification');
+			else goto(url);
 		};
 		navigator.serviceWorker.addEventListener('message', onMessage);
 		return () => navigator.serviceWorker.removeEventListener('message', onMessage);

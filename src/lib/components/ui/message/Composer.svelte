@@ -10,6 +10,7 @@
 	import { messagesState, threadKey } from '$lib/states/messagesState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { replyState } from '$lib/states/replyState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import {
 		MAX_ATTACHMENTS_PER_MESSAGE,
 		MAX_ATTACHMENT_BYTES,
@@ -19,6 +20,7 @@
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { LinkPreview } from '$lib/utils/linkPreview.svelte';
 	import { mentionCandidates } from '$lib/utils/mentions';
+	import { isTypingKey } from '$lib/utils/typeToFocus';
 	import { messagePlainText, messagePreviewText } from '$lib/utils/messageContent';
 	import LinkEmbed from './LinkEmbed.svelte';
 	import * as Popover from '$lib/components/ui/popover/index';
@@ -253,6 +255,24 @@
 		editor?.focus();
 	}
 
+	const OPEN_LAYER =
+		'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-popover-content]';
+
+	function isEditable(element: Element | null) {
+		return (
+			element instanceof HTMLInputElement ||
+			element instanceof HTMLTextAreaElement ||
+			element instanceof HTMLSelectElement ||
+			(element instanceof HTMLElement && element.isContentEditable)
+		);
+	}
+
+	function handleWindowKeydown(event: KeyboardEvent) {
+		if (!target || !isTypingKey(event) || phoneState.navCoversContent) return;
+		if (isEditable(document.activeElement) || document.querySelector(OPEN_LAYER)) return;
+		editor?.focusNow();
+	}
+
 	// ↑ on an empty composer jumps to editing your most recent message here.
 	function editLastOwnMessage() {
 		const me = usersState.loggedInUser;
@@ -267,6 +287,8 @@
 		}
 	}
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class={compact ? '' : 'px-8 pb-6 max-md:px-3 max-md:pb-[max(12px,var(--safe-bottom))]'}>
 	<p

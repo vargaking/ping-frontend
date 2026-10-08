@@ -177,3 +177,22 @@ test('on a phone holding a message highlights it and opens its menu quickly', as
 	await expect(menu).toBeHidden();
 	await cdp.detach();
 });
+
+test('on a phone the top bar is the sticky box iOS looks for along the top edge', async ({
+	context,
+	page
+}) => {
+	await context.addInitScript(() => {
+		try {
+			localStorage.setItem('layoutInfo', 'on');
+		} catch {
+			// storage is unavailable on opaque origins
+		}
+	});
+	await registerUser(context);
+	await page.goto('/app/');
+
+	const topEdge = page.locator('[data-layout-info] div').filter({ hasText: /^top edge/ });
+	await expect(topEdge).toHaveText(/^top edgesticky .+/);
+	await expect(topEdge).not.toContainText('+backdrop');
+});
