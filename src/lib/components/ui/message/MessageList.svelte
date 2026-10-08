@@ -18,6 +18,8 @@
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { documentFocusState } from '$lib/utils/documentFocus.svelte';
+	import { resyncState } from '$lib/states/resyncState.svelte';
+	import { mergeNewestPage, replaceWithNewestPage } from '$lib/utils/mergeNewestPage';
 
 	type Props = {
 		/** messagesState key of the thread shown (see threadKey). */
@@ -65,9 +67,16 @@
 	// is never yanked back down when a new message arrives.
 	let stickToBottom = true;
 
+	// The list shows the IndexedDB cache because the API failed.
+	let fromCache = false;
+	// Older pages may hold edits or deletes we missed; they are dropped once back at the bottom.
+	let staleOlder = false;
+
 	function handleScroll() {
 		const el = messageWrapper;
-		if (el) stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+		if (!el) return;
+		stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+		if (stickToBottom && staleOlder && !resyncing) void resync();
 	}
 
 	// Id of the last message read before this open (from unreadState/conversationsState,
@@ -228,6 +237,8 @@
 
 			const ascending = [...pageData.messages].reverse();
 			nextCursor = pageData.next_cursor;
+			fromCache = false;
+			staleOlder = false;
 			applyPage(key, ascending, pageData.has_more);
 			db.messages.bulkPut(ascending).catch((e) => console.warn('Failed to cache messages', e));
 		} catch (e) {
@@ -241,6 +252,7 @@
 				const cached = await readCache();
 				if (token !== loadToken) return;
 				nextCursor = null;
+				fromCache = true;
 				applyPage(key, cached, false);
 			} catch (cacheError) {
 				if (token !== loadToken) return;
@@ -306,6 +318,106 @@
 		}
 	}
 
+	let resyncing: Promise<void> | null = null;
+
+	function resync(): Promise<void> {
+		resyncing ??= resyncThread().finally(() => (resyncing = null));
+		return resyncing;
+	}
+
+	/** Catch up on what may have been missed while the socket was down or the page frozen. */
+	async function resyncThread() {
+		const key = threadKey;
+		if (loadState !== 'ready' || fromCache) return loadMessages(key);
+		if (olderInFlight) await olderInFlight;
+		if (key !== threadKey) return;
+
+		const token = ++loadToken;
+		const loaded = messagesState.messages(key);
+		const knownBefore = new Set(loaded.map((m) => m.id));
+		const newestBefore = loaded.findLast((m) => !m.status)?.id ?? null;
+
+		let pageData: MessagePage;
+		try {
+			pageData = await fetchPage();
+		} catch (e) {
+			console.warn('Failed to resync messages', e);
+			return;
+		}
+		if (token !== loadToken) return;
+
+		const page = [...pageData.messages].reverse();
+		db.messages.bulkPut(page).catch((e) => console.warn('Failed to cache messages', e));
+		const current = messagesState.messages(key);
+
+		if (stickToBottom) {
+			messagesState.replace(
+				key,
+				replaceWithNewestPage(current, page, knownBefore),
+				pageData.has_more
+			);
+			nextCursor = pageData.next_cursor;
+			staleOlder = false;
+			pinDividerAfter(newestBefore, page);
+			tick().then(scrollToBottom);
+			return;
+		}
+
+		staleOlder = pageData.has_more;
+		const merged = mergeNewestPage(current, page, { complete: !pageData.has_more, knownBefore });
+		if (!merged) return;
+
+		const anchors = visibleRows();
+		const hasMore = merged.keptOlder ? messagesState.hasMore(key) : pageData.has_more;
+		if (!merged.keptOlder) nextCursor = pageData.next_cursor;
+		messagesState.replace(key, merged.messages, hasMore);
+		pinDividerAfter(newestBefore, page);
+		await tick();
+		keepRowsInPlace(anchors);
+	}
+
+	/** Mark the first message from someone else that arrived after `newestBefore` as unread,
+	 *  unless the divider already sits on a loaded message. */
+	function pinDividerAfter(newestBefore: string | null, page: MessageType[]) {
+		if (!trackRead || newestBefore == null) return;
+		const loaded = messagesState.messages(threadKey);
+		if (unreadAnchorId != null && loaded.some((m) => m.id === unreadAnchorId)) return;
+
+		const at = page.findIndex((m) => m.id === newestBefore);
+		const me = usersState.loggedInUser?.id;
+		unreadAnchorId = page.slice(at + 1).find((m) => m.user_id !== me)?.id ?? null;
+	}
+
+	type RowOffset = { id: string; offset: number };
+
+	/** The rows at the top of the view, with their distance from it. */
+	function visibleRows(): RowOffset[] {
+		const el = messageWrapper;
+		if (!el) return [];
+		const top = el.getBoundingClientRect().top;
+		const rows: RowOffset[] = [];
+		for (const row of el.querySelectorAll<HTMLElement>('[data-message-id]')) {
+			const rect = row.getBoundingClientRect();
+			if (rect.bottom <= top) continue;
+			rows.push({ id: row.dataset.messageId!, offset: rect.top - top });
+			if (rows.length === 10) break;
+		}
+		return rows;
+	}
+
+	/** Scroll so the first of `rows` still on screen sits where it was. */
+	function keepRowsInPlace(rows: RowOffset[]) {
+		const el = messageWrapper;
+		if (!el) return;
+		const top = el.getBoundingClientRect().top;
+		for (const { id, offset } of rows) {
+			const row = el.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`);
+			if (!row) continue;
+			el.scrollTop += row.getBoundingClientRect().top - top - offset;
+			return;
+		}
+	}
+
 	const MAX_JUMP_PAGES = 10;
 	const HIGHLIGHT_MS = 1500;
 
@@ -340,6 +452,14 @@
 	$effect(() => {
 		const key = threadKey;
 		untrack(() => loadMessages(key));
+	});
+
+	let seenGeneration = resyncState.generation;
+	$effect(() => {
+		const generation = resyncState.generation;
+		if (generation === seenGeneration) return;
+		seenGeneration = generation;
+		untrack(() => resync());
 	});
 
 	// Load older history when the top of the list scrolls into view.
