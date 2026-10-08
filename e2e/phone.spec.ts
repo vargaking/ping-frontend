@@ -142,6 +142,8 @@ test('on a phone the notification settings never say desktop', async ({ context,
 	await expect(settings.getByText('Notifications while Zeta is open')).toBeVisible();
 	await expect(settings.getByText(/desktop/i)).toHaveCount(0);
 	await expect(settings.getByRole('button', { name: /test notification/i })).toHaveCount(0);
+});
+
 test('on a phone the list stays at the bottom when the shell shrinks for the keyboard', async ({
 	context,
 	page
