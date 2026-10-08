@@ -63,3 +63,21 @@ test('messages, edits, deletes and reactions reach the other user live', async (
 		'B should no longer see A’s deleted message'
 	).toHaveCount(0);
 });
+
+test('right-clicking a message opens its menu at the cursor', async ({ browser }) => {
+	const a = await newUser(browser, 'alice');
+	const server = await createServer(a.context, uniqueName('Guild'));
+	const channel = await createChannel(a.context, server.id, 'general');
+	await a.page.goto(channelPath(server.id, channel.id));
+	await sendMessageViaUi(a.page, 'right click me');
+
+	const message = a.page.getByText('right click me', { exact: true });
+	const box = (await message.boundingBox())!;
+	await a.page.mouse.click(box.x + 5, box.y + 5, { button: 'right' });
+
+	const menu = a.page.getByRole('menu');
+	await expect(menu).toBeVisible();
+	const menuBox = (await menu.boundingBox())!;
+	expect(Math.abs(menuBox.x - (box.x + 5))).toBeLessThan(20);
+	await expect(a.page.locator('[data-held]')).toHaveCount(0);
+});
