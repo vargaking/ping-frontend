@@ -151,4 +151,72 @@ test('on a phone Members in the server menu opens the member sheet', async ({ co
 	await sheet.getByRole('button', { name: 'Close members' }).tap();
 	await expect(sheet).toBeHidden();
 	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+test('on a phone the list stays at the bottom when the shell shrinks for the keyboard', async ({
+	context,
+	page
+}) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Keyboard Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	const messages = page.locator('[data-message-id]');
+	for (let i = 1; i <= 6; i++) {
+		await composer.fill(`message ${i} ` + 'filler '.repeat(60));
+		await page.getByRole('button', { name: 'Send message' }).tap();
+		await expect(messages).toHaveCount(i);
+	}
+	await composer.blur();
+	const newest = page.getByText(/^message 6 /);
+	await expect(newest).toBeInViewport();
+	const appHeight = () =>
+		page.evaluate(() => document.documentElement.style.getPropertyValue('--app-height'));
+	const fullHeight = await appHeight();
+
+	// With an iPhone user agent, focusing the composer shrinks the shell ahead of the
+	// keyboard. Without a real keyboard it grows back after a second.
+	await composer.tap();
+	await expect.poll(appHeight).not.toBe(fullHeight);
+	await expect(page.getByText(/^message 6 /), 'the newest message stays in view').toBeInViewport();
+	const composerBottom = (await composer.boundingBox())!.y + (await composer.boundingBox())!.height;
+	expect(composerBottom, 'the composer sits above where the keyboard will be').toBeLessThan(
+		844 * 0.59
+	);
+	await expect.poll(appHeight, { timeout: 3000 }).toBe(fullHeight);
+	await expect(newest).toBeInViewport();
+	await composer.blur();
+
+	const scroller = messages
+		.first()
+		.locator('xpath=ancestor::div[contains(@class, "overflow-y-auto")][1]');
+	await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+	await expect(page.getByText(/^message 1 /)).toBeInViewport();
+	await composer.tap();
+	await expect.poll(appHeight).not.toBe(fullHeight);
+	await page.waitForTimeout(200);
+	await expect(
+		page.getByText(/^message 1 /),
+		'scrolled up, the list must not jump to the bottom'
+	).toBeInViewport();
+	await expect(newest).not.toBeInViewport();
+});
+
+test('on a phone the top bar is the sticky box iOS looks for along the top edge', async ({
+	context,
+	page
+}) => {
+	await context.addInitScript(() => {
+		try {
+			localStorage.setItem('layoutInfo', 'on');
+		} catch {
+			// storage is unavailable on opaque origins
+		}
+	});
+	await registerUser(context);
+	await page.goto('/app/');
+
+	const topEdge = page.locator('[data-layout-info] div').filter({ hasText: /^top edge/ });
+	await expect(topEdge).toHaveText(/^top edgesticky .+/);
+	await expect(topEdge).not.toContainText('+backdrop');
 });

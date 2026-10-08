@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
+	import { describeTopEdge, findTopEdge } from '$lib/utils/shellViewport';
 
 	let probe: HTMLElement;
 	let measured = $state<[string, string][]>([]);
@@ -35,7 +36,11 @@
 				getComputedStyle(document.documentElement).getPropertyValue('--app-height').trim() ||
 					'unset'
 			],
-			['ios', osVersion(navigator.userAgent)]
+			['ios', osVersion(navigator.userAgent)],
+			[
+				'top edge',
+				describeTopEdge(findTopEdge(document, (element) => !!element.closest('[data-layout-info]')))
+			]
 		];
 	}
 
@@ -52,6 +57,12 @@
 	$effect(() => {
 		void shellViewportState.reading;
 		measure();
+	});
+
+	// Dialogs and navigation change what sits along the top edge without any resize.
+	onMount(() => {
+		const timer = setInterval(measure, 1000);
+		return () => clearInterval(timer);
 	});
 
 	// While pinch-zoomed the layout skips evaluating, but the numbers still change.
@@ -71,13 +82,28 @@
 <div
 	bind:this={probe}
 	aria-hidden="true"
+	data-layout-info
 	class="pointer-events-none invisible fixed top-0 left-0 h-dvh w-px pt-[env(safe-area-inset-top,0px)] pr-[env(safe-area-inset-right,0px)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]"
 ></div>
 <div
 	aria-hidden="true"
+	data-layout-info
 	class="pointer-events-none fixed top-[calc(env(safe-area-inset-top,0px)+2.75rem+var(--call-bar)+0.25rem)] right-[calc(env(safe-area-inset-right,0px)+0.25rem)] z-40 max-w-[calc(100vw-0.5rem)] rounded bg-black/85 px-1.5 py-1 font-mono text-[10px] leading-tight text-white"
 >
 	{#each rows as [name, value] (name)}
 		<div class="flex justify-between gap-3"><span class="opacity-60">{name}</span>{value}</div>
 	{/each}
+	{#if shellViewportState.trace.length}
+		<div class="mt-1 border-t border-white/30 pt-1 opacity-60">ms event vv top sy app</div>
+		{#each shellViewportState.trace as entry (entry.seq)}
+			<div class="whitespace-pre">
+				{entry.t}
+				{entry.event}
+				{px(entry.viewport)}
+				{px(entry.offsetTop)}
+				{px(entry.scrollY)}
+				{px(entry.appHeight)}
+			</div>
+		{/each}
+	{/if}
 </div>

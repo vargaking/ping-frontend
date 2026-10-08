@@ -59,6 +59,11 @@
 		editor?.commands.focus(position);
 	}
 
+	// Tiptap's focus command waits a frame, which is too late for the key that triggered it.
+	export function focusNow() {
+		editor?.view.focus();
+	}
+
 	$effect(() => {
 		const initialContent = untrack(() => content);
 
