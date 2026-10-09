@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, localHistoryReady } from '$lib/utils/db';
 import { runHistorySync, type HistorySyncOptions } from '$lib/utils/historySync';
 import { historyStatusLabel, historySyncState } from './historySyncState.svelte';
+import type { Channel } from '$lib/types/channel.types';
 import { serversState } from './serversState.svelte';
 
 vi.mock('$lib/utils/db', () => ({
@@ -117,6 +118,35 @@ describe('historySyncState', () => {
 
 		expect(historySyncState.status).toBe('idle');
 		expect(historyStatusLabel()).toBe('Message history: downloading, 1 of 3 conversations');
+	});
+
+	it("lists a server's channels through the app's shared channel load", async () => {
+		const channels = [{ id: 5, name: 'general' }] as Channel[];
+		const load = vi.spyOn(serversState, 'loadServerChannels').mockResolvedValue(channels);
+		let listed: Channel[] | undefined;
+		runMock.mockImplementationOnce(async (options) => {
+			listed = await options.api.channels(1, options.signal);
+		});
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(load).toHaveBeenCalledExactlyOnceWith(1);
+		expect(listed).toBe(channels);
+		load.mockRestore();
+	});
+
+	it('lets a failed channel load reach the sync engine', async () => {
+		const failure = new Error('offline');
+		const load = vi.spyOn(serversState, 'loadServerChannels').mockRejectedValue(failure);
+		let caught: unknown;
+		runMock.mockImplementationOnce(async (options) => {
+			caught = await options.api.channels(1, options.signal).catch((e: unknown) => e);
+		});
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(caught).toBe(failure);
+		load.mockRestore();
 	});
 
 	it('retries a failed run after 30 s, then 60 s', async () => {

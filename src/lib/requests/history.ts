@@ -1,4 +1,3 @@
-import type { ChannelSnapshot } from '$lib/types/channel.types';
 import type { Conversation } from '$lib/types/conversation.types';
 import type { ForumPostPage } from '$lib/types/forum.types';
 import type { HistoryApi, SyncThread } from '$lib/utils/historySync';
@@ -16,13 +15,7 @@ function messagesRequest(thread: SyncThread, before: string | null) {
 	return { url, params: thread.kind === 'post' ? { ...params, post_id: thread.postId } : params };
 }
 
-export const historyApi: HistoryApi = {
-	async channels(serverId, signal) {
-		const response = await axiosClient.get<ChannelSnapshot>(`/servers/${serverId}/channels`, {
-			signal
-		});
-		return response.data.channels;
-	},
+export const historyApi: Omit<HistoryApi, 'channels'> = {
 	async posts(channelId, cursor, signal) {
 		const response = await axiosClient.get<ForumPostPage>(`/channels/${channelId}/posts`, {
 			params: cursor ? { cursor } : {},

@@ -196,7 +196,7 @@ class HistorySyncState {
 			}
 		};
 		return {
-			channels: (serverId, signal) => noteListing(() => historyApi.channels(serverId, signal)),
+			channels: (serverId) => noteListing(() => serversState.loadServerChannels(serverId)),
 			posts: (channelId, cursor, signal) =>
 				noteListing(() => historyApi.posts(channelId, cursor, signal)),
 			conversations: (signal) => noteListing(() => historyApi.conversations(signal)),
