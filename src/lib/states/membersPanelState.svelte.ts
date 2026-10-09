@@ -15,6 +15,11 @@ class MembersPanelState {
 		else this.desktopOpen = !this.desktopOpen;
 	}
 
+	show() {
+		if (phoneState.phone) this.sheetOpen = true;
+		else this.desktopOpen = true;
+	}
+
 	closeSheet() {
 		this.sheetOpen = false;
 	}

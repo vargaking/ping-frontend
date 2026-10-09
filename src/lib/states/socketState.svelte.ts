@@ -47,6 +47,7 @@ import { applyReaction } from '$lib/utils/reactions';
 import { markRepliesDeleted, refreshReplyQuotes, replyRefFor } from '$lib/utils/replies';
 import { replyState } from './replyState.svelte';
 import { Outbox } from './outboxState.svelte';
+import { HIDDEN_RESYNC_MS, resyncState } from './resyncState.svelte';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -66,6 +67,7 @@ class SocketState {
 	private hasConnected = false;
 	private activitySubscribed = false;
 	private listenersAttached = false;
+	private hiddenAt: number | null = null;
 	private reconnectAttempt = 0;
 	private outageLogged = false;
 	private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -100,10 +102,20 @@ class SocketState {
 		if (!this.listenersAttached) {
 			this.listenersAttached = true;
 			document.addEventListener('visibilitychange', () => {
-				if (!document.hidden) this.checkAfterResume();
+				if (document.hidden) {
+					this.hiddenAt = Date.now();
+					return;
+				}
+				this.checkAfterResume();
+				// Frames sent while the page was frozen can be lost even if the socket survived.
+				const hiddenFor = this.hiddenAt == null ? 0 : Date.now() - this.hiddenAt;
+				this.hiddenAt = null;
+				if (hiddenFor >= HIDDEN_RESYNC_MS) void resyncState.request('resume');
 			});
 			window.addEventListener('pageshow', (event) => {
-				if (event.persisted) this.checkAfterResume();
+				if (!event.persisted) return;
+				this.checkAfterResume();
+				void resyncState.request('resume');
 			});
 			window.addEventListener('online', () => {
 				this.retryNow();
@@ -135,7 +147,10 @@ class SocketState {
 			// Voice frames sent while we were offline are gone, so refetch.
 			const serverId = serversState.selectedServerId;
 			if (this.hasConnected && serverId != null) voicePresenceState.load(serverId);
-			if (this.hasConnected) forumState.markStale();
+			if (this.hasConnected) {
+				forumState.markStale();
+				void resyncState.request('reconnect');
+			}
 			this.hasConnected = true;
 
 			this.sendActivity(documentFocusState.active ? 'active' : 'idle');
@@ -439,9 +454,6 @@ class SocketState {
 		// on another tab — put avoids a ConstraintError from the duplicate id.
 		await db.messages.put(message);
 
-		// Save timestamp to localstorage for message sync
-		localStorage.setItem(`last_updated`, message.timestamp);
-
 		if (channelId == null || serverId == null) return;
 
 		const beingRead = unreadState.isBeingRead(channelThreadKey(channelId));
@@ -728,10 +740,10 @@ class SocketState {
 				usersState.setOnlineUsers(message.user_ids);
 				break;
 			case 'permissions_init':
-				serversState.setPermissions(message.servers);
+				serversState.setPermissions(message.servers, message.channels);
 				break;
 			case 'permissions_updated':
-				serversState.setPermission(message.server_id, message.permissions);
+				serversState.setPermission(message.server_id, message.permissions, message.channels);
 				break;
 			case 'member_roles_updated':
 				serversState.setMemberRoles(message.server_id, message.user_id, message.role_ids);
@@ -780,7 +792,12 @@ class SocketState {
 				serversState.applyLayout(message.server_id, message.layout);
 				break;
 			case 'channel_deleted':
-				channelRemoved(message.server_id, message.channel_id);
+				channelRemoved(
+					message.server_id,
+					message.channel_id,
+					false,
+					message.reason === 'no_access'
+				);
 				break;
 			case 'server_updated':
 				serversState.patchServer(message.server.id, {

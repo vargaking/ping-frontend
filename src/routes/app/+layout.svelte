@@ -20,12 +20,22 @@
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
-	import { isTextEntry, shellViewport, type RestingHeight } from '$lib/utils/shellViewport';
+	import {
+		expectedKeyboardHeight,
+		isTextEntry,
+		measuredKeyboardHeight,
+		orientationOf,
+		shellViewport,
+		type RestingHeight
+	} from '$lib/utils/shellViewport';
 	import { readInstallEnv } from '$lib/utils/install';
 	import { attachNavSwipe } from '$lib/utils/navSwipe';
 	import LayoutInfo from '$lib/components/ui/shell/LayoutInfo.svelte';
 
 	let { children } = $props();
+
+	/** How long a shrunk shell waits for the keyboard before giving up (hardware keyboard). */
+	const ANTICIPATION_MS = 1000;
 
 	const badgeTotal = $derived(unreadState.badgeTotal);
 	const title = $derived(
@@ -86,11 +96,19 @@
 		const viewport = window.visualViewport;
 		if (!phoneState.touch || !viewport) return;
 		const root = document.documentElement;
-		const installed = readInstallEnv().standalone;
+		const { standalone: installed, platform } = readInstallEnv();
 		let resting: RestingHeight | null = null;
+		let anticipated: number | null = null;
 		let timers: ReturnType<typeof setTimeout>[] = [];
+		let anticipationTimer: ReturnType<typeof setTimeout> | null = null;
 
-		const sync = (resetScroll = false) => {
+		const stopAnticipating = () => {
+			anticipated = null;
+			if (anticipationTimer) clearTimeout(anticipationTimer);
+			anticipationTimer = null;
+		};
+
+		const sync = (event: string, resetScroll = false) => {
 			if (viewport.scale !== 1) return;
 			const editableFocused = isTextEntry(document.activeElement);
 			const next = shellViewport({
@@ -99,9 +117,15 @@
 				width: window.innerWidth,
 				innerHeight: window.innerHeight,
 				viewportHeight: viewport.height,
-				resting
+				resting,
+				anticipated
 			});
 			resting = next.resting;
+			const keyboard = measuredKeyboardHeight(next);
+			if (keyboard != null) {
+				stopAnticipating();
+				shellViewportState.rememberKeyboardHeight(orientationOf(next.resting), keyboard);
+			}
 			root.style.setProperty('--app-height', `${next.height}px`);
 			root.toggleAttribute('data-keyboard', next.keyboardOpen);
 			shellViewportState.record({
@@ -111,38 +135,63 @@
 				editableFocused,
 				installed
 			});
+			shellViewportState.note({
+				event,
+				viewport: viewport.height,
+				offsetTop: viewport.offsetTop,
+				scrollY: window.scrollY,
+				appHeight: next.height
+			});
 			// iOS scrolls the layout viewport to reveal a focused input; put it back.
 			if (resetScroll || viewport.offsetTop > 0 || window.scrollY > 0) window.scrollTo(0, 0);
 		};
-		const onChange = () => sync();
+		const onViewportResize = () => sync('vv-resize');
+		const onViewportScroll = () => sync('vv-scroll');
+		const onResize = () => sync('resize');
+		const onOrientation = () => sync('orientation');
 		const clearTimers = () => {
 			timers.forEach(clearTimeout);
 			timers = [];
 		};
-		const onFocusIn = () => {
+		// iOS pans the whole page to keep the focused field above the keyboard unless the
+		// field is already there, so the shell shrinks before the keyboard starts to rise.
+		const anticipate = (target: EventTarget | null) => {
+			if (platform !== 'ios' || !resting || root.hasAttribute('data-keyboard')) return;
+			if (!(target instanceof Element) || !isTextEntry(target)) return;
+			const stored = shellViewportState.keyboardHeight(orientationOf(resting));
+			anticipated = resting.height - expectedKeyboardHeight(resting, stored);
+			anticipationTimer = setTimeout(() => {
+				stopAnticipating();
+				sync('timer');
+			}, ANTICIPATION_MS);
+		};
+		const onFocusIn = (event: FocusEvent) => {
 			clearTimers();
-			sync();
+			anticipate(event.target);
+			sync(anticipated == null ? 'focusin' : 'anticipate');
 		};
 		// iOS reports the final values late after the keyboard closes, and sometimes not at all.
 		const onFocusOut = () => {
 			clearTimers();
-			sync();
-			timers = [150, 400].map((delay) => setTimeout(() => sync(true), delay));
+			stopAnticipating();
+			sync('focusout');
+			timers = [150, 400].map((delay) => setTimeout(() => sync('timer', true), delay));
 		};
 
-		sync();
-		viewport.addEventListener('resize', onChange);
-		viewport.addEventListener('scroll', onChange);
-		window.addEventListener('resize', onChange);
-		window.addEventListener('orientationchange', onChange);
+		sync('mount');
+		viewport.addEventListener('resize', onViewportResize);
+		viewport.addEventListener('scroll', onViewportScroll);
+		window.addEventListener('resize', onResize);
+		window.addEventListener('orientationchange', onOrientation);
 		document.addEventListener('focusin', onFocusIn);
 		document.addEventListener('focusout', onFocusOut);
 		return () => {
 			clearTimers();
-			viewport.removeEventListener('resize', onChange);
-			viewport.removeEventListener('scroll', onChange);
-			window.removeEventListener('resize', onChange);
-			window.removeEventListener('orientationchange', onChange);
+			stopAnticipating();
+			viewport.removeEventListener('resize', onViewportResize);
+			viewport.removeEventListener('scroll', onViewportScroll);
+			window.removeEventListener('resize', onResize);
+			window.removeEventListener('orientationchange', onOrientation);
 			document.removeEventListener('focusin', onFocusIn);
 			document.removeEventListener('focusout', onFocusOut);
 			root.style.removeProperty('--app-height');

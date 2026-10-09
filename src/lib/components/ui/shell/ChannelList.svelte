@@ -26,6 +26,7 @@
 	import {
 		channelActions,
 		channelGroupActions,
+		canOpenChannelSettings,
 		openChannelSettings,
 		serverActions
 	} from '$lib/utils/menuActions';
@@ -38,7 +39,8 @@
 		ChevronDown,
 		ChevronRight,
 		Plus,
-		Settings
+		Settings,
+		Lock
 	} from 'lucide-svelte';
 
 	let createOpen = $state(false);
@@ -162,7 +164,7 @@
 </script>
 
 {#snippet settingsButton(channel: Channel)}
-	{#if canManageChannels}
+	{#if canOpenChannelSettings(serversState.selectedServerId)}
 		<!-- A sibling of the row, not a child: the row is itself a link or button. -->
 		<button
 			type="button"
@@ -172,6 +174,19 @@
 		>
 			<Settings size={14} strokeWidth={1.75} />
 		</button>
+	{/if}
+{/snippet}
+
+{#snippet privateBadge(isPrivate: boolean | undefined)}
+	{#if isPrivate}
+		<span
+			data-private
+			role="img"
+			aria-label="Private"
+			class="absolute -right-1 -bottom-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-background"
+		>
+			<Lock size={8} strokeWidth={2.5} />
+		</span>
 	{/if}
 {/snippet}
 
@@ -196,7 +211,11 @@
 				// Opening the link in a new tab shouldn't join from this one.
 				if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
 				const serverId = serversState.selectedServerId;
-				if (serverId != null && voiceState.channelId !== channel.id) {
+				if (
+					serverId != null &&
+					voiceState.channelId !== channel.id &&
+					serversState.canIn(Permission.CONNECT, channel.id, serverId)
+				) {
 					voiceState.joinVoice(serverId, channel.id);
 				}
 			}
@@ -210,11 +229,14 @@
 		ondragend={resetDrag}
 	>
 		{#snippet icon()}
-			<Volume2
-				size={16}
-				strokeWidth={1.75}
-				class={voiceState.channelId === channel.id ? 'text-online' : undefined}
-			/>
+			<span class="relative flex">
+				<Volume2
+					size={16}
+					strokeWidth={1.75}
+					class={voiceState.channelId === channel.id ? 'text-online' : undefined}
+				/>
+				{@render privateBadge(channel.private)}
+			</span>
 		{/snippet}
 	</SidebarRow>
 {/snippet}
@@ -258,11 +280,14 @@
 						ondragend={resetDrag}
 					>
 						{#snippet icon()}
-							{#if channel.type === 'forum'}
-								<MessagesSquare size={16} strokeWidth={1.75} />
-							{:else}
-								<Hash size={16} strokeWidth={1.75} />
-							{/if}
+							<span class="relative flex">
+								{#if channel.type === 'forum'}
+									<MessagesSquare size={16} strokeWidth={1.75} />
+								{:else}
+									<Hash size={16} strokeWidth={1.75} />
+								{/if}
+								{@render privateBadge(channel.private)}
+							</span>
 						{/snippet}
 					</SidebarRow>
 				{/if}
@@ -318,6 +343,9 @@
 						class="shrink-0 transition-transform {collapsed ? '' : 'rotate-90'}"
 					/>
 					<span class="truncate">{group.name}</span>
+					{#if group.private}
+						<Lock data-private size={10} strokeWidth={2} class="shrink-0" aria-label="Private" />
+					{/if}
 				</button>
 			{/snippet}
 		</ActionContextMenu>

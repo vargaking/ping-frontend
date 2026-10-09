@@ -5,7 +5,7 @@
 	import { installState } from '$lib/states/installState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
-	import { phoneBlockedHelp } from '$lib/utils/install';
+	import { blockedHelp } from '$lib/utils/install';
 	import { dismissPushPrompt, isPushPromptSnoozed } from '$lib/utils/pushPrompt';
 
 	let snoozed = $state(isPushPromptSnoozed());
@@ -20,9 +20,7 @@
 			!installState.visible
 	);
 	const blocked = $derived(notificationsState.permission === 'denied');
-	const blockedHelp =
-		phoneBlockedHelp(installState.platform) ??
-		'Click the lock icon in the address bar, set Notifications to Allow, then reload.';
+	const unblockHelp = blockedHelp(installState.platform, installState.standalone);
 
 	async function enable() {
 		const result = await notificationsState.setPush(true);
@@ -55,7 +53,7 @@
 					<span class="text-sm font-medium">Get notified about DMs and mentions</span>
 					{#if blocked}
 						<span class="text-xs text-muted-foreground">
-							Notifications are blocked. {blockedHelp}
+							Notifications are blocked. {unblockHelp}
 						</span>
 					{:else}
 						<span class="text-xs text-muted-foreground">
