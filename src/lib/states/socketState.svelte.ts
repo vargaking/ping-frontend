@@ -567,7 +567,8 @@ class SocketState {
 				body,
 				url: `/app/direct/${args.conversationId}/`,
 				messageUuid: args.messageUuid,
-				noun: 'messages'
+				noun: 'messages',
+				unread: conversationsState.conversations[args.conversationId]?.unread_count
 			});
 			return;
 		}

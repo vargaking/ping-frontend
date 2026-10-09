@@ -4,6 +4,7 @@ import { socketState } from '$lib/states/socketState.svelte';
 import { usersState } from '$lib/states/usersState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
+import { closeReadNotifications } from '$lib/utils/notificationSweep';
 
 /** No answer at all or a server error, as opposed to a definite "not logged in". */
 function isUnreachable(error: unknown): boolean {
@@ -13,6 +14,7 @@ function isUnreachable(error: unknown): boolean {
 
 /** Servers, every server's channels (which carry the unread markers) and the DMs, all at once. */
 async function loadLists() {
+	const syncedAt = Date.now();
 	const servers = serversState
 		.fetchUserServers()
 		.then((list) =>
@@ -28,6 +30,7 @@ async function loadLists() {
 		)
 		.catch((e) => console.error('Failed to load servers', e));
 	await Promise.all([servers, conversationsState.fetch()]);
+	void closeReadNotifications({ syncedAt });
 }
 
 /** Resolves as soon as the session is known; the lists keep loading behind the app. */

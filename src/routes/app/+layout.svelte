@@ -15,6 +15,7 @@
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
+	import { closeReadNotifications, readThreadTags } from '$lib/utils/notificationSweep';
 	import { desktop } from '$lib/desktop';
 	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
@@ -60,6 +61,12 @@
 
 	$effect(() => {
 		void writePushPrefs({ sound: notificationsState.sound });
+	});
+
+	// A thread read anywhere (this tab, another device) no longer needs its notification.
+	$effect(() => {
+		void readThreadTags();
+		untrack(() => void closeReadNotifications());
 	});
 
 	// The selected server lingers after leaving it, so pick the column by route.
