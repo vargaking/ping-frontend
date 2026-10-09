@@ -26,7 +26,7 @@
 		messageActions,
 		promptDeleteMessage
 	} from '$lib/utils/menuActions';
-	import { Clock, Pencil, Reply, SmilePlus, Trash2 } from 'lucide-svelte';
+	import { Pencil, Reply, SmilePlus, Trash2 } from 'lucide-svelte';
 
 	// The first row in a group already shows the timestamp in the group header,
 	// so the hover-gutter time is only rendered on continuation rows.
@@ -78,10 +78,6 @@
 		}
 	}
 </script>
-
-{#snippet sendingIcon()}
-	<Clock size={12} class="ml-1 inline align-baseline text-text-subtle" aria-label="Sending" />
-{/snippet}
 
 <ActionContextMenu {actions}>
 	{#snippet children(menuProps)}
@@ -195,6 +191,7 @@
 				{/if}
 
 				<div class={pending ? 'opacity-55' : ''}>
+					{#if pending}<span class="sr-only">Sending</span>{/if}
 					{#if hasText || attachments.length === 0}
 						<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
 						<div
@@ -205,7 +202,7 @@
 							<MessageNode node={parsedContent} />{#if message.edited_at}<span
 									class="ml-1 align-baseline text-[11px] text-text-subtle select-none"
 									>(edited)</span
-								>{/if}{#if pending}{@render sendingIcon()}{/if}
+								>{/if}
 						</div>
 					{/if}
 					{#if attachments.length > 0}
@@ -215,7 +212,6 @@
 						{#if !hasText && message.edited_at}
 							<span class="text-[11px] text-text-subtle select-none">(edited)</span>
 						{/if}
-						{#if !hasText && pending}{@render sendingIcon()}{/if}
 					{/if}
 					{#each embeds as embed (embed.url)}
 						<div class="mt-1.5">
