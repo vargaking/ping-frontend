@@ -14,6 +14,7 @@
 	import { db } from '$lib/utils/db';
 	import { goto } from '$app/navigation';
 	import { channelPath } from '$lib/utils/channelRoutes';
+	import { clearJumpParam, JUMP_PARAM } from '$lib/utils/openSearchResult';
 	import { untrack } from 'svelte';
 
 	const currentChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
@@ -58,6 +59,8 @@
 					db.messages.where({ server_id: serverId, channel_id: channelId }).sortBy('timestamp')}
 				emptyDescription="Be the first to say something in this channel."
 				errorDescription="There was a problem reading this channel."
+				jumpTo={page.url.searchParams.get(JUMP_PARAM)}
+				onJumped={() => clearJumpParam(page.url)}
 			/>
 		{/if}
 
