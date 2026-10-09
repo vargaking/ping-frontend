@@ -43,7 +43,7 @@ beforeEach(() => {
 	readyMock.mockResolvedValue(true);
 	syncRowsMock.mockReset();
 	syncRowsMock.mockResolvedValue([]);
-	Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
+	vi.stubGlobal('navigator', { locks: undefined });
 	serversState.servers = { 1: { id: 1, name: 'one' }, 2: { id: 2, name: 'two' } };
 	serversState.selectedServerId = 2;
 });
@@ -51,6 +51,7 @@ beforeEach(() => {
 afterEach(async () => {
 	await historySyncState.stop();
 	vi.useRealTimers();
+	vi.unstubAllGlobals();
 	warn.mockRestore();
 });
 
@@ -195,7 +196,7 @@ describe('another tab holds the lock', () => {
 		const request = vi.fn(async (_name: string, _options: unknown, callback: LockCallback) =>
 			callback(null)
 		);
-		Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true });
+		vi.stubGlobal('navigator', { locks: { request } });
 		return request;
 	}
 
