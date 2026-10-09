@@ -25,6 +25,7 @@
 	import type { MessageTarget } from '$lib/types/messages.types';
 	import { db } from '$lib/utils/db';
 	import { channelPath } from '$lib/utils/channelRoutes';
+	import { clearJumpParam, JUMP_PARAM } from '$lib/utils/openSearchResult';
 	import { postActions } from '$lib/utils/menuActions';
 	import { tagsOf } from '$lib/utils/forum';
 	import { trackForumRead } from '$lib/utils/forumReading.svelte';
@@ -209,6 +210,8 @@
 					emptyDescription="Nothing here yet."
 					errorDescription="There was a problem reading this post."
 					onNotFound={() => (status = 'missing')}
+					jumpTo={page.url.searchParams.get(JUMP_PARAM)}
+					onJumped={() => clearJumpParam(page.url)}
 				/>
 
 				<TypingIndicator names={typingState.names(postThreadKey(postId))} />

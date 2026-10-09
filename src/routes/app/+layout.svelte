@@ -7,6 +7,7 @@
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import VoiceDock from '$lib/components/ui/shell/VoiceDock.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
+	import SearchDialog from '$lib/components/search/SearchDialog.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
@@ -20,6 +21,7 @@
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
 	import { desktop } from '$lib/desktop';
 	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
+	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
@@ -36,6 +38,15 @@
 	import LayoutInfo from '$lib/components/ui/shell/LayoutInfo.svelte';
 
 	let { children } = $props();
+
+	function toggleSearch(event: KeyboardEvent) {
+		const modifier = event.ctrlKey || event.metaKey;
+		if (event.key.toLowerCase() !== 'k' || !modifier || event.altKey || event.shiftKey) return;
+		if (event.defaultPrevented || event.isComposing) return;
+		event.preventDefault();
+		if (overlayState.component === SearchDialog) overlayState.close();
+		else if (!overlayState.isOpen) overlayState.open(SearchDialog);
+	}
 
 	/** How long a shrunk shell waits for the keyboard before giving up (hardware keyboard). */
 	const ANTICIPATION_MS = 1000;
@@ -215,6 +226,7 @@
 </script>
 
 <svelte:head><title>{title}</title></svelte:head>
+<svelte:window onkeydown={toggleSearch} />
 
 <div
 	class="app-shell-root flex h-screen w-screen flex-col overflow-hidden bg-rail pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)]"

@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { Menu } from 'lucide-svelte';
+	import { Menu, Search } from 'lucide-svelte';
 	import Logo from '$lib/components/brand/Logo.svelte';
 	import { frameless } from '$lib/desktop';
+	import SearchDialog from '$lib/components/search/SearchDialog.svelte';
+	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import ConnectionPill from './ConnectionPill.svelte';
@@ -61,6 +63,14 @@
 		<ConnectionPill />
 	</div>
 
-	<!-- Right: empty, so the desktop window can be dragged by it -->
-	<div></div>
+	<!-- Right: only the button, so the rest of the slot still drags the desktop window -->
+	<button
+		type="button"
+		aria-label="Search"
+		title="Search (Ctrl K)"
+		onclick={() => overlayState.open(SearchDialog)}
+		class="flex h-9 w-9 items-center justify-center justify-self-end rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+	>
+		<Search size={18} strokeWidth={1.75} />
+	</button>
 </header>

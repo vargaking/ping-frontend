@@ -12,6 +12,7 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { getConversationMessages } from '$lib/requests/conversations/getConversationMessages';
 	import { db } from '$lib/utils/db';
+	import { clearJumpParam, JUMP_PARAM } from '$lib/utils/openSearchResult';
 
 	const conversationId = $derived.by(() => {
 		const id = parseInt(page.params.conversationId ?? '');
@@ -55,6 +56,8 @@
 			emptyDescription="Send the first message."
 			errorDescription="There was a problem reading this conversation."
 			onNotFound={fallBack}
+			jumpTo={page.url.searchParams.get(JUMP_PARAM)}
+			onJumped={() => clearJumpParam(page.url)}
 		/>
 	{/if}
 
