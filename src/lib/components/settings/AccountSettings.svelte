@@ -4,6 +4,7 @@
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { updateUser } from '$lib/requests/users/updateUser';
+	import { usernameProblem } from '$lib/utils/username';
 	import { uploadAvatar } from '$lib/requests/users/uploadAvatar';
 	import { deleteUser } from '$lib/requests/users/deleteUser';
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
@@ -80,8 +81,9 @@
 		if (!user) return;
 
 		const trimmed = username.trim();
-		if (!trimmed) {
-			errors = { username: "Username can't be empty." };
+		const problem = usernameChanged ? usernameProblem(trimmed) : null;
+		if (problem) {
+			errors = { username: problem };
 			return;
 		}
 
@@ -91,14 +93,15 @@
 		let failed = false;
 		if (usernameChanged) {
 			try {
-				const updated = await updateUser({ ...user, username: trimmed });
+				const updated = await updateUser(user.id, { username: trimmed });
 				usersState.setLoggedInUser(updated);
 				username = updated.username;
 				baselineUsername = updated.username;
 			} catch (e) {
 				failed = true;
-				errors.username = fieldErrorsFrom(e).username ?? getErrorMessage(e);
-				toast.error(`Couldn't change your username: ${getErrorMessage(e)}`);
+				const fieldError = fieldErrorsFrom(e).username;
+				errors.username = fieldError ?? getErrorMessage(e);
+				if (!fieldError) toast.error(`Couldn't change your username: ${getErrorMessage(e)}`);
 			}
 		}
 
