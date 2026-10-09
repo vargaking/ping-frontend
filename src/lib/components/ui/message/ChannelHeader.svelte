@@ -32,7 +32,7 @@
 
 	{#if topic}
 		<span class="h-4 w-px bg-border max-md:hidden" aria-hidden="true"></span>
-		<p class="min-w-0 truncate text-[13px] text-text-subtle max-md:hidden">{topic}</p>
+		<p class="min-w-0 truncate text-[13px] text-text-subtle select-text max-md:hidden">{topic}</p>
 	{/if}
 
 	<div class="ml-auto flex items-center gap-2 max-md:shrink-0">

@@ -130,7 +130,9 @@
 				</a>
 				<div class="flex min-w-0 flex-1 flex-col gap-1.5">
 					<div class="flex items-center gap-2">
-						<h2 class="min-w-0 text-lg font-semibold break-words">{post?.title ?? '…'}</h2>
+						<h2 class="min-w-0 text-lg font-semibold break-words select-text">
+							{post?.title ?? '…'}
+						</h2>
 						{#if post?.pinned}
 							<Pin size={16} strokeWidth={1.75} class="shrink-0 text-primary" aria-label="Pinned" />
 						{/if}
