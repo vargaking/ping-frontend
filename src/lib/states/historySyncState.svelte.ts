@@ -1,12 +1,14 @@
 import { historyApi } from '$lib/requests/history';
 import { normalizeError } from '$lib/requests/errors';
-import { db, localHistoryAvailable } from '$lib/utils/db';
+import { db, localHistoryAvailable, localHistoryReady } from '$lib/utils/db';
 import { runHistorySync, type HistoryApi } from '$lib/utils/historySync';
 import { serversState } from './serversState.svelte';
 
 const START_DELAY_MS = 3000;
 const RETRY_FIRST_MS = 30_000;
 const RETRY_MAX_MS = 300_000;
+const RUN_GAP_MS = 60_000;
+const LOCK_RECHECK_MS = 60_000;
 const COUNT_EVERY_PAGES = 20;
 const LOCK_NAME = 'history-sync';
 
@@ -31,21 +33,31 @@ class HistorySyncState {
 	private controller: AbortController | null = null;
 	private running: Promise<void> | null = null;
 	private queued = false;
+	private blocked = false;
+	private lastStartedAt: number | null = null;
 	private pages = 0;
 	private listingFailed = false;
 
 	/** Ask for a run. Requests made while one is waiting or running share a single run. */
 	request(): void {
-		if (!localHistoryAvailable) return;
+		if (!localHistoryAvailable || this.blocked) return;
 		if (this.running) {
 			this.queued = true;
 			return;
 		}
+		this.scheduleStart(START_DELAY_MS);
+	}
+
+	/** Starts a run after `minDelay`, and never sooner than RUN_GAP_MS after the last run began. */
+	private scheduleStart(minDelay: number) {
 		if (this.startTimer) return;
+		const untilGapOver =
+			this.lastStartedAt == null ? 0 : RUN_GAP_MS - (Date.now() - this.lastStartedAt);
+		const delay = Math.max(minDelay, untilGapOver);
 		this.startTimer = setTimeout(() => {
 			this.startTimer = null;
 			this.start();
-		}, START_DELAY_MS);
+		}, delay);
 	}
 
 	async stop(): Promise<void> {
@@ -54,10 +66,11 @@ class HistorySyncState {
 		this.controller?.abort();
 		await this.running;
 		this.retryDelay = RETRY_FIRST_MS;
+		this.lastStartedAt = null;
 		this.threads = 0;
 		this.complete = 0;
 		this.messages = 0;
-		this.status = localHistoryAvailable ? 'idle' : 'unavailable';
+		this.status = localHistoryAvailable && !this.blocked ? 'idle' : 'unavailable';
 	}
 
 	private clearTimers() {
@@ -68,8 +81,9 @@ class HistorySyncState {
 	}
 
 	private start() {
-		if (this.running) return;
+		if (this.running || this.blocked) return;
 		this.clearTimers();
+		this.lastStartedAt = Date.now();
 		const controller = new AbortController();
 		this.controller = controller;
 		this.status = 'running';
@@ -78,15 +92,22 @@ class HistorySyncState {
 			this.controller = null;
 			if (this.queued && !controller.signal.aborted) {
 				this.queued = false;
-				this.start();
+				this.scheduleStart(0);
 			}
 		});
 	}
 
 	private async execute(controller: AbortController) {
+		if (!(await localHistoryReady())) {
+			this.blocked = true;
+			this.queued = false;
+			this.status = 'unavailable';
+			return;
+		}
 		this.pages = 0;
 		this.listingFailed = false;
 		let ranHere = false;
+		let lockMissed = false;
 		try {
 			ranHere = await this.withLock(async () => {
 				await runHistorySync({
@@ -101,6 +122,7 @@ class HistorySyncState {
 					}
 				});
 			});
+			lockMissed = !ranHere;
 			if (this.listingFailed) throw new Error('Could not list every conversation');
 			this.retryDelay = RETRY_FIRST_MS;
 		} catch (e) {
@@ -110,8 +132,25 @@ class HistorySyncState {
 			}
 		}
 		await this.refreshCount();
+		if (lockMissed) await this.followOtherTab(controller.signal);
 		const finished = ranHere && !this.listingFailed && !controller.signal.aborted;
 		this.status = finished && this.complete === this.threads ? 'done' : 'idle';
+	}
+
+	/** Another tab is syncing: mirror its progress and look again later, in case it closes. */
+	private async followOtherTab(signal: AbortSignal) {
+		try {
+			const rows = await db.threadSync.toArray();
+			this.threads = rows.length;
+			this.complete = rows.filter((row) => row.complete).length;
+		} catch (e) {
+			console.warn('Failed to read local sync progress', e);
+		}
+		if (signal.aborted) return;
+		this.retryTimer = setTimeout(() => {
+			this.retryTimer = null;
+			this.start();
+		}, LOCK_RECHECK_MS);
 	}
 
 	/** False when another tab holds the lock, so this tab leaves the work to it. */

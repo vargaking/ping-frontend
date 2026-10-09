@@ -1,15 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { db, localHistoryReady } from '$lib/utils/db';
 import { runHistorySync, type HistorySyncOptions } from '$lib/utils/historySync';
 import { historyStatusLabel, historySyncState } from './historySyncState.svelte';
 import { serversState } from './serversState.svelte';
 
 vi.mock('$lib/utils/db', () => ({
-	db: { messages: { count: vi.fn().mockResolvedValue(0) } },
-	localHistoryAvailable: true
+	db: {
+		messages: { count: vi.fn().mockResolvedValue(0) },
+		threadSync: { toArray: vi.fn().mockResolvedValue([]) }
+	},
+	localHistoryAvailable: true,
+	localHistoryReady: vi.fn()
 }));
 vi.mock('$lib/utils/historySync', () => ({ runHistorySync: vi.fn() }));
 
 const runMock = vi.mocked(runHistorySync);
+const readyMock = vi.mocked(localHistoryReady);
+const syncRowsMock = vi.mocked(db.threadSync.toArray);
+
+const SECOND = 1000;
+
+type LockCallback = (lock: object | null) => Promise<boolean>;
 
 function deferred() {
 	let resolve!: () => void;
@@ -28,6 +39,11 @@ beforeEach(() => {
 	warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 	runMock.mockReset();
 	runMock.mockResolvedValue(undefined);
+	readyMock.mockReset();
+	readyMock.mockResolvedValue(true);
+	syncRowsMock.mockReset();
+	syncRowsMock.mockResolvedValue([]);
+	Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
 	serversState.servers = { 1: { id: 1, name: 'one' }, 2: { id: 2, name: 'two' } };
 	serversState.selectedServerId = 2;
 });
@@ -74,7 +90,9 @@ describe('historySyncState', () => {
 		historySyncState.request();
 		first.resolve();
 		await vi.advanceTimersByTimeAsync(0);
+		expect(runMock).toHaveBeenCalledTimes(1);
 
+		await vi.advanceTimersByTimeAsync(60 * SECOND);
 		expect(runMock).toHaveBeenCalledTimes(2);
 	});
 
@@ -149,6 +167,118 @@ describe('historySyncState', () => {
 		await vi.advanceTimersByTimeAsync(10_000);
 
 		expect(runMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('storage that cannot be opened', () => {
+	it('makes no request, schedules no retry and ignores later requests', async () => {
+		vi.resetModules();
+		const dbModule = await import('$lib/utils/db');
+		const historySync = await import('$lib/utils/historySync');
+		const { historySyncState: fresh } = await import('./historySyncState.svelte');
+		vi.mocked(dbModule.localHistoryReady).mockResolvedValue(false);
+
+		fresh.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(fresh.status).toBe('unavailable');
+
+		fresh.request();
+		await vi.advanceTimersByTimeAsync(10 * 60 * SECOND);
+		expect(historySync.runHistorySync).not.toHaveBeenCalled();
+		expect(dbModule.localHistoryReady).toHaveBeenCalledTimes(1);
+		expect(fresh.status).toBe('unavailable');
+	});
+});
+
+describe('another tab holds the lock', () => {
+	function lockHeldElsewhere() {
+		const request = vi.fn(async (_name: string, _options: unknown, callback: LockCallback) =>
+			callback(null)
+		);
+		Object.defineProperty(navigator, 'locks', { value: { request }, configurable: true });
+		return request;
+	}
+
+	it('shows that tab progress from the stored rows and stays idle', async () => {
+		lockHeldElsewhere();
+		syncRowsMock.mockResolvedValue([
+			{ complete: true },
+			{ complete: false },
+			{ complete: true }
+		] as never);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(runMock).not.toHaveBeenCalled();
+		expect(historySyncState.status).toBe('idle');
+		expect(historySyncState.threads).toBe(3);
+		expect(historySyncState.complete).toBe(2);
+	});
+
+	it('checks again every 60 s and takes over once the lock is free', async () => {
+		const request = lockHeldElsewhere();
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(request).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(59 * SECOND);
+		expect(request).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1 * SECOND);
+		expect(request).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(60 * SECOND);
+		expect(request).toHaveBeenCalledTimes(3);
+		expect(runMock).not.toHaveBeenCalled();
+
+		request.mockImplementation(async (_name, _options, callback) => callback({}));
+		await vi.advanceTimersByTimeAsync(60 * SECOND);
+		expect(runMock).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('run rate', () => {
+	it('starts a requested run no sooner than 60 s after the previous one started', async () => {
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(10 * SECOND);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(49 * SECOND);
+		expect(runMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1 * SECOND);
+		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps the short delay once the gap has passed', async () => {
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		await vi.advanceTimersByTimeAsync(2 * 60 * SECOND);
+
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('waits out the gap for a run queued behind a running one', async () => {
+		const first = deferred();
+		runMock.mockReturnValueOnce(first.promise);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(20 * SECOND);
+		first.resolve();
+		await vi.advanceTimersByTimeAsync(39 * SECOND);
+		expect(runMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1 * SECOND);
+		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not delay failure retries', async () => {
+		runMock.mockRejectedValue(new Error('offline'));
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		await vi.advanceTimersByTimeAsync(30 * SECOND);
+		expect(runMock).toHaveBeenCalledTimes(2);
 	});
 });
 

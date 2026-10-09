@@ -190,6 +190,19 @@ const db = created.db;
 /** False when the in-memory fallback is in use, where nothing is kept across reloads. */
 export const localHistoryAvailable: boolean = created.persistent;
 
+let ready: Promise<boolean> | null = null;
+
+/** Whether the local history database can really be used; settles once and is cached. */
+export function localHistoryReady(): Promise<boolean> {
+	ready ??= localHistoryAvailable
+		? db.open().then(
+				() => true,
+				() => false
+			)
+		: Promise.resolve(false);
+	return ready;
+}
+
 /** Wipe every locally cached table. Used when tearing down a session (logout,
  *  or a 401 that means the session is gone) so no data leaks to the next user. */
 export async function clearLocalCache(): Promise<void> {
