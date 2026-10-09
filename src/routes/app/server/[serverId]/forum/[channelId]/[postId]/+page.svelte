@@ -6,6 +6,7 @@
 	import ChannelHeader from '$lib/components/ui/message/ChannelHeader.svelte';
 	import MessageList from '$lib/components/ui/message/MessageList.svelte';
 	import Composer from '$lib/components/ui/message/Composer.svelte';
+	import NoSendNotice from '$lib/components/ui/message/NoSendNotice.svelte';
 	import TypingIndicator from '$lib/components/ui/message/TypingIndicator.svelte';
 	import UsersSidebar from '$lib/components/ui/sidebar/UsersSidebar.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
@@ -49,8 +50,15 @@
 	const indexHref = $derived(
 		serverId != null && channelId != null ? `/app/server/${serverId}/forum/${channelId}/` : '/app/'
 	);
-	const canModerate = $derived(serversState.can(Permission.MANAGE_MESSAGES));
+	const canModerate = $derived(
+		serversState.canIn(Permission.MANAGE_MESSAGES, channelId, serversState.selectedServerId)
+	);
 	const locked = $derived(post?.locked === true && !canModerate);
+	const mayWrite = $derived(
+		serversState.selectedServerId == null ||
+			serversState.permissions[serversState.selectedServerId] == null ||
+			serversState.canIn(Permission.SEND_MESSAGES, channelId, serversState.selectedServerId)
+	);
 	const actions = $derived(serverId != null && post ? postActions(serverId, post) : []);
 
 	let status = $state<'loading' | 'ready' | 'missing' | 'error'>('loading');
@@ -213,6 +221,8 @@
 							This post is locked. Only moderators can reply.
 						</div>
 					</div>
+				{:else if !mayWrite}
+					<NoSendNotice />
 				{:else}
 					<Composer {target} placeholder="Reply to this post…" />
 				{/if}

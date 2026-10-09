@@ -10,6 +10,8 @@ export type Channel = {
 	/** Message uuids, null when nothing has been read/sent yet. */
 	last_read_message_id?: string | null;
 	last_message_id?: string | null;
+	/** @everyone can't view it. */
+	private?: boolean;
 };
 
 export type ChannelGroup = {
@@ -17,6 +19,8 @@ export type ChannelGroup = {
 	server_id: number;
 	name: string;
 	position: number;
+	/** @everyone can't view it. */
+	private?: boolean;
 };
 
 export type ChannelLayout = {

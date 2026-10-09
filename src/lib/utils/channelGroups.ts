@@ -47,20 +47,23 @@ export function confirmDeleteGroup(group: ChannelGroup) {
 		description: 'Its channels move to the top of the list. No channels or messages are deleted.',
 		confirmLabel: 'Delete category',
 		destructive: true,
-		onConfirm: async () => {
-			try {
-				await deleteChannelGroup(group.server_id, group.id);
-			} catch (e) {
-				toast.error(`Couldn't delete category: ${getErrorMessage(e)}`);
-				return;
-			}
-			const ids = layoutIds(serversState.selectedServerLayout);
-			const moved = ids.groups.find((g) => g.id === group.id)?.channel_ids ?? [];
-			serversState.removeGroup(group.server_id, group.id, {
-				ungrouped: [...ids.ungrouped, ...moved],
-				groups: ids.groups.filter((g) => g.id !== group.id)
-			});
-		}
+		onConfirm: () => deleteGroup(group)
+	});
+}
+
+/** Delete a category; its channels move to the end of the ungrouped list. */
+export async function deleteGroup(group: ChannelGroup) {
+	try {
+		await deleteChannelGroup(group.server_id, group.id);
+	} catch (e) {
+		toast.error(`Couldn't delete category: ${getErrorMessage(e)}`);
+		return;
+	}
+	const ids = layoutIds(serversState.selectedServerLayout);
+	const moved = ids.groups.find((g) => g.id === group.id)?.channel_ids ?? [];
+	serversState.removeGroup(group.server_id, group.id, {
+		ungrouped: [...ids.ungrouped, ...moved],
+		groups: ids.groups.filter((g) => g.id !== group.id)
 	});
 }
 
