@@ -236,9 +236,21 @@ html[data-keyboard] {
 	--safe-bottom: 0px;
 }
 
+/* A row being held for its context menu, until the menu closes. */
+[data-held] {
+	background-color: var(--color-accent);
+}
+
 html.app-shell {
 	overscroll-behavior: none;
 	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+/* Safari takes no input in a contenteditable under user-select: none. */
+html.app-shell :is(input, textarea, [contenteditable], .ProseMirror, [role='alert']) {
+	-webkit-user-select: text;
+	user-select: text;
 }
 
 @media (pointer: coarse) {
@@ -256,11 +268,5 @@ html.app-shell {
 	textarea,
 	.ProseMirror {
 		font-size: 16px;
-	}
-	.ProseMirror,
-	input,
-	textarea {
-		-webkit-user-select: text;
-		user-select: text;
 	}
 }

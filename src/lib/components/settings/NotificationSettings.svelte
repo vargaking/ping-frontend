@@ -4,12 +4,7 @@
 	import { desktop } from '$lib/desktop';
 	import { installState } from '$lib/states/installState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
-	import Button from '$lib/components/ui/button/button.svelte';
-	import { testPush } from '$lib/requests/push/testPush';
-	import { normalizeError } from '$lib/requests/errors';
-	import { phoneBlockedHelp } from '$lib/utils/install';
-	import { describePushTestResult } from '$lib/utils/push';
-	import type { PushTestResult } from '$lib/types/push.types';
+	import { blockedHelp } from '$lib/utils/install';
 	import SettingsSwitch from './SettingsSwitch.svelte';
 
 	onMount(() => {
@@ -26,10 +21,7 @@
 		launchAtLogin = await desktop.setLaunchAtLogin(!launchAtLogin);
 	}
 
-	const phoneHelp = phoneBlockedHelp(installState.platform);
-	const blockedMessage = phoneHelp
-		? `Notifications are blocked. ${phoneHelp}`
-		: 'Notifications are blocked in your browser. Allow them in your site settings to turn this on.';
+	const blockedMessage = `Notifications are blocked. ${blockedHelp(installState.platform, installState.standalone)}`;
 
 	const desktopDisabled = $derived(
 		installState.needsHomeScreenInstall ||
@@ -80,29 +72,6 @@
 		if (result === 'error') toast.error("Couldn't turn on notifications. Try again in a moment.");
 	}
 
-	let testing = $state(false);
-	let testResults = $state<PushTestResult[] | null>(null);
-	let testError = $state<string | null>(null);
-
-	async function sendTest() {
-		testing = true;
-		testResults = null;
-		testError = null;
-		try {
-			testResults = await testPush();
-		} catch (e) {
-			const { status, message } = normalizeError(e);
-			testError =
-				status === 409
-					? "Push isn't set up on this server."
-					: status === 429
-						? 'Too many tests. Try again in a minute.'
-						: message;
-		} finally {
-			testing = false;
-		}
-	}
-
 	function toggleSound() {
 		notificationsState.setSound(!notificationsState.sound);
 	}
@@ -111,8 +80,8 @@
 <div class="flex flex-col gap-6">
 	<div class="flex max-w-md flex-col gap-5">
 		<SettingsSwitch
-			label="Desktop notifications"
-			description="Show a system notification for new messages when zeta isn't focused."
+			label="Notifications while Zeta is open"
+			description="Show a system notification for new messages when Zeta isn't in front."
 			checked={notificationsState.desktop}
 			disabled={desktopDisabled}
 			onclick={toggleDesktop}
@@ -124,60 +93,34 @@
 			{:else if notificationsState.permission === 'denied'}
 				<span class="text-xs text-destructive">{blockedMessage}</span>
 			{:else if notificationsState.permission === 'unsupported'}
-				<span class="text-xs text-destructive">
-					Your browser doesn't support desktop notifications.
-				</span>
+				<span class="text-xs text-destructive"> This browser doesn't support notifications. </span>
 			{/if}
 		</SettingsSwitch>
 
 		{#if pushShown}
 			<SettingsSwitch
-				label="Notify me when zeta is closed"
-				description="DMs and @mentions, even with every tab closed."
+				label="Notify me when Zeta is closed"
+				description="Only DMs and @mentions."
 				checked={notificationsState.push === 'on'}
 				disabled={pushDisabled}
 				onclick={togglePush}
 			>
 				{#if notificationsState.push === 'disabled'}
 					<span class="text-xs text-muted-foreground">
-						This server doesn't have closed-tab notifications set up.
+						This server isn't set up to notify you while Zeta is closed.
 					</span>
 				{:else if notificationsState.push === 'unavailable'}
 					<span class="text-xs text-muted-foreground">
-						Couldn't check closed-tab notifications. Try again later.
+						Couldn't check whether this server can notify you while Zeta is closed. Try again later.
 					</span>
 				{:else if notificationsState.push === 'off' && notificationsState.permission === 'denied'}
 					<span class="text-xs text-destructive">{blockedMessage}</span>
 				{:else if notificationsState.push === 'off' && !notificationsState.desktop}
-					<span class="text-xs text-muted-foreground">Turn on desktop notifications first.</span>
+					<span class="text-xs text-muted-foreground"
+						>Turn on notifications while Zeta is open first.</span
+					>
 				{/if}
 			</SettingsSwitch>
-
-			{#if notificationsState.push === 'on'}
-				<div class="-mt-2 flex flex-col items-start gap-2">
-					<Button variant="outline" size="sm" disabled={testing} onclick={sendTest}>
-						{testing ? 'Sending…' : 'Send test notification'}
-					</Button>
-					{#if testError}
-						<span class="text-xs text-destructive">{testError}</span>
-					{:else if testResults?.length === 0}
-						<span class="text-xs text-destructive">
-							No subscription on the server for this account. Turn push off and on.
-						</span>
-					{:else if testResults}
-						{#each testResults as result, i (i)}
-							{@const description = describePushTestResult(result)}
-							<span
-								class="text-xs {description === 'Delivered'
-									? 'text-muted-foreground'
-									: 'text-destructive'}"
-							>
-								{result.endpoint_host}: {description}
-							</span>
-						{/each}
-					{/if}
-				</div>
-			{/if}
 		{/if}
 
 		<SettingsSwitch
@@ -189,7 +132,7 @@
 
 		{#if launchAtLogin !== null}
 			<SettingsSwitch
-				label="Open Zet when your computer starts"
+				label="Open Zeta when your computer starts"
 				description="Starts in the tray, so you get notifications without opening it."
 				checked={launchAtLogin}
 				onclick={toggleLaunchAtLogin}

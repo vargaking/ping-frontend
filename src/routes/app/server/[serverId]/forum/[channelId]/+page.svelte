@@ -35,7 +35,9 @@
 	const tags = $derived(channelId != null ? forumState.tags(channelId) : []);
 	const posts = $derived(channelId != null ? forumState.visiblePosts(channelId) : []);
 	const view = $derived(channelId != null ? forumState.view(channelId) : 'list');
-	const canPost = $derived(serversState.can(Permission.SEND_MESSAGES));
+	const canPost = $derived(
+		serversState.canIn(Permission.SEND_MESSAGES, channelId, serversState.selectedServerId)
+	);
 	const filtering = $derived((index?.tagIds.length ?? 0) > 0 || index?.query.trim() !== '');
 
 	let scroller = $state<HTMLDivElement>();

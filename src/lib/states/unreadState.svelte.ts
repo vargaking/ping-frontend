@@ -104,20 +104,6 @@ class UnreadState {
 		}
 	}
 
-	/** Seed unread state for every server's channels in parallel (app start). */
-	async seedAllServers(serverIds: number[]) {
-		await Promise.all(
-			serverIds.map(async (serverId) => {
-				try {
-					const { channels } = await getServerChannelSnapshot(serverId);
-					this.applyChannels(serverId, channels);
-				} catch (e) {
-					console.warn('Failed to seed unread state for server', serverId, e);
-				}
-			})
-		);
-	}
-
 	/** Called from every fetchServerChannels resolution. */
 	noteFetchedChannels(serverId: number, channels: Channel[]) {
 		this.applyChannels(serverId, channels);

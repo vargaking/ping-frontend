@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { usernameProblem } from '$lib/utils/username';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AuthShell from '$lib/components/auth/AuthShell.svelte';
@@ -13,7 +14,6 @@
 
 	// Mirror the backend rules (see RegisterRequest) so validation is live and the
 	// server rarely has to reject anything.
-	const USERNAME_RE = /^[A-Za-z0-9._-]+$/;
 
 	let username = $state('');
 	let password = $state('');
@@ -27,13 +27,7 @@
 	let touched = $state({ username: false, password: false, confirm: false });
 	let submitAttempted = $state(false);
 
-	const usernameRule = $derived.by(() => {
-		if (!username) return 'Username is required.';
-		if (username.length < 3) return 'Username must be at least 3 characters.';
-		if (username.length > 32) return 'Username must be 32 characters or fewer.';
-		if (!USERNAME_RE.test(username)) return 'Use only letters, numbers, and . _ -';
-		return null;
-	});
+	const usernameRule = $derived(usernameProblem(username));
 	const passwordRule = $derived.by(() => {
 		if (!password) return 'Password is required.';
 		if (password.length < 8) return 'Password must be at least 8 characters.';

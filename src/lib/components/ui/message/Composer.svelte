@@ -7,9 +7,11 @@
 	import type { Attachment } from '$lib/types/attachment.types';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { serversState } from '$lib/states/serversState.svelte';
 	import { messagesState, threadKey } from '$lib/states/messagesState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { replyState } from '$lib/states/replyState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import {
 		MAX_ATTACHMENTS_PER_MESSAGE,
 		MAX_ATTACHMENT_BYTES,
@@ -19,6 +21,7 @@
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { LinkPreview } from '$lib/utils/linkPreview.svelte';
 	import { mentionCandidates } from '$lib/utils/mentions';
+	import { isTypingKey } from '$lib/utils/typeToFocus';
 	import { messagePlainText, messagePreviewText } from '$lib/utils/messageContent';
 	import LinkEmbed from './LinkEmbed.svelte';
 	import * as Popover from '$lib/components/ui/popover/index';
@@ -58,6 +61,18 @@
 	let dragDepth = 0;
 	let emojiOpen = $state(false);
 	let closedByEscape = false;
+
+	const privateChannelId = $derived(
+		target?.kind === 'channel' &&
+			serversState.channels[target.serverId]?.[target.channelId]?.private
+			? target.channelId
+			: null
+	);
+
+	$effect(() => {
+		const channelId = privateChannelId;
+		if (channelId != null) untrack(() => serversState.loadChannelViewers(channelId));
+	});
 
 	const controllers: Record<string, AbortController> = {};
 	const linkPreview = new LinkPreview();
@@ -253,6 +268,24 @@
 		editor?.focus();
 	}
 
+	const OPEN_LAYER =
+		'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-popover-content]';
+
+	function isEditable(element: Element | null) {
+		return (
+			element instanceof HTMLInputElement ||
+			element instanceof HTMLTextAreaElement ||
+			element instanceof HTMLSelectElement ||
+			(element instanceof HTMLElement && element.isContentEditable)
+		);
+	}
+
+	function handleWindowKeydown(event: KeyboardEvent) {
+		if (!target || !isTypingKey(event) || phoneState.navCoversContent) return;
+		if (isEditable(document.activeElement) || document.querySelector(OPEN_LAYER)) return;
+		editor?.focusNow();
+	}
+
 	// ↑ on an empty composer jumps to editing your most recent message here.
 	function editLastOwnMessage() {
 		const me = usersState.loggedInUser;
@@ -267,6 +300,8 @@
 		}
 	}
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class={compact ? '' : 'px-8 pb-6 max-md:px-3 max-md:pb-[max(12px,var(--safe-bottom))]'}>
 	<p
@@ -420,6 +455,7 @@
 				mentionCandidates={() =>
 					mentionCandidates({
 						serverId: target?.kind === 'channel' ? target.serverId : null,
+						channelId: target?.kind === 'channel' ? target.channelId : null,
 						conversationId: target?.kind === 'direct' ? target.conversationId : null
 					})}
 				editorClass="prose prose-sm max-h-40 w-full max-w-none min-w-0 flex-1 self-center overflow-y-auto py-1.5 text-[15px] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
@@ -452,9 +488,11 @@
 				</Popover.Content>
 			</Popover.Root>
 
+			<!-- Keeps focus in the editor, so the keyboard stays up after sending. -->
 			<button
 				type="button"
 				aria-label="Send message"
+				onmousedown={(event) => event.preventDefault()}
 				onclick={() => editor?.submit()}
 				disabled={!canSend}
 				class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-input focus-visible:outline-none disabled:opacity-40"

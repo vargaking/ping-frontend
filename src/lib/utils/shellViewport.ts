@@ -16,6 +16,11 @@ const NON_TEXT_INPUTS = new Set([
 
 export type RestingHeight = { width: number; height: number };
 
+export type Orientation = 'portrait' | 'landscape';
+
+/** Share of the resting height an iPhone keyboard takes, for before one has been measured. */
+const KEYBOARD_ESTIMATE: Record<Orientation, number> = { portrait: 0.41, landscape: 0.6 };
+
 export type ShellViewportInput = {
 	/** Running as an installed app rather than in a browser tab. */
 	installed: boolean;
@@ -24,11 +29,15 @@ export type ShellViewportInput = {
 	innerHeight: number;
 	viewportHeight: number;
 	resting: RestingHeight | null;
+	/** Shell height set ahead of the keyboard, held until a real keyboard shows up. */
+	anticipated?: number | null;
 };
 
 export type ShellViewport = {
 	height: number;
 	keyboardOpen: boolean;
+	/** The height is the anticipated one; the viewport hasn't shown the keyboard yet. */
+	anticipating: boolean;
 	resting: RestingHeight;
 };
 
@@ -50,10 +59,70 @@ export function shellViewport(input: ShellViewportInput): ShellViewport {
 	const { installed, editableFocused, width, innerHeight, viewportHeight, resting } = input;
 	const kept = installed && resting?.width === width ? resting.height : 0;
 	const height = Math.max(kept, innerHeight, viewportHeight);
-	const keyboardOpen = editableFocused && height - viewportHeight > KEYBOARD_MIN_HEIGHT;
-	return {
-		height: keyboardOpen ? viewportHeight : height,
-		keyboardOpen,
-		resting: { width, height }
-	};
+	const restingNow = { width, height };
+	if (editableFocused && height - viewportHeight > KEYBOARD_MIN_HEIGHT) {
+		return { height: viewportHeight, keyboardOpen: true, anticipating: false, resting: restingNow };
+	}
+	// A viewport that doesn't show the keyboard yet mustn't undo the anticipated height:
+	// growing back mid-animation is what makes iOS pan the page.
+	if (editableFocused && input.anticipated != null) {
+		return {
+			height: input.anticipated,
+			keyboardOpen: true,
+			anticipating: true,
+			resting: restingNow
+		};
+	}
+	return { height, keyboardOpen: false, anticipating: false, resting: restingNow };
+}
+
+export function orientationOf(resting: RestingHeight): Orientation {
+	return resting.width > resting.height ? 'landscape' : 'portrait';
+}
+
+/** The keyboard height last measured in this orientation, or an estimate. */
+export function expectedKeyboardHeight(resting: RestingHeight, stored: number | null): number {
+	if (stored != null && stored > KEYBOARD_MIN_HEIGHT && stored < resting.height) return stored;
+	return Math.round(resting.height * KEYBOARD_ESTIMATE[orientationOf(resting)]);
+}
+
+/** How tall the keyboard really is, once the viewport shows it. */
+export function measuredKeyboardHeight(view: ShellViewport): number | null {
+	if (!view.keyboardOpen || view.anticipating) return null;
+	return view.resting.height - view.height;
+}
+
+export type TopEdge = { position: 'fixed' | 'sticky'; background: string; backdrop: boolean };
+
+function hasBackdropFilter(style: CSSStyleDeclaration): boolean {
+	const value =
+		style.getPropertyValue('backdrop-filter') || style.getPropertyValue('-webkit-backdrop-filter');
+	return value !== '' && value !== 'none';
+}
+
+/** The box iOS looks for along the top edge: from whatever sits at the top centre, the
+ *  nearest ancestor that is fixed or sticky and nearly as wide as the viewport. iOS
+ *  shows its scroll-edge blur when there is none. */
+export function findTopEdge(doc: Document, ignore: (element: Element) => boolean): TopEdge | null {
+	const view = doc.defaultView;
+	if (!view) return null;
+	const hit = doc.elementsFromPoint(view.innerWidth / 2, 4).find((element) => !ignore(element));
+	let backdrop = false;
+	for (let element = hit ?? null; element; element = element.parentElement) {
+		const style = view.getComputedStyle(element);
+		backdrop ||= hasBackdropFilter(style);
+		const { position } = style;
+		if (
+			(position === 'fixed' || position === 'sticky') &&
+			element.getBoundingClientRect().width >= 0.9 * view.innerWidth
+		) {
+			return { position, background: style.backgroundColor, backdrop };
+		}
+	}
+	return null;
+}
+
+export function describeTopEdge(edge: TopEdge | null): string {
+	if (!edge) return 'none';
+	return `${edge.position} ${edge.background}${edge.backdrop ? ' +backdrop' : ''}`;
 }

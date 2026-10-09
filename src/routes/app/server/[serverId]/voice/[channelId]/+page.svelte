@@ -12,6 +12,7 @@
 	import StreamVideo from '$lib/components/ui/voice/StreamVideo.svelte';
 	import StreamSound from '$lib/components/ui/voice/StreamSound.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { voiceRoster } from '$lib/states/voiceRoster.svelte';
 	import { channelPath } from '$lib/utils/channelRoutes';
@@ -25,6 +26,9 @@
 	const channelsLoaded = $derived(serversState.selectedServerChannelsLoaded);
 
 	const inThisCall = $derived(channelId != null && voiceState.channelId === channelId);
+	const mayConnect = $derived(
+		serversState.canIn(Permission.CONNECT, channelId, serversState.selectedServerId)
+	);
 	const live = $derived(inThisCall && voiceState.connected);
 	const roster = $derived(channelId != null ? voiceRoster(channelId) : []);
 	const screens = $derived(live ? Array.from(voiceState.screens.values()) : []);
@@ -75,16 +79,19 @@
 
 	function join() {
 		const serverId = page.params.serverId ? parseInt(page.params.serverId) : null;
-		if (serverId != null && channelId != null && !inThisCall) {
+		if (serverId != null && channelId != null && !inThisCall && mayConnect) {
 			voiceState.joinVoice(serverId, channelId);
 		}
 	}
 </script>
 
 {#snippet joinButton()}
-	<Button onclick={join} disabled={inThisCall}>
+	<Button onclick={join} disabled={inThisCall || !mayConnect}>
 		{inThisCall ? 'Connecting…' : 'Join voice'}
 	</Button>
+	{#if !mayConnect}
+		<p class="text-sm text-muted-foreground">You can't join this voice channel.</p>
+	{/if}
 {/snippet}
 
 <svelte:window onkeydown={handleKeydown} />
