@@ -12,18 +12,19 @@ const VELOCITY_WINDOW_MS = 100;
 const SETTLE_MS = 200;
 
 export type Lock = 'pending' | 'swipe' | 'ignore';
+export type Direction = 'left' | 'right';
 export type Sample = { x: number; t: number };
 
 export function inEdgeZone(x: number, width: number): boolean {
 	return x < EDGE_GUARD || x > width - EDGE_GUARD;
 }
 
-/** Decided within the first few pixels: only a mostly horizontal drag towards the other pane is a swipe. */
-export function lockDirection(dx: number, dy: number, navOpen: boolean): Lock {
+/** Decided within the first few pixels: only a mostly horizontal drag the wanted way is a swipe. */
+export function lockDirection(dx: number, dy: number, wanted: Direction): Lock {
 	if (Math.hypot(dx, dy) < LOCK_DISTANCE) return 'pending';
 	const horizontal = Math.abs(dx) > HORIZONTAL_RATIO * Math.abs(dy);
-	const towardsOtherPane = navOpen ? dx < 0 : dx > 0;
-	return horizontal && towardsOtherPane ? 'swipe' : 'ignore';
+	const wantedWay = wanted === 'left' ? dx < 0 : dx > 0;
+	return horizontal && wantedWay ? 'swipe' : 'ignore';
 }
 
 /** Where the pane sits while dragging: 0 is open, -width is closed. */
@@ -114,7 +115,7 @@ export function attachNavSwipe(root: HTMLElement): () => void {
 		const touch = event.touches[0];
 		const dx = touch.clientX - g.startX;
 		if (g.lock === 'pending') {
-			g.lock = lockDirection(dx, touch.clientY - g.startY, g.startOpen);
+			g.lock = lockDirection(dx, touch.clientY - g.startY, g.startOpen ? 'left' : 'right');
 			if (g.lock !== 'swipe') return;
 			if (!reducedMotion()) beginDrag(g);
 		}

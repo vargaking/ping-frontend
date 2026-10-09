@@ -35,3 +35,5 @@ export type MyServerRequestState = {
 export type AdminServerRequest = ServerRequest & {
 	requester: { id: number; username: string };
 };
+
+export const SERVER_REQUESTS_TAB = 'account-server-requests';

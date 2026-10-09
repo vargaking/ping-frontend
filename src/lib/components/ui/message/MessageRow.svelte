@@ -26,7 +26,9 @@
 		messageActions,
 		promptDeleteMessage
 	} from '$lib/utils/menuActions';
+	import { attachReplySwipe } from '$lib/utils/replySwipe';
 	import { Pencil, Reply, SmilePlus, Trash2 } from 'lucide-svelte';
+	import ReplyIcon from '@lucide/svelte/icons/reply';
 
 	// The first row in a group already shows the timestamp in the group header,
 	// so the hover-gutter time is only rendered on continuation rows.
@@ -59,6 +61,12 @@
 		const timer = setTimeout(() => row?.scrollIntoView({ block: 'nearest' }), 350);
 		return () => clearTimeout(timer);
 	});
+
+	const swipeable = $derived(!pending && !failed && !editing);
+	$effect(() => {
+		if (!row || !swipeable || !phoneState.phone || !phoneState.touch) return;
+		return attachReplySwipe(row, () => replyState.start(messageThreadKey(message), message));
+	});
 	const actions = $derived(
 		pending || failed ? [] : messageActions(message, { onReact: () => (pickerOpen = true) })
 	);
@@ -86,7 +94,7 @@
 		<div
 			{...menuProps}
 			bind:this={row}
-			class="group/row relative rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			class="group/row relative rounded-md transition-[translate] duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
 			tabindex="0"
 			data-message-id={message.id}
 		>
@@ -132,6 +140,14 @@
 					</div>
 				</div>
 			{:else}
+				{#if swipeable && phoneState.phone && phoneState.touch}
+					<span
+						class="pointer-events-none absolute top-1/2 left-full flex w-(--swipe-distance,0px) -translate-y-1/2 items-center justify-center overflow-hidden text-muted-foreground opacity-(--swipe-progress,0) group-data-armed/row:text-foreground"
+						aria-hidden="true"
+					>
+						<ReplyIcon size={20} strokeWidth={1.75} />
+					</span>
+				{/if}
 				{#if showHoverTime}
 					<span
 						class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block pointer-coarse:hidden!"

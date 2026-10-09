@@ -7,7 +7,11 @@
 import { build, files, version } from '$service-worker';
 import { PUBLIC_BASE_URL } from '$env/static/public';
 import { urlBase64ToBytes } from '$lib/utils/base64url';
-import type { NotificationData } from '$lib/utils/notificationTags';
+import {
+	threadNotificationCount,
+	withTag,
+	type NotificationData
+} from '$lib/utils/notificationTags';
 import { readPushPrefs } from '$lib/utils/pushPrefs';
 import { notificationBadgeCount, setAppBadge } from '$lib/utils/appBadge';
 import { isApplePushEndpoint } from '$lib/utils/pushEndpoint';
@@ -132,8 +136,9 @@ async function handlePush(event: PushEvent) {
 	const { payload } = parsed;
 
 	if (payload.kind === 'read') {
-		const shown = await sw.registration.getNotifications({ tag: payload.tag });
-		shown.forEach((notification) => notification.close());
+		withTag(await sw.registration.getNotifications(), payload.tag).forEach((notification) =>
+			notification.close()
+		);
 		console.debug(`[push] closed: ${payload.tag}`);
 		await syncBadge(payload.tag);
 		return;
@@ -147,25 +152,33 @@ async function handlePush(event: PushEvent) {
 		return;
 	}
 
-	const [existing] = await sw.registration.getNotifications({ tag: payload.tag });
-	const previousData = existing?.data as NotificationData | undefined;
+	const previous = withTag(await sw.registration.getNotifications(), payload.tag);
 	const messageUuid = typeof payload.message_uuid === 'string' ? payload.message_uuid : undefined;
-	const alreadyShown = !!messageUuid && previousData?.messageUuid === messageUuid;
+	const { count, alreadyShown } = threadNotificationCount({
+		unread: payload.kind === 'dm' ? payload.count : undefined,
+		previous,
+		messageUuid
+	});
 	if (alreadyShown && !apple) {
 		console.debug(`[push] skipped: already shown ${payload.tag}`);
 		return;
 	}
-	const count = Math.max(payload.count ?? 1, (previousData?.count ?? 0) + (alreadyShown ? 0 : 1));
 	const noun = payload.kind === 'dm' ? 'messages' : 'mentions';
 	const summarize = count > 1 && payload.kind !== 'server_request';
 	const prefs = await readPushPrefs();
 
+	previous.forEach((notification) => notification.close());
 	await sw.registration.showNotification(payload.title ?? 'zeta', {
 		body: summarize ? `${count} new ${noun}` : (payload.body ?? ''),
 		tag: payload.tag,
 		icon: ICON,
 		silent: !prefs.sound,
-		data: { url: safePath(payload.url), count, messageUuid } satisfies NotificationData,
+		data: {
+			url: safePath(payload.url),
+			count,
+			messageUuid,
+			shownAt: Date.now()
+		} satisfies NotificationData,
 		// Not in the DOM typings yet, but Chrome and Firefox honour it.
 		...({ renotify: true } as object)
 	});

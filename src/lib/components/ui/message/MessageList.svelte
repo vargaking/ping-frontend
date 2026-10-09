@@ -77,6 +77,11 @@
 	// is never yanked back down when a new message arrives.
 	let stickToBottom = true;
 
+	// True from the moment a thread's newest page renders until its first scroll to the bottom has
+	// settled. The list is at the top until then, which must not read as a request for history.
+	let opening = false;
+	let openingTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// The list shows the IndexedDB cache because the API failed.
 	let fromCache = false;
 	// Older pages may hold edits or deletes we missed; they are dropped once back at the bottom.
@@ -226,7 +231,15 @@
 
 		loadedKey = key;
 		loadState = 'ready';
-		if (!jumping) tick().then(() => setTimeout(scrollToBottom, 100));
+		opening = true;
+		if (openingTimer) clearTimeout(openingTimer);
+		tick().then(() => {
+			scrollToBottom();
+			openingTimer = setTimeout(() => {
+				if (stickToBottom) scrollToBottom();
+				opening = false;
+			}, 100);
+		});
 	}
 
 	async function loadMessages(key: string) {
@@ -279,7 +292,7 @@
 	}
 
 	async function loadOlder() {
-		if (loadingOlder) return;
+		if (loadingOlder || opening) return;
 		if (!messagesState.hasMore(threadKey) || !nextCursor) return;
 
 		const el = messageWrapper;
@@ -309,14 +322,14 @@
 		const key = threadKey;
 		const el = messageWrapper;
 		loadingOlder = true;
-		const prevHeight = el?.scrollHeight ?? 0;
-		const prevTop = el?.scrollTop ?? 0;
 
 		try {
 			const pageData = await fetchPage(nextCursor);
 			if (key !== threadKey) return;
 
 			const olderAscending = [...pageData.messages].reverse();
+			const prevHeight = el?.scrollHeight ?? 0;
+			const prevTop = el?.scrollTop ?? 0;
 			messagesState.prependOlder(key, olderAscending, pageData.has_more);
 			nextCursor = pageData.next_cursor;
 			db.messages

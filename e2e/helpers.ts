@@ -86,3 +86,48 @@ export async function sendMessageViaUi(page: Page, text: string) {
 		`"${text}" should render after sending`
 	).toBeVisible();
 }
+
+/** Sends direct messages over a socket of its own, much faster than typing them. */
+export async function seedDirectMessages(
+	context: BrowserContext,
+	conversationId: number,
+	texts: string[]
+) {
+	const page = await context.newPage();
+	await page.goto('/robots.txt');
+	await page.evaluate(
+		({ conversationId, texts }) =>
+			new Promise<void>((resolve, reject) => {
+				const socket = new WebSocket(`wss://${location.host}/ws`);
+				const pending = new Set<string>();
+				socket.onerror = () => reject(new Error('seeding socket failed'));
+				socket.onmessage = (event) => {
+					const frame = JSON.parse(event.data);
+					if (frame.type === 'error') reject(new Error(`seeding rejected: ${frame.code}`));
+					if (frame.type !== 'message_ack') return;
+					pending.delete(frame.id);
+					if (pending.size === 0) {
+						socket.close();
+						resolve();
+					}
+				};
+				socket.onopen = () => {
+					for (const text of texts) {
+						const id = crypto.randomUUID();
+						pending.add(id);
+						socket.send(
+							JSON.stringify({
+								type: 'direct_message',
+								id,
+								conversation_id: conversationId,
+								content: text,
+								timestamp: new Date().toISOString()
+							})
+						);
+					}
+				};
+			}),
+		{ conversationId, texts }
+	);
+	await page.close();
+}
