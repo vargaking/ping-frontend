@@ -22,6 +22,7 @@ import {
 	Unplug,
 	UserMinus,
 	UserPlus,
+	Users,
 	Volume2,
 	VolumeX
 } from 'lucide-svelte';
@@ -36,9 +37,11 @@ import { updateForumPost } from '$lib/requests/forum/updateForumPost';
 import { getErrorMessage } from '$lib/requests/errors';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { forumState } from '$lib/states/forumState.svelte';
+import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 import { messageEditState } from '$lib/states/messageEditState.svelte';
 import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 import { overlayState } from '$lib/states/overlayState.svelte';
+import { phoneState } from '$lib/states/phoneState.svelte';
 import { replyState } from '$lib/states/replyState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
@@ -369,6 +372,13 @@ export function channelGroupActions(
 	];
 }
 
+/** The member sheet closes on navigation, so it opens once the server's page is up. */
+async function showMembers(serverId: number, selected: boolean) {
+	if (!selected) await goto(`/app/server/${serverId}/`);
+	phoneState.closeNav();
+	membersPanelState.show();
+}
+
 /** Invite and settings open dialogs that work on the selected server, so they only show for it. */
 export function serverActions(
 	server: Server,
@@ -416,6 +426,13 @@ export function serverActions(
 			run: () => promptCreateGroup(serverId)
 		});
 	}
+	actions.push({
+		id: 'members',
+		label: 'Members',
+		icon: Users,
+		group: 'manage',
+		run: () => showMembers(serverId, selected)
+	});
 	if (selected) {
 		actions.push({
 			id: 'settings',

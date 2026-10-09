@@ -131,6 +131,28 @@ test('on a phone a sideways swipe moves between the navigation and the channel',
 	await expect(rail).not.toBeInViewport();
 });
 
+test('on a phone Members in the server menu opens the member sheet', async ({ context, page }) => {
+	await registerUser(context);
+	const serverName = uniqueName('Sheet Guild');
+	const server = await createServer(context, serverName);
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport({ timeout: 15_000 });
+
+	await page.getByRole('button', { name: 'Open navigation' }).tap();
+	await page
+		.getByRole('complementary', { name: 'Channels' })
+		.getByRole('button', { name: serverName })
+		.tap();
+	await page.getByRole('menuitem', { name: 'Members' }).tap();
+
+	const sheet = page.getByRole('complementary', { name: 'Members' });
+	await expect(sheet).toBeInViewport();
+	await sheet.getByRole('button', { name: 'Close members' }).tap();
+	await expect(sheet).toBeHidden();
+	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+});
+
 test('on a phone the notification settings never say desktop', async ({ context, page }) => {
 	await registerUser(context);
 	await page.goto('/app/');
