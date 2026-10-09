@@ -131,6 +131,70 @@ test('on a phone a sideways swipe moves between the navigation and the channel',
 	await expect(rail).not.toBeInViewport();
 });
 
+test('on a phone swiping a message left past the threshold replies to it', async ({
+	context,
+	page
+}) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Reply Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	await composer.fill('swipe me');
+	await page.getByRole('button', { name: 'Send message' }).tap();
+	const message = page.locator('[data-message-id]', { hasText: 'swipe me' });
+	await expect(message).toBeVisible();
+	await composer.blur();
+
+	const box = (await message.boundingBox())!;
+	const y = box.y + box.height / 2;
+	const startX = box.x + box.width - 40;
+	const cancelReply = page.getByRole('button', { name: 'Cancel reply' });
+	const replying = cancelReply.locator('xpath=..');
+
+	await drag(page, [startX, y], [startX - 30, y]);
+	await expect(cancelReply).toHaveCount(0);
+	await expect(composer).not.toBeFocused();
+
+	await drag(page, [startX, y], [startX - 100, y]);
+	await expect(cancelReply).toBeVisible();
+	await expect(replying).toContainText('Replying to');
+	await expect(replying).toContainText('swipe me');
+	await expect(composer).toBeFocused();
+	await expect(message).toHaveCSS('translate', 'none');
+	await expect(page.getByRole('navigation', { name: 'Servers' })).not.toBeInViewport();
+});
+
+test('on a phone a swipe on a sideways scrolling code block does not reply', async ({
+	context,
+	page
+}) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Code Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	await composer.tap();
+	await composer.pressSequentially('```');
+	await composer.press('Enter');
+	await composer.pressSequentially('x'.repeat(200));
+	await page.getByRole('button', { name: 'Send message' }).tap();
+	const code = page.locator('[data-message-id] pre');
+	await expect(code).toBeVisible();
+	expect(await code.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+	await composer.blur();
+
+	const box = (await code.boundingBox())!;
+	const y = box.y + box.height / 2;
+	const startX = box.x + box.width - 40;
+	await drag(page, [startX, y], [startX - 100, y]);
+	await expect(page.getByRole('button', { name: 'Cancel reply' })).toHaveCount(0);
+});
+
 test('on a phone Members in the server menu opens the member sheet', async ({ context, page }) => {
 	await registerUser(context);
 	const serverName = uniqueName('Sheet Guild');
@@ -236,7 +300,7 @@ test('on a phone the top bar is the sticky box iOS looks for along the top edge'
 	await expect(topEdge).not.toContainText('+backdrop');
 });
 
-test('on a phone holding a message highlights it and opens its menu quickly', async ({
+test('on a phone holding a message highlights it and opens its menu quickly, swiping it cancels the hold', async ({
 	context,
 	page
 }) => {
@@ -280,5 +344,16 @@ test('on a phone holding a message highlights it and opens its menu quickly', as
 	await page.waitForTimeout(800);
 	await touch('touchEnd');
 	await expect(menu).toBeHidden();
+
+	await touch('touchStart');
+	await expect(row).toHaveAttribute('data-held', '');
+	for (let dx = 6; dx <= 72; dx += 6) await touch('touchMove', { x: point.x - dx, y: point.y });
+	await expect(row, 'a swipe cancels the hold').not.toHaveAttribute('data-held');
+	await page.waitForTimeout(600);
+	await expect(menu, 'and the menu never opens').toBeHidden();
+	await touch('touchEnd');
+	await expect(page.getByRole('button', { name: 'Cancel reply' })).toBeVisible();
+	await expect(menu).toBeHidden();
+	await expect(row).not.toHaveAttribute('data-held');
 	await cdp.detach();
 });

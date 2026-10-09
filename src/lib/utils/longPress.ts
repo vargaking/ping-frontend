@@ -3,6 +3,9 @@ export const LONG_PRESS_MS = 375;
 /** A finger that moves further than this is scrolling, not holding. */
 export const LONG_PRESS_SLOP_PX = 10;
 
+/** Dispatched on a held element by a gesture that has claimed the touch, so the hold gives up. */
+export const HOLD_CANCEL_EVENT = 'holdcancel';
+
 export type Point = { x: number; y: number };
 
 /** Tracks one finger on one element and fires once it has been held still long enough. */
