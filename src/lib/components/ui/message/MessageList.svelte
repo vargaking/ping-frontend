@@ -645,7 +645,7 @@
 <div
 	bind:this={messageWrapper}
 	onscroll={handleScroll}
-	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable pointer-coarse:select-none"
+	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable"
 >
 	{#if loadState === 'loading'}
 		<div class="px-8 pt-6 max-md:px-3">
@@ -668,7 +668,9 @@
 			</EmptyState>
 		</div>
 	{:else}
-		<div class="flex flex-col gap-[18px] px-8 pt-6 pb-2 max-md:px-3">
+		<div
+			class="flex flex-col gap-[18px] px-8 pt-6 pb-2 select-text max-md:px-3 pointer-coarse:select-none"
+		>
 			<div bind:this={topSentinel} aria-hidden="true"></div>
 			{#each items as item (item.key)}
 				{#if item.kind === 'date'}

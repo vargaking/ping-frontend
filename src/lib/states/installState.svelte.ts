@@ -18,6 +18,7 @@ class InstallState {
 	private attached = false;
 
 	readonly platform = this.env.platform;
+	readonly standalone = this.env.standalone;
 
 	/** On an iPhone or iPad, notifications only exist in the installed app. */
 	readonly needsHomeScreenInstall =

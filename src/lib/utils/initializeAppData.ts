@@ -1,12 +1,9 @@
 import { isAxiosError } from 'axios';
 import { getMe } from '$lib/requests/auth/me';
-import { getMessages } from '$lib/requests/auth/getMessages';
 import { socketState } from '$lib/states/socketState.svelte';
-import { db } from '$lib/utils/db';
 import { usersState } from '$lib/states/usersState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
-import { unreadState } from '$lib/states/unreadState.svelte';
 
 /** No answer at all or a server error, as opposed to a definite "not logged in". */
 function isUnreachable(error: unknown): boolean {
@@ -14,48 +11,45 @@ function isUnreachable(error: unknown): boolean {
 	return !error.response || error.response.status >= 500;
 }
 
+/** Servers, every server's channels (which carry the unread markers) and the DMs, all at once. */
+async function loadLists() {
+	const servers = serversState
+		.fetchUserServers()
+		.then((list) =>
+			Promise.all(
+				list.map((server) =>
+					server.id == null
+						? null
+						: serversState
+								.loadServerChannels(server.id)
+								.catch((e) => console.warn('Failed to load channels for server', server.id, e))
+				)
+			)
+		)
+		.catch((e) => console.error('Failed to load servers', e));
+	await Promise.all([servers, conversationsState.fetch()]);
+}
+
+/** Resolves as soon as the session is known; the lists keep loading behind the app. */
 export const initializeAppData = async (): Promise<'ok' | 'unreachable'> => {
 	let user;
 	try {
 		user = await getMe();
-		console.log('Fetched user:', user);
 	} catch (error) {
 		console.error('Error initializing app data:', error);
 		return isUnreachable(error) ? 'unreachable' : 'ok';
 	}
 
+	if (user) {
+		usersState.setLoggedInUser(user);
+		socketState.connect();
+		void loadLists();
+	}
+	// Left behind by the startup message sync this replaced.
 	try {
-		if (user) {
-			usersState.setLoggedInUser(user);
-
-			// Connect socket
-			socketState.connect();
-
-			// Fetch servers
-			const servers = await serversState.fetchUserServers();
-
-			// Seed unread state for every server in parallel (not just the selected
-			// one) so the rail can show unread while looking at a different server,
-			// and fetch DM conversations here too so DM badges show outside /app/direct.
-			const serverIds = servers.map((s) => s.id).filter((id): id is number => id != null);
-			await Promise.all([unreadState.seedAllServers(serverIds), conversationsState.fetch()]);
-
-			// Fetch messages
-			const messages = await getMessages(
-				localStorage.getItem('last_updated') || '1970-01-01T00:00:00Z'
-			);
-			console.log('Fetched messages:', messages);
-
-			// Save the messages to db (bulkPut will update existing or insert new)
-			await db.messages.bulkPut(messages);
-
-			console.log('Messages saved to IndexedDB');
-			localStorage.setItem('last_updated', new Date().toISOString());
-		} else {
-			console.log('No user logged in');
-		}
-	} catch (error) {
-		console.error('Error initializing app data:', error);
+		localStorage.removeItem('last_updated');
+	} catch {
+		/* storage unavailable */
 	}
 	return 'ok';
 };

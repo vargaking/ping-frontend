@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Composer from '$lib/components/ui/message/Composer.svelte';
+	import NoSendNotice from '$lib/components/ui/message/NoSendNotice.svelte';
+	import { Permission } from '$lib/permissions';
 	import ChannelHeader from '$lib/components/ui/message/ChannelHeader.svelte';
 	import MessageList from '$lib/components/ui/message/MessageList.svelte';
 	import TypingIndicator from '$lib/components/ui/message/TypingIndicator.svelte';
@@ -37,6 +39,12 @@
 			: null
 	);
 	const isText = $derived(channel == null || channel.type === 'text');
+	// Until the masks arrive the composer shows; the server rejects a send it doesn't allow.
+	const mayWrite = $derived(
+		serverId == null ||
+			serversState.permissions[serverId] == null ||
+			serversState.canIn(Permission.SEND_MESSAGES, currentChannelId, serverId)
+	);
 
 	$effect(() => {
 		if (!channel || channel.type === 'text' || serverId == null) return;
@@ -67,7 +75,11 @@
 		<TypingIndicator
 			names={currentChannelId != null ? typingState.names(channelThreadKey(currentChannelId)) : []}
 		/>
-		<Composer {target} />
+		{#if mayWrite}
+			<Composer {target} />
+		{:else}
+			<NoSendNotice />
+		{/if}
 	</div>
 
 	{#if membersPanelState.open}

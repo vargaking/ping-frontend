@@ -1,7 +1,7 @@
 import { getPushConfig as fetchPushConfig } from '$lib/requests/push/getPushConfig';
 import { subscribePush } from '$lib/requests/push/subscribePush';
 import { unsubscribePush } from '$lib/requests/push/unsubscribePush';
-import type { PushConfig, PushTestResult } from '$lib/types/push.types';
+import type { PushConfig } from '$lib/types/push.types';
 import { urlBase64ToBytes } from '$lib/utils/base64url';
 import { desktop } from '$lib/desktop';
 
@@ -96,14 +96,6 @@ export async function ensureSubscriptionKey(
 	);
 	console.info('[push] re-subscribed with the current server key');
 	return replacement;
-}
-
-export function describePushTestResult(r: PushTestResult): string {
-	if (r.status === null) return `Failed: ${r.error ?? 'no response'}`;
-	if (r.status >= 200 && r.status < 300) return 'Delivered';
-	if (r.status === 401 || r.status === 403) return 'Rejected: key mismatch, turn push off and on';
-	if (r.status === 404 || r.status === 410) return 'Subscription expired';
-	return r.error ? `Status ${r.status}: ${r.error}` : `Status ${r.status}`;
 }
 
 /** Send a browser subscription to the server. Also used to re-claim an existing

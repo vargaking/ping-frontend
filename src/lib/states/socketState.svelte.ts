@@ -454,9 +454,6 @@ class SocketState {
 		// on another tab — put avoids a ConstraintError from the duplicate id.
 		await db.messages.put(message);
 
-		// Save timestamp to localstorage for message sync
-		localStorage.setItem(`last_updated`, message.timestamp);
-
 		if (channelId == null || serverId == null) return;
 
 		const beingRead = unreadState.isBeingRead(channelThreadKey(channelId));
@@ -743,10 +740,10 @@ class SocketState {
 				usersState.setOnlineUsers(message.user_ids);
 				break;
 			case 'permissions_init':
-				serversState.setPermissions(message.servers);
+				serversState.setPermissions(message.servers, message.channels);
 				break;
 			case 'permissions_updated':
-				serversState.setPermission(message.server_id, message.permissions);
+				serversState.setPermission(message.server_id, message.permissions, message.channels);
 				break;
 			case 'member_roles_updated':
 				serversState.setMemberRoles(message.server_id, message.user_id, message.role_ids);
@@ -795,7 +792,12 @@ class SocketState {
 				serversState.applyLayout(message.server_id, message.layout);
 				break;
 			case 'channel_deleted':
-				channelRemoved(message.server_id, message.channel_id);
+				channelRemoved(
+					message.server_id,
+					message.channel_id,
+					false,
+					message.reason === 'no_access'
+				);
 				break;
 			case 'server_updated':
 				serversState.patchServer(message.server.id, {
