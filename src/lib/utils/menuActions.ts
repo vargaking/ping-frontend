@@ -22,6 +22,7 @@ import {
 	Unplug,
 	UserMinus,
 	UserPlus,
+	Users,
 	Volume2,
 	VolumeX
 } from 'lucide-svelte';
@@ -36,9 +37,11 @@ import { updateForumPost } from '$lib/requests/forum/updateForumPost';
 import { getErrorMessage } from '$lib/requests/errors';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { forumState } from '$lib/states/forumState.svelte';
+import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 import { messageEditState } from '$lib/states/messageEditState.svelte';
 import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 import { overlayState } from '$lib/states/overlayState.svelte';
+import { phoneState } from '$lib/states/phoneState.svelte';
 import { replyState } from '$lib/states/replyState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
@@ -137,7 +140,7 @@ export function canDeleteMessage(message: MessageType): boolean {
 	// A DM has no moderators, so only the author can delete there.
 	return (
 		message.conversation_id == null &&
-		serversState.can(Permission.MANAGE_MESSAGES, message.server_id)
+		serversState.canIn(Permission.MANAGE_MESSAGES, message.channel_id, message.server_id)
 	);
 }
 
@@ -164,6 +167,18 @@ export function promptDeleteMessage(messageId: string) {
 
 export function openChannelSettings(channelId: number) {
 	overlayState.open(SettingsModal, { category: 'channel', channelId });
+}
+
+export function openCategorySettings(groupId: number) {
+	overlayState.open(SettingsModal, { category: 'category', groupId });
+}
+
+/** Channel and category settings have tabs for channel managers and role managers. */
+export function canOpenChannelSettings(serverId: number | null | undefined): boolean {
+	return (
+		serversState.can(Permission.MANAGE_CHANNELS, serverId) ||
+		serversState.can(Permission.MANAGE_ROLES, serverId)
+	);
 }
 
 export function messageActions(
@@ -224,7 +239,7 @@ export function canManagePost(post: ForumPost, serverId: number): boolean {
 	const me = usersState.loggedInUser;
 	return (
 		(me != null && post.imported_author == null && post.author_id === me.id) ||
-		serversState.can(Permission.MANAGE_MESSAGES, serverId)
+		serversState.canIn(Permission.MANAGE_MESSAGES, post.channel_id, serverId)
 	);
 }
 
@@ -259,7 +274,7 @@ export function postActions(serverId: number, post: ForumPost): MenuAction[] {
 			run: () => overlayState.open(EditPostDialog, { post })
 		});
 	}
-	if (serversState.can(Permission.MANAGE_MESSAGES, serverId)) {
+	if (serversState.canIn(Permission.MANAGE_MESSAGES, post.channel_id, serverId)) {
 		actions.push(
 			{
 				id: 'pin',
@@ -326,7 +341,7 @@ export function channelActions(serverId: number, channel: Channel): MenuAction[]
 				copyToClipboard(new URL(channelPath(serverId, channel), location.origin).href, 'Link')
 		});
 	}
-	if (serversState.can(Permission.MANAGE_CHANNELS, serverId)) {
+	if (canOpenChannelSettings(serverId)) {
 		actions.push({
 			id: 'settings',
 			label: 'Channel settings',
@@ -342,31 +357,53 @@ export function channelGroupActions(
 	group: ChannelGroup,
 	{ onCreateChannel }: { onCreateChannel: () => void }
 ): MenuAction[] {
-	if (!serversState.can(Permission.MANAGE_CHANNELS, group.server_id)) return [];
-	return [
-		{
+	const actions: MenuAction[] = [];
+	const manage = serversState.can(Permission.MANAGE_CHANNELS, group.server_id);
+	if (manage) {
+		actions.push({
 			id: 'create-channel',
 			label: 'Create channel here',
 			icon: Plus,
 			group: 'channel',
 			run: onCreateChannel
-		},
-		{
-			id: 'rename',
-			label: 'Rename category',
-			icon: Pencil,
+		});
+	}
+	if (canOpenChannelSettings(group.server_id)) {
+		actions.push({
+			id: 'settings',
+			label: 'Category settings',
+			icon: Settings,
 			group: 'manage',
-			run: () => promptRenameGroup(group)
-		},
-		{
-			id: 'delete',
-			label: 'Delete category',
-			icon: Trash2,
-			group: 'danger',
-			destructive: true,
-			run: () => confirmDeleteGroup(group)
-		}
-	];
+			run: () => openCategorySettings(group.id)
+		});
+	}
+	if (manage) {
+		actions.push(
+			{
+				id: 'rename',
+				label: 'Rename category',
+				icon: Pencil,
+				group: 'manage',
+				run: () => promptRenameGroup(group)
+			},
+			{
+				id: 'delete',
+				label: 'Delete category',
+				icon: Trash2,
+				group: 'danger',
+				destructive: true,
+				run: () => confirmDeleteGroup(group)
+			}
+		);
+	}
+	return actions;
+}
+
+/** The member sheet closes on navigation, so it opens once the server's page is up. */
+async function showMembers(serverId: number, selected: boolean) {
+	if (!selected) await goto(`/app/server/${serverId}/`);
+	phoneState.closeNav();
+	membersPanelState.show();
 }
 
 /** Invite and settings open dialogs that work on the selected server, so they only show for it. */
@@ -416,6 +453,13 @@ export function serverActions(
 			run: () => promptCreateGroup(serverId)
 		});
 	}
+	actions.push({
+		id: 'members',
+		label: 'Members',
+		icon: Users,
+		group: 'manage',
+		run: () => showMembers(serverId, selected)
+	});
 	if (selected) {
 		actions.push({
 			id: 'settings',

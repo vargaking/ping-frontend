@@ -51,7 +51,7 @@
 	iconTone: number | null = null,
 	voice: VoiceLink | null = null
 )}
-	<div class="flex h-12 items-center gap-3 px-4">
+	<div class="flex h-12 items-center gap-3 px-4 select-text">
 		<ServerIcon
 			{name}
 			serverId={toneKey}

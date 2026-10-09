@@ -10,6 +10,7 @@ import type { Role, Server, ServerMember } from '$lib/types/server.types';
 import type { User } from '$lib/types/auth.types';
 import { reorderRoles } from '$lib/requests/servers/reorderRoles';
 import { ALL_PERMISSIONS, has, parseMask, Permission } from '$lib/permissions';
+import { getChannelViewers } from '$lib/requests/channels/permissionOverwrites';
 import {
 	applyPositions,
 	assignedRoles,
@@ -30,6 +31,8 @@ export type ServerLayout = {
 const byPosition = (a: { position: number; id: number }, b: { position: number; id: number }) =>
 	a.position - b.position || a.id - b.id;
 
+const CHANNELS_FRESH_MS = 30_000;
+
 export class ServersState {
 	servers: Record<number, Server> = $state({});
 	/** Set once the first server fetch succeeds, so "no servers" isn't shown while loading. */
@@ -41,6 +44,10 @@ export class ServersState {
 	selectedServerId: number | null = $state(null);
 	selectedChannelId: number | null = $state(null);
 	permissions: Record<number, bigint> = $state({});
+	/** Masks per server and channel where they differ from the server mask. */
+	channelPermissions: Record<number, Record<number, bigint>> = $state({});
+	/** Who can view a private channel, for its @mention list. */
+	channelViewers: Record<number, number[]> = $state({});
 	roles: Record<number, Role[]> = $state({});
 	/** Assigned role ids per server and user; the default role is never listed. */
 	memberRoles: Record<number, Record<number, number[]>> = $state({});
@@ -99,20 +106,47 @@ export class ServersState {
 		return serverId != null && has(this.permissions[serverId], perm);
 	}
 
-	/** Replace every server's mask (permissions_init). */
-	setPermissions(masks: Record<string, string>) {
+	/** Whether the user holds every bit of `perm` in a channel: its own mask
+	 *  when it differs, the server mask otherwise. */
+	canIn(perm: bigint, channelId: number | null | undefined, serverId: number | null | undefined) {
+		if (serverId == null) return false;
+		const own = channelId != null ? this.channelPermissions[serverId]?.[channelId] : undefined;
+		return has(own ?? this.permissions[serverId], perm);
+	}
+
+	/** Fetch who can view a channel. A failure leaves the list unfiltered. */
+	async loadChannelViewers(channelId: number) {
+		try {
+			this.channelViewers[channelId] = await getChannelViewers(channelId);
+		} catch (e) {
+			console.warn('Failed to load channel viewers', e);
+		}
+	}
+
+	/** Replace every server's mask and channel masks (permissions_init). */
+	setPermissions(
+		masks: Record<string, string>,
+		channels: Record<string, Record<string, string>> = {}
+	) {
 		const next: Record<number, bigint> = {};
 		for (const [serverId, mask] of Object.entries(masks)) next[Number(serverId)] = parseMask(mask);
 		this.permissions = next;
+		const nextChannels: Record<number, Record<number, bigint>> = {};
+		for (const [serverId, byChannel] of Object.entries(channels)) {
+			nextChannels[Number(serverId)] = parseChannelMasks(byChannel);
+		}
+		this.channelPermissions = nextChannels;
 	}
 
-	setPermission(serverId: number, mask: string) {
+	/** One server's masks (permissions_updated); `channels` replaces its whole channel map. */
+	setPermission(serverId: number, mask: string, channels?: Record<string, string>) {
 		this.permissions[serverId] = parseMask(mask);
+		if (channels) this.channelPermissions[serverId] = parseChannelMasks(channels);
 	}
 
 	private notePermissions(server: Server) {
 		if (server.id != null && server.permissions != null) {
-			this.setPermission(server.id, server.permissions);
+			this.setPermission(server.id, server.permissions, server.channel_permissions);
 		}
 	}
 
@@ -129,6 +163,8 @@ export class ServersState {
 		this.loaded = false;
 		this.channels = {};
 		this.channelGroups = {};
+		this.channelLoads = {};
+		this.channelsLoadedAt = {};
 		this.selectedServerId = null;
 		this.selectedChannelId = null;
 	}
@@ -236,8 +272,30 @@ export class ServersState {
 		return nameColor(this.roles[serverId] ?? [], this.memberRoles[serverId]?.[userId] ?? []);
 	}
 
+	private channelLoads: Record<number, Promise<Channel[]>> = {};
+	private channelsLoadedAt: Record<number, number> = {};
+
+	/** A server's channels, sharing a load that is still running or one that finished
+	 *  less than `maxAgeMs` ago, so startup and the server page don't fetch twice.
+	 *  The socket keeps loaded channels current in between. */
+	loadServerChannels(serverId: number, maxAgeMs = CHANNELS_FRESH_MS): Promise<Channel[]> {
+		const running = this.channelLoads[serverId];
+		if (running) return running;
+		const loadedAt = this.channelsLoadedAt[serverId];
+		const known = this.channels[serverId];
+		if (known && loadedAt != null && Date.now() - loadedAt < maxAgeMs) {
+			return Promise.resolve(Object.values(known));
+		}
+		const load = this.fetchServerChannels(serverId).finally(
+			() => delete this.channelLoads[serverId]
+		);
+		this.channelLoads[serverId] = load;
+		return load;
+	}
+
 	async fetchServerChannels(serverId: number): Promise<Channel[]> {
 		const { groups, channels } = await getServerChannelSnapshot(serverId);
+		this.channelsLoadedAt[serverId] = Date.now();
 		this.channelGroups[serverId] = Object.fromEntries(groups.map((g) => [g.id, g]));
 		this.channels[serverId] = Object.fromEntries(channels.map((ch) => [ch.id, ch]));
 		this.layoutVersion++;
@@ -327,6 +385,7 @@ export class ServersState {
 		delete this.channels[serverId];
 		delete this.channelGroups[serverId];
 		delete this.permissions[serverId];
+		delete this.channelPermissions[serverId];
 		delete this.roles[serverId];
 		delete this.memberRoles[serverId];
 		unreadState.forgetServer(serverId);
@@ -346,7 +405,8 @@ export class ServersState {
 			topic: channel.topic ?? null,
 			channel_settings: channel.channel_settings,
 			group_id: channel.group_id ?? null,
-			position: channel.position ?? existing.position
+			position: channel.position ?? existing.position,
+			private: channel.private ?? existing.private
 		};
 	}
 
@@ -374,6 +434,12 @@ export class ServersState {
 
 		this.servers[serverId] = { ...server, members: server.members.filter((m) => m.id !== userId) };
 	}
+}
+
+function parseChannelMasks(masks: Record<string, string>): Record<number, bigint> {
+	const out: Record<number, bigint> = {};
+	for (const [channelId, mask] of Object.entries(masks)) out[Number(channelId)] = parseMask(mask);
+	return out;
 }
 
 export const serversState = new ServersState();

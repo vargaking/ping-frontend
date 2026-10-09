@@ -30,7 +30,7 @@
 
 {#if reactions.length > 0}
 	<Tooltip.Provider>
-		<div class="mt-1 flex flex-wrap items-center gap-1">
+		<div class="mt-1 flex flex-wrap items-center gap-1 select-none">
 			{#each reactions as reaction (reaction.emoji)}
 				{@const mine = meId != null && reaction.user_ids.includes(meId)}
 				<Tooltip.Root disabled={phoneState.touch}>
