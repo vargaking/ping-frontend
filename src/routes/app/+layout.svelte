@@ -14,6 +14,9 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
+	import { historySyncState } from '$lib/states/historySyncState.svelte';
+	import { resyncState } from '$lib/states/resyncState.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
 	import { desktop } from '$lib/desktop';
 	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
@@ -56,6 +59,16 @@
 			unsubscribe?.();
 			shareDialogState.close();
 		};
+	});
+
+	const historyReady = $derived(usersState.loggedInUser != null && serversState.loaded);
+	const serverIdsKey = $derived(Object.keys(serversState.servers).join(','));
+
+	$effect(() => {
+		if (!historyReady) return;
+		void serverIdsKey;
+		void resyncState.generation;
+		untrack(() => historySyncState.request());
 	});
 
 	$effect(() => {

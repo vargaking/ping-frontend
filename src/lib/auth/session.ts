@@ -9,6 +9,7 @@ import { unreadState } from '$lib/states/unreadState.svelte';
 import { serverRequestState } from '$lib/states/serverRequestState.svelte';
 import { notificationsState } from '$lib/states/notificationsState.svelte';
 import { socketState } from '$lib/states/socketState.svelte';
+import { historySyncState } from '$lib/states/historySyncState.svelte';
 import { clearLocalCache } from '$lib/utils/db';
 import { disablePush } from '$lib/utils/push';
 import { logout as logoutRequest } from '$lib/requests/auth/logout';
@@ -33,6 +34,9 @@ export async function clearSession(): Promise<void> {
 	conversationsState.reset();
 	unreadState.reset();
 	notificationsState.resetPush();
+
+	// Settled first, so no write lands after the cache is cleared.
+	await historySyncState.stop();
 
 	try {
 		await clearLocalCache();
