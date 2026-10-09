@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	installHint,
-	isStandalone,
-	mobilePlatform,
-	phoneBlockedHelp,
-	type InstallEnv
-} from './install';
+import { installHint, isStandalone, mobilePlatform, blockedHelp, type InstallEnv } from './install';
 
 const UA = {
 	iphone:
@@ -72,10 +66,15 @@ describe('installHint', () => {
 	});
 });
 
-describe('phoneBlockedHelp', () => {
-	it('points phones at system settings and leaves desktops to the address bar', () => {
-		expect(phoneBlockedHelp('ios')).toContain('Settings');
-		expect(phoneBlockedHelp('android')).toContain('settings');
-		expect(phoneBlockedHelp(null)).toBeNull();
+describe('blockedHelp', () => {
+	it('points the installed app at the phone settings', () => {
+		expect(blockedHelp('ios', true)).toContain('Open Settings');
+		expect(blockedHelp('android', true)).toContain("phone's notification settings");
+	});
+
+	it('points a browser tab at the site settings', () => {
+		expect(blockedHelp('android', false)).toContain("browser's site settings");
+		expect(blockedHelp('ios', false)).toContain("browser's site settings");
+		expect(blockedHelp(null, false)).toContain('lock icon');
 	});
 });

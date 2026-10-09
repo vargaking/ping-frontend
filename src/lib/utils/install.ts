@@ -33,13 +33,16 @@ export function installHint(env: InstallEnv, canPrompt: boolean): InstallHint {
 	return null;
 }
 
-/** Where a phone user unblocks notifications, or null when the address bar lock
- *  icon is the way (desktop). */
-export function phoneBlockedHelp(platform: MobilePlatform): string | null {
-	if (platform === 'ios') return 'Open Settings, then Notifications, then Zeta, and allow them.';
-	if (platform === 'android')
+/** Where to unblock notifications: the phone's Settings for the installed app, the
+ *  browser's site settings everywhere else. */
+export function blockedHelp(platform: MobilePlatform, standalone: boolean): string {
+	if (standalone && platform === 'ios')
+		return 'Open Settings, then Notifications, then Zeta, and allow them.';
+	if (standalone && platform === 'android')
 		return "Allow notifications for Zeta in your phone's notification settings.";
-	return null;
+	if (platform)
+		return "Allow notifications for this site in your browser's site settings, then reload.";
+	return 'Click the lock icon in the address bar, set Notifications to Allow, then reload.';
 }
 
 export function readInstallEnv(): InstallEnv {

@@ -131,6 +131,19 @@ test('on a phone a sideways swipe moves between the navigation and the channel',
 	await expect(rail).not.toBeInViewport();
 });
 
+test('on a phone the notification settings never say desktop', async ({ context, page }) => {
+	await registerUser(context);
+	await page.goto('/app/');
+	await page.getByRole('button', { name: 'Account settings' }).tap();
+	const settings = page.getByRole('dialog');
+	await settings.getByRole('button', { name: 'Back to settings' }).tap();
+	await settings.getByRole('button', { name: 'Notifications' }).tap();
+
+	await expect(settings.getByText('Notifications while Zeta is open')).toBeVisible();
+	await expect(settings.getByText(/desktop/i)).toHaveCount(0);
+	await expect(settings.getByRole('button', { name: /test notification/i })).toHaveCount(0);
+});
+
 test('on a phone the list stays at the bottom when the shell shrinks for the keyboard', async ({
 	context,
 	page
