@@ -13,6 +13,7 @@
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
 	import { ICON_TYPES, iconProblem } from '$lib/utils/serverIcon';
 	import { parseInviteCode } from '$lib/utils/inviteCode';
+	import { openServerRequestsSettings } from '$lib/utils/settingsNavigation';
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import SettingsTextField from '$lib/components/settings/SettingsTextField.svelte';
@@ -28,10 +29,12 @@
 	}: { open?: boolean; tab?: AddServerTab } = $props();
 
 	const uid = $props.id();
-	const tabs: { id: AddServerTab; label: string }[] = [
-		{ id: 'create', label: 'Create' },
+	const requesting = $derived(serverRequestState.mustRequest);
+	const tabs = $derived<{ id: AddServerTab; label: string }[]>([
+		{ id: 'create', label: requesting ? 'Request' : 'Create' },
 		{ id: 'join', label: 'Join' }
-	];
+	]);
+	const title = $derived(requesting && tab === 'create' ? 'Request a server' : 'Add a server');
 
 	let name = $state('');
 	let nameError = $state('');
@@ -72,6 +75,14 @@
 	function handleOpenChange(next: boolean) {
 		if (!next && creating) return;
 		open = next;
+	}
+
+	let viewingSettings = false;
+
+	function viewSettings() {
+		viewingSettings = true;
+		open = false;
+		openServerRequestsSettings();
 	}
 
 	function focusField() {
@@ -151,10 +162,21 @@
 </script>
 
 <Dialog.Root {open} onOpenChange={handleOpenChange}>
-	<Dialog.Content class="sm:max-w-md" onOpenAutoFocus={(e) => (e.preventDefault(), focusField())}>
+	<Dialog.Content
+		class="sm:max-w-md"
+		onOpenAutoFocus={(e) => (e.preventDefault(), focusField())}
+		onCloseAutoFocus={(e) => {
+			if (viewingSettings) e.preventDefault();
+			viewingSettings = false;
+		}}
+	>
 		<Dialog.Header>
-			<Dialog.Title>Add a server</Dialog.Title>
-			<Dialog.Description>Start your own, or join one you were invited to.</Dialog.Description>
+			<Dialog.Title>{title}</Dialog.Title>
+			<Dialog.Description>
+				{requesting
+					? 'Ask for a server of your own, or join one you were invited to.'
+					: 'Start your own, or join one you were invited to.'}
+			</Dialog.Description>
 		</Dialog.Header>
 
 		<div
@@ -271,7 +293,11 @@
 					</Dialog.Footer>
 				</form>
 			{:else}
-				<ServerRequestPanel {uid} onCancel={() => handleOpenChange(false)} />
+				<ServerRequestPanel
+					{uid}
+					onCancel={() => handleOpenChange(false)}
+					onViewSettings={viewSettings}
+				/>
 			{/if}
 		</div>
 

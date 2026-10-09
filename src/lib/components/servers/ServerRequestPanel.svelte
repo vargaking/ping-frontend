@@ -11,8 +11,13 @@
 	import * as Dialog from '$lib/components/ui/dialog/index';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import SettingsTextField from '$lib/components/settings/SettingsTextField.svelte';
+	import { CircleCheck } from 'lucide-svelte';
 
-	let { uid, onCancel }: { uid: string; onCancel: () => void } = $props();
+	let {
+		uid,
+		onCancel,
+		onViewSettings
+	}: { uid: string; onCancel: () => void; onViewSettings: () => void } = $props();
 
 	const request = $derived(serverRequestState.mine?.request ?? null);
 	const declined = $derived(request?.status === 'declined' ? request : null);
@@ -22,6 +27,7 @@
 	let size = $state<ExpectedSize>('lt10');
 	let errors = $state<{ name?: string; description?: string }>({});
 	let submitting = $state(false);
+	let justSent = $state(false);
 	let confirmingWithdraw = $state(false);
 	let withdrawing = $state(false);
 
@@ -41,6 +47,7 @@
 			});
 			name = '';
 			description = '';
+			justSent = true;
 		} catch (e) {
 			const fields = fieldErrorsFrom(e);
 			errors = { name: fields.name, description: fields.description };
@@ -63,7 +70,36 @@
 	}
 </script>
 
-{#if request?.status === 'pending'}
+{#snippet settingsLink(label: string)}
+	<button
+		type="button"
+		onclick={onViewSettings}
+		class="rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+	>
+		{label}
+	</button>
+{/snippet}
+
+{#if justSent && request?.status === 'pending'}
+	<div class="flex flex-col gap-5" role="status">
+		<div class="flex flex-col items-center gap-3 rounded-xl border border-border p-6 text-center">
+			<div class="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-online">
+				<CircleCheck size={22} strokeWidth={1.75} aria-hidden="true" />
+			</div>
+			<div class="flex flex-col gap-1">
+				<p class="text-[15px] font-semibold text-foreground">Request sent</p>
+				<p class="text-[13px] text-text-subtle">
+					We'll send you a notification when it's decided. You can check its status, or withdraw it,
+					under Settings → Account → Server requests.
+				</p>
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={onCancel}>Close</Button>
+			<Button onclick={onViewSettings}>View request status</Button>
+		</Dialog.Footer>
+	</div>
+{:else if request?.status === 'pending'}
 	<div class="flex flex-col gap-5">
 		<div class="flex flex-col gap-1 rounded-xl border border-border p-4">
 			<span class="text-[15px] font-semibold text-foreground">{request.name}</span>
@@ -75,7 +111,9 @@
 			</p>
 		</div>
 		<p class="text-xs text-text-subtle">
-			We'll tell you here, and by notification if you're away, once it's decided.
+			We'll send you a notification once it's decided. {@render settingsLink(
+				'See it in Settings → Account → Server requests'
+			)}
 		</p>
 		<Dialog.Footer>
 			{#if confirmingWithdraw}
@@ -108,12 +146,15 @@
 						{declined.decline_reason}
 					</p>
 				{/if}
+				<p class="mt-2 text-xs text-text-subtle">
+					{@render settingsLink('See it in Server requests')}
+				</p>
 			</div>
-		{:else}
-			<p class="text-[13px] text-text-subtle">
-				New servers are approved by hand for now. Tell us what you have in mind.
-			</p>
 		{/if}
+		<p class="text-[13px] text-text-subtle">
+			Servers are approved by hand while capacity is limited. You'll get a notification when your
+			request is decided. Joining an existing server needs no approval.
+		</p>
 
 		<SettingsTextField
 			id="{uid}-name"
