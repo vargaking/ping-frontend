@@ -2,7 +2,7 @@ import { goto } from '$app/navigation';
 import { desktop } from '$lib/desktop';
 import type { Attachment } from '$lib/types/attachment.types';
 import { messagePreviewText } from './messageContent';
-import type { NotificationData } from './notificationTags';
+import { threadNotificationCount, withTag, type NotificationData } from './notificationTags';
 
 const BODY_LIMIT = 140;
 const ICON = '/icon-192.png';
@@ -69,6 +69,8 @@ export async function showThreadNotification(opts: {
 	url: string;
 	messageUuid: string;
 	noun: 'messages' | 'mentions';
+	/** The thread's unread count, for DMs. Mentions count up from the tray. */
+	unread?: number;
 }) {
 	try {
 		const registration = desktop ? undefined : await navigator.serviceWorker?.getRegistration();
@@ -76,15 +78,24 @@ export async function showThreadNotification(opts: {
 			notify({ tag: opts.tag, title: opts.title, body: opts.body, href: opts.url });
 			return;
 		}
-		const [existing] = await registration.getNotifications({ tag: opts.tag });
-		const previous = existing?.data as Partial<NotificationData> | undefined;
-		if (previous?.messageUuid === opts.messageUuid) return;
-		const count = (previous?.count ?? 0) + 1;
+		const previous = withTag(await registration.getNotifications(), opts.tag);
+		const { count, alreadyShown } = threadNotificationCount({
+			unread: opts.unread,
+			previous,
+			messageUuid: opts.messageUuid
+		});
+		if (alreadyShown) return;
+		previous.forEach((notification) => notification.close());
 		await registration.showNotification(opts.title, {
 			body: count > 1 ? `${count} new ${opts.noun}` : truncate(opts.body),
 			tag: opts.tag,
 			icon: ICON,
-			data: { url: opts.url, count, messageUuid: opts.messageUuid } satisfies NotificationData,
+			data: {
+				url: opts.url,
+				count,
+				messageUuid: opts.messageUuid,
+				shownAt: Date.now()
+			} satisfies NotificationData,
 			// Not in the DOM typings yet, but Chrome and Firefox honour it.
 			...({ renotify: true } as object)
 		});

@@ -1,5 +1,6 @@
 import { serversState } from './serversState.svelte';
 import { conversationsState } from './conversationsState.svelte';
+import { closeReadNotifications } from '$lib/utils/notificationSweep';
 
 export type ResyncReason = 'reconnect' | 'resume' | 'notification';
 
@@ -42,6 +43,7 @@ export class ResyncState {
 }
 
 async function refreshLists() {
+	const syncedAt = Date.now();
 	await Promise.all([
 		conversationsState.fetch(),
 		...Object.keys(serversState.servers).map((id) =>
@@ -50,6 +52,7 @@ async function refreshLists() {
 				.catch((e) => console.warn('Resync failed to refresh channels', e))
 		)
 	]);
+	void closeReadNotifications({ syncedAt });
 }
 
 export const resyncState = new ResyncState(refreshLists);

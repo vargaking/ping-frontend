@@ -40,6 +40,17 @@ class UnreadState {
 		return c ? this.isChannelUnread(c) : false;
 	}
 
+	channelKnown(channelId: number): boolean {
+		return channelId in this.channels;
+	}
+
+	/** Ids of the channels with nothing unread. */
+	readChannelIds(): number[] {
+		return Object.entries(this.channels)
+			.filter(([, c]) => !this.isChannelUnread(c))
+			.map(([id]) => Number(id));
+	}
+
 	channelMentions(channelId: number): number {
 		return this.channels[channelId]?.mentions ?? 0;
 	}
