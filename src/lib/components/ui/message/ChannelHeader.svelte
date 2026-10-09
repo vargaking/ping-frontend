@@ -36,7 +36,7 @@
 	{/if}
 
 	<div class="ml-auto flex items-center gap-2 max-md:shrink-0">
-		{#if channel && serversState.can(Permission.MANAGE_CHANNELS)}
+		{#if channel && (serversState.can(Permission.MANAGE_CHANNELS) || serversState.can(Permission.MANAGE_ROLES))}
 			<button
 				type="button"
 				aria-label="Channel settings"

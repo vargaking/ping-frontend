@@ -7,6 +7,7 @@
 	import type { Attachment } from '$lib/types/attachment.types';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { serversState } from '$lib/states/serversState.svelte';
 	import { messagesState, threadKey } from '$lib/states/messagesState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { replyState } from '$lib/states/replyState.svelte';
@@ -58,6 +59,18 @@
 	let dragDepth = 0;
 	let emojiOpen = $state(false);
 	let closedByEscape = false;
+
+	const privateChannelId = $derived(
+		target?.kind === 'channel' &&
+			serversState.channels[target.serverId]?.[target.channelId]?.private
+			? target.channelId
+			: null
+	);
+
+	$effect(() => {
+		const channelId = privateChannelId;
+		if (channelId != null) untrack(() => serversState.loadChannelViewers(channelId));
+	});
 
 	const controllers: Record<string, AbortController> = {};
 	const linkPreview = new LinkPreview();
@@ -420,6 +433,7 @@
 				mentionCandidates={() =>
 					mentionCandidates({
 						serverId: target?.kind === 'channel' ? target.serverId : null,
+						channelId: target?.kind === 'channel' ? target.channelId : null,
 						conversationId: target?.kind === 'direct' ? target.conversationId : null
 					})}
 				editorClass="prose prose-sm max-h-40 w-full max-w-none min-w-0 flex-1 self-center overflow-y-auto py-1.5 text-[15px] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"

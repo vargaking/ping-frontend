@@ -47,7 +47,8 @@
 
 	// The call's server, which may not be the one being browsed.
 	const canShare = $derived(
-		screenShareSupported() && serversState.can(Permission.STREAM, voiceState.serverId)
+		screenShareSupported() &&
+			serversState.canIn(Permission.STREAM, voiceState.channelId, voiceState.serverId)
 	);
 
 	// Capture phase, so the shortcuts still work while the composer has focus.

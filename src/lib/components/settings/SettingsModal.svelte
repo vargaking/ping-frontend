@@ -12,6 +12,8 @@
 	import RolesSettings from './RolesSettings.svelte';
 	import ServerImport from './ServerImport.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
+	import ChannelPermissions from './ChannelPermissions.svelte';
+	import CategorySettings from './CategorySettings.svelte';
 	import ForumTagsSettings from './ForumTagsSettings.svelte';
 	import { forumState } from '$lib/states/forumState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
@@ -19,15 +21,17 @@
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { ArrowLeft, X } from 'lucide-svelte';
 
-	type Category = 'account' | 'server' | 'channel';
+	type Category = 'account' | 'server' | 'channel' | 'category';
 
 	let {
 		category = 'account',
 		channelId = null,
+		groupId = null,
 		tab: initialTab = null
 	}: {
 		category?: Category;
 		channelId?: number | null;
+		groupId?: number | null;
 		/** Open on a specific tab id instead of the scope's first tab. */
 		tab?: string | null;
 	} = $props();
@@ -49,20 +53,60 @@
 		channelId != null ? (serversState.selectedServerChannels[channelId] ?? null) : null
 	);
 
+	const group = $derived(
+		groupId != null
+			? (serversState.selectedServerLayout.groups.find((g) => g.group.id === groupId)?.group ??
+					null)
+			: null
+	);
+	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
+	const canManageRoles = $derived(serversState.can(Permission.MANAGE_ROLES));
+
 	const sections = $derived.by<Section[]>(() => {
 		const out: Section[] = [];
 
-		if (channel && serversState.can(Permission.MANAGE_CHANNELS)) {
-			const channelTabs: Tab[] = [
-				{
+		if (group && (canManageChannels || canManageRoles)) {
+			const groupTabs: Tab[] = [];
+			if (canManageChannels) {
+				groupTabs.push({
+					id: 'category-general',
+					label: 'Category overview',
+					scope: 'category',
+					form: true,
+					render: categoryOverview
+				});
+			}
+			if (canManageRoles) {
+				groupTabs.push({
+					id: 'category-permissions',
+					label: 'Permissions',
+					scope: 'category',
+					render: categoryPermissions
+				});
+			}
+			out.push({ scope: 'category', label: group.name, tabs: groupTabs });
+		}
+
+		if (channel && (canManageChannels || canManageRoles)) {
+			const channelTabs: Tab[] = [];
+			if (canManageChannels) {
+				channelTabs.push({
 					id: 'channel-general',
 					label: 'Channel overview',
 					scope: 'channel',
 					form: true,
 					render: channelOverview
-				}
-			];
-			if (channel.type === 'forum') {
+				});
+			}
+			if (canManageRoles) {
+				channelTabs.push({
+					id: 'channel-permissions',
+					label: 'Permissions',
+					scope: 'channel',
+					render: channelPermissions
+				});
+			}
+			if (channel.type === 'forum' && canManageChannels) {
 				channelTabs.push({
 					id: 'channel-tags',
 					label: 'Tags',
@@ -171,6 +215,28 @@
 {#snippet channelOverview()}
 	{#if channelId != null}
 		<ChannelSettings {channelId} />
+	{/if}
+{/snippet}
+{#snippet channelPermissions()}
+	{#if channel && serversState.selectedServerId != null}
+		<ChannelPermissions
+			serverId={serversState.selectedServerId}
+			target={{ kind: 'channel', id: channel.id }}
+			categoryId={channel.group_id}
+		/>
+	{/if}
+{/snippet}
+{#snippet categoryOverview()}
+	{#if groupId != null}
+		<CategorySettings {groupId} />
+	{/if}
+{/snippet}
+{#snippet categoryPermissions()}
+	{#if groupId != null && serversState.selectedServerId != null}
+		<ChannelPermissions
+			serverId={serversState.selectedServerId}
+			target={{ kind: 'group', id: groupId }}
+		/>
 	{/if}
 {/snippet}
 {#snippet forumTags()}

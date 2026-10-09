@@ -7,9 +7,15 @@ import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
 
 /**
  * Drop a deleted channel from local state and move the user off it if they were
- * reading it or connected to it. `byMe` suppresses the notice for our own delete.
+ * reading it or connected to it. `byMe` suppresses the notice for our own delete;
+ * `lostAccess` says the channel still exists but we can no longer view it.
  */
-export async function channelRemoved(serverId: number, channelId: number, byMe = false) {
+export async function channelRemoved(
+	serverId: number,
+	channelId: number,
+	byMe = false,
+	lostAccess = false
+) {
 	const wasViewing =
 		serversState.selectedServerId === serverId && serversState.selectedChannelId === channelId;
 	const wasInVoice = voiceState.channelId === channelId;
@@ -22,6 +28,12 @@ export async function channelRemoved(serverId: number, channelId: number, byMe =
 	if (wasInVoice) await voiceState.leaveVoice();
 	if (wasViewing) await goto(`/app/server/${serverId}/`);
 	if (!byMe && (wasViewing || wasInVoice)) {
-		toast(name ? `#${name} was deleted` : 'This channel was deleted');
+		if (lostAccess) {
+			toast(
+				name ? `You no longer have access to #${name}` : 'You no longer have access to this channel'
+			);
+		} else {
+			toast(name ? `#${name} was deleted` : 'This channel was deleted');
+		}
 	}
 }

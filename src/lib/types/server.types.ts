@@ -24,6 +24,8 @@ export type Server = {
 	members?: User[];
 	/** The caller's effective permission mask for this server, as a decimal string. */
 	permissions?: string;
+	/** The caller's masks in channels where they differ from `permissions`. */
+	channel_permissions?: Record<string, string>;
 };
 
 export type ServerMember = {
