@@ -31,7 +31,7 @@
 				},
 				{ label: 'Screen sharing', detail: 'up to 1080p' },
 				{ label: 'Direct messages' },
-				{ label: 'Notifications', detail: 'desktop, and push when the tab is closed' },
+				{ label: 'Notifications', detail: 'while Zeta is open, and push when it is closed' },
 				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
 				{ label: 'Desktop app', detail: 'Windows and Linux, with tray and launch at login' },
 				{ label: 'Servers', detail: 'invites, roles, member management' },

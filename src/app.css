@@ -236,6 +236,11 @@ html[data-keyboard] {
 	--safe-bottom: 0px;
 }
 
+/* A row being held for its context menu, until the menu closes. */
+[data-held] {
+	background-color: var(--color-accent);
+}
+
 html.app-shell {
 	overscroll-behavior: none;
 	-webkit-touch-callout: none;

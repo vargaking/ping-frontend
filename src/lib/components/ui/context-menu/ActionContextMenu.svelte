@@ -4,10 +4,13 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu/index';
 	import { cn } from '$lib/utils.js';
 	import { groupActions, type MenuEntry } from '$lib/utils/menuActions';
+	import { LongPress, type Point } from '$lib/utils/longPress';
 
 	// Links, media and text fields inside the trigger keep the browser's own menu.
 	const NATIVE_MENU_TARGETS =
 		'a[href], img, video, audio, input, textarea, [contenteditable="true"]';
+	// On touch only text fields keep it, so holding a link or an image opens ours.
+	const TEXT_FIELDS = 'input, textarea, [contenteditable="true"]';
 
 	type Props = {
 		actions: MenuEntry[];
@@ -46,13 +49,47 @@
 	let touching = false;
 	let swallowNextClick = false;
 
+	// The primitive waits 700 ms before opening on touch, so touch holds are timed here and
+	// open the menu the same way a right-click does. Highlighted from the press until it closes.
+	let held = $state(false);
+	let holdTarget: HTMLElement | null = null;
+	const longPress = new LongPress(openAt, (holding) => {
+		if (holding) held = true;
+		else if (!open) held = false;
+	});
+
+	function openAt(at: Point) {
+		holdTarget?.dispatchEvent(
+			new MouseEvent('contextmenu', {
+				bubbles: true,
+				cancelable: true,
+				clientX: at.x,
+				clientY: at.y
+			})
+		);
+		if (!open) {
+			held = false;
+			return;
+		}
+		navigator.vibrate?.(10);
+	}
+
 	function touchStart(e: PointerEvent) {
 		touching = e.pointerType === 'touch';
 		swallowNextClick = false;
+		if (!touching || !e.isPrimary) return;
+		if (e.target instanceof Element && e.target.closest(TEXT_FIELDS)) return;
+		holdTarget = e.currentTarget as HTMLElement;
+		longPress.start({ x: e.clientX, y: e.clientY });
+	}
+
+	function touchMove(e: PointerEvent) {
+		if (e.pointerType === 'touch') longPress.move({ x: e.clientX, y: e.clientY });
 	}
 
 	function touchEnd() {
 		touching = false;
+		longPress.cancel();
 	}
 
 	function swallowClick(e: MouseEvent) {
@@ -63,7 +100,10 @@
 	}
 
 	function onOpenChange(next: boolean) {
-		if (!next) return;
+		if (!next) {
+			held = false;
+			return;
+		}
 		opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		swallowNextClick = touching;
 	}
@@ -76,6 +116,12 @@
 
 	function interceptContextMenu(e: MouseEvent) {
 		const trigger = e.currentTarget as HTMLElement;
+		// The browser's own long-press menu; the hold above already handles touch.
+		if (touching && e.isTrusted) {
+			e.stopPropagation();
+			if (!(e.target instanceof Element && e.target.closest(TEXT_FIELDS))) e.preventDefault();
+			return;
+		}
 		const inner = e.target instanceof Element ? e.target.closest(NATIVE_MENU_TARGETS) : null;
 		if (inner && inner !== trigger && trigger.contains(inner)) {
 			e.stopPropagation();
@@ -102,8 +148,10 @@
 		const rest = { ...props };
 		delete rest.tabindex;
 		return mergeProps(rest, {
+			'data-held': held ? '' : undefined,
 			oncontextmenucapture: interceptContextMenu,
 			onpointerdowncapture: touchStart,
+			onpointermovecapture: touchMove,
 			onpointerupcapture: touchEnd,
 			onpointercancelcapture: touchEnd,
 			onclickcapture: swallowClick
