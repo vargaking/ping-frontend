@@ -1,8 +1,9 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AccountSettings from './AccountSettings.svelte';
 	import NotificationSettings from './NotificationSettings.svelte';
+	import ServerRequestsSettings from './ServerRequestsSettings.svelte';
 	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
@@ -17,6 +18,8 @@
 	import ForumTagsSettings from './ForumTagsSettings.svelte';
 	import { forumState } from '$lib/states/forumState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { serverRequestState } from '$lib/states/serverRequestState.svelte';
+	import { SERVER_REQUESTS_TAB } from '$lib/types/serverRequest.types';
 	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { ArrowLeft, X } from 'lucide-svelte';
@@ -61,6 +64,8 @@
 	);
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 	const canManageRoles = $derived(serversState.can(Permission.MANAGE_ROLES));
+
+	onMount(() => void serverRequestState.ensureLoaded());
 
 	const sections = $derived.by<Section[]>(() => {
 		const out: Section[] = [];
@@ -164,31 +169,36 @@
 			out.push({ scope: 'server', label: server.name, tabs });
 		}
 
-		out.push({
-			scope: 'account',
-			label: 'Account',
-			tabs: [
-				{
-					id: 'account-general',
-					label: 'My account',
-					scope: 'account',
-					form: true,
-					render: account
-				},
-				{
-					id: 'account-voice',
-					label: 'Voice',
-					scope: 'account',
-					render: voice
-				},
-				{
-					id: 'account-notifications',
-					label: 'Notifications',
-					scope: 'account',
-					render: notifications
-				}
-			]
-		});
+		const accountTabs: Tab[] = [
+			{
+				id: 'account-general',
+				label: 'My account',
+				scope: 'account',
+				form: true,
+				render: account
+			},
+			{
+				id: 'account-voice',
+				label: 'Voice',
+				scope: 'account',
+				render: voice
+			},
+			{
+				id: 'account-notifications',
+				label: 'Notifications',
+				scope: 'account',
+				render: notifications
+			}
+		];
+		if (serverRequestState.waitlist) {
+			accountTabs.push({
+				id: SERVER_REQUESTS_TAB,
+				label: 'Server requests',
+				scope: 'account',
+				render: serverRequests
+			});
+		}
+		out.push({ scope: 'account', label: 'Account', tabs: accountTabs });
 
 		return out;
 	});
@@ -267,6 +277,9 @@
 {/snippet}
 {#snippet notifications()}
 	<NotificationSettings />
+{/snippet}
+{#snippet serverRequests()}
+	<ServerRequestsSettings />
 {/snippet}
 
 {#snippet closeButton()}
