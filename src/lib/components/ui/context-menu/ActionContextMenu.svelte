@@ -4,7 +4,7 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu/index';
 	import { cn } from '$lib/utils.js';
 	import { groupActions, type MenuEntry } from '$lib/utils/menuActions';
-	import { LongPress, type Point } from '$lib/utils/longPress';
+	import { HOLD_CANCEL_EVENT, LongPress, type Point } from '$lib/utils/longPress';
 
 	// Links, media and text fields inside the trigger keep the browser's own menu.
 	const NATIVE_MENU_TARGETS =
@@ -154,6 +154,7 @@
 			onpointermovecapture: touchMove,
 			onpointerupcapture: touchEnd,
 			onpointercancelcapture: touchEnd,
+			[`on${HOLD_CANCEL_EVENT}`]: () => longPress.cancel(),
 			onclickcapture: swallowClick
 		});
 	}

@@ -25,30 +25,34 @@ describe('inEdgeZone', () => {
 
 describe('lockDirection', () => {
 	it('waits until the finger has moved a little', () => {
-		expect(lockDirection(6, 1, false)).toBe('pending');
-		expect(lockDirection(0, 0, true)).toBe('pending');
+		expect(lockDirection(6, 1, 'right')).toBe('pending');
+		expect(lockDirection(0, 0, 'left')).toBe('pending');
 	});
 
-	it('locks a mostly horizontal drag towards the other pane', () => {
-		expect(lockDirection(12, 3, false)).toBe('swipe');
-		expect(lockDirection(-12, 3, true)).toBe('swipe');
+	it('locks a mostly horizontal drag the wanted way', () => {
+		expect(lockDirection(12, 3, 'right')).toBe('swipe');
+		expect(lockDirection(-12, 3, 'left')).toBe('swipe');
 	});
 
 	it('leaves vertical and diagonal drags alone', () => {
-		expect(lockDirection(2, 14, false)).toBe('ignore');
-		expect(lockDirection(10, 8, false)).toBe('ignore');
-		expect(lockDirection(12, 8, false)).toBe('ignore');
-		expect(lockDirection(15, 10, false)).toBe('ignore');
+		expect(lockDirection(2, 14, 'right')).toBe('ignore');
+		expect(lockDirection(10, 8, 'right')).toBe('ignore');
+		expect(lockDirection(12, 8, 'right')).toBe('ignore');
+		expect(lockDirection(15, 10, 'right')).toBe('ignore');
+		expect(lockDirection(-2, 14, 'left')).toBe('ignore');
+		expect(lockDirection(-15, 10, 'left')).toBe('ignore');
 	});
 
 	it('needs the horizontal part to beat the vertical one by half again', () => {
-		expect(lockDirection(15, 9, false)).toBe('swipe');
-		expect(lockDirection(15, 10, false)).toBe('ignore');
+		expect(lockDirection(15, 9, 'right')).toBe('swipe');
+		expect(lockDirection(15, 10, 'right')).toBe('ignore');
+		expect(lockDirection(-15, 9, 'left')).toBe('swipe');
+		expect(lockDirection(-15, 10, 'left')).toBe('ignore');
 	});
 
-	it('ignores a drag the wrong way for the current pane', () => {
-		expect(lockDirection(-14, 1, false)).toBe('ignore');
-		expect(lockDirection(14, 1, true)).toBe('ignore');
+	it('ignores a drag the wrong way', () => {
+		expect(lockDirection(-14, 1, 'right')).toBe('ignore');
+		expect(lockDirection(14, 1, 'left')).toBe('ignore');
 	});
 });
 
