@@ -59,6 +59,17 @@
 	--offline: oklch(0.496 0.016 248.2);
 	--destructive-border: oklch(0.36 0.063 23.5);
 
+	/* syntax colours in code blocks, all light enough for the accent background */
+	--code-keyword: var(--chart-4);
+	--code-string: var(--chart-2);
+	--code-number: var(--chart-3);
+	--code-comment: var(--text-subtle);
+	--code-function: var(--chart-1);
+	--code-type: var(--chart-3);
+	--code-meta: var(--primary);
+	--code-variable: var(--foreground);
+	--code-punctuation: var(--muted-foreground);
+
 	/* default avatar tints: blue, green, yellow, violet, teal, slate */
 	--avatar-1: oklch(0.32 0.05 245);
 	--avatar-1-fg: oklch(0.86 0.07 245);

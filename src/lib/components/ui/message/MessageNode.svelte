@@ -1,10 +1,10 @@
 <script lang="ts">
 	import type { JSONContent } from '@tiptap/core';
 	import MessageNode from './MessageNode.svelte';
+	import CodeBlock from './CodeBlock.svelte';
 	import { linkify, safeHref } from '$lib/utils/linkify';
 
-	// plain: render text as-is, without turning URLs into links (code blocks).
-	let { node, plain = false }: { node: JSONContent | string; plain?: boolean } = $props();
+	let { node }: { node: JSONContent | string } = $props();
 
 	const linkClass =
 		'text-primary underline decoration-primary/40 underline-offset-2 [overflow-wrap:anywhere] hover:decoration-primary';
@@ -82,7 +82,7 @@
 		marks,
 		0,
 		node.text || '',
-		!plain && !marks.some((mark) => mark.type === 'code' || mark.type === 'link')
+		!marks.some((mark) => mark.type === 'code' || mark.type === 'link')
 	)}
 {:else if node.type === 'mention'}
 	<span
@@ -110,9 +110,7 @@
 		{/each}
 	</li>
 {:else if node.type === 'codeBlock'}
-	<pre class="my-2 overflow-x-auto rounded-md bg-accent p-3 font-mono text-sm text-foreground"><code
-			>{#each node.content || [] as child}<MessageNode node={child} plain />{/each}</code
-		></pre>
+	<CodeBlock {node} />
 {:else if node.type === 'blockquote'}
 	<blockquote class="my-2 border-l-4 border-border py-1 pl-4 text-muted-foreground">
 		{#each node.content || [] as child}
