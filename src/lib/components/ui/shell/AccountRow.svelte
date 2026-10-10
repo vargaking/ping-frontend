@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { whatsNewState } from '$lib/states/whatsNewState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
-	import { Settings, Shield } from 'lucide-svelte';
+	import WhatsNewPanel from '$lib/components/whatsNew/WhatsNewPanel.svelte';
+	import { Settings, Shield, Sparkles } from 'lucide-svelte';
 </script>
 
 <div
@@ -23,6 +25,22 @@
 			<Shield size={18} strokeWidth={1.75} />
 		</a>
 	{/if}
+	<div class="relative">
+		<button
+			type="button"
+			aria-label={whatsNewState.hasUnseen ? "What's new, new updates" : "What's new"}
+			onclick={() => overlayState.open(WhatsNewPanel)}
+			class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-11 pointer-coarse:w-11"
+		>
+			<Sparkles size={18} strokeWidth={1.75} />
+		</button>
+		{#if whatsNewState.hasUnseen}
+			<span
+				class="pointer-events-none absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-sidebar"
+				aria-hidden="true"
+			></span>
+		{/if}
+	</div>
 	<button
 		type="button"
 		aria-label="Account settings"
