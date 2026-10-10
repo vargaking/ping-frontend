@@ -937,11 +937,17 @@ class VoiceState {
 		if (channelId === this.channelId) this.channelName = name;
 	}
 
+	/** Releases the mic and screen capture now; disconnect() only does it after its network round trip. */
+	private stopLocalTracks(room: Room) {
+		room.localParticipant.trackPublications.forEach((pub) => pub.track?.mediaStreamTrack.stop());
+	}
+
 	async leaveVoice() {
 		this.leaving = true;
 		this.generation++;
 		const channelId = this.channelId;
 		if (this.room) {
+			this.stopLocalTracks(this.room);
 			try {
 				await this.room.disconnect();
 			} catch {
