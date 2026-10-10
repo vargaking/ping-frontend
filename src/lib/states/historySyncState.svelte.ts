@@ -1,7 +1,7 @@
 import { historyApi } from '$lib/requests/history';
 import { normalizeError } from '$lib/requests/errors';
 import { db, localHistoryAvailable, localHistoryReady } from '$lib/utils/db';
-import { runHistorySync, type HistoryApi } from '$lib/utils/historySync';
+import { forgetSyncedChannels, runHistorySync, type HistoryApi } from '$lib/utils/historySync';
 import { serversState } from './serversState.svelte';
 
 const START_DELAY_MS = 3000;
@@ -45,6 +45,25 @@ class HistorySyncState {
 			this.queued = true;
 			return;
 		}
+		this.scheduleStart(START_DELAY_MS);
+	}
+
+	/** An import added older messages to these channels (all of the server when null): walk them again. */
+	async forgetChannels(serverId: number, channelIds: number[] | null): Promise<void> {
+		if (!localHistoryAvailable || this.blocked) return;
+		if (this.running) {
+			this.controller?.abort();
+			await this.running;
+		}
+		try {
+			await forgetSyncedChannels(serverId, channelIds);
+		} catch (e) {
+			console.warn('Failed to reset local sync progress', e);
+		}
+		this.clearTimers();
+		this.lastStartedAt = null;
+		this.queued = false;
+		if (this.status === 'done') this.status = 'idle';
 		this.scheduleStart(START_DELAY_MS);
 	}
 

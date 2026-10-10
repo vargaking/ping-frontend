@@ -8,6 +8,8 @@ import type { ForumPost, ForumPostPage } from '$lib/types/forum.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { clearLocalCache, db } from './db';
 import {
+	forgetSyncedChannels,
+	importRev,
 	runHistorySync,
 	type HistoryApi,
 	type HistoryProgress,
@@ -50,11 +52,17 @@ class FakeApi implements HistoryApi {
 	onPage: (() => void) | null = null;
 	private counter = 0;
 
-	addChannel(serverId: number, channelId: number, count: number, type: Channel['type'] = 'text') {
+	addChannel(
+		serverId: number,
+		channelId: number,
+		count: number,
+		type: Channel['type'] = 'text',
+		channelSettings: object = {}
+	) {
 		const channel: Channel = {
 			id: channelId,
 			name: `c${channelId}`,
-			channel_settings: {},
+			channel_settings: channelSettings,
 			type,
 			group_id: null,
 			position: 0
@@ -62,6 +70,11 @@ class FakeApi implements HistoryApi {
 		this.channelsByServer.set(serverId, [...(this.channelsByServer.get(serverId) ?? []), channel]);
 		if (type === 'text')
 			this.addThread(channelThreadKey(channelId), { kind: 'channel', serverId, channelId }, count);
+	}
+
+	setSettings(serverId: number, channelId: number, channelSettings: object) {
+		const channel = this.channelsByServer.get(serverId)!.find((c) => c.id === channelId)!;
+		channel.channel_settings = channelSettings;
 	}
 
 	addPost(serverId: number, channelId: number, postId: number, title: string, count: number) {
@@ -106,6 +119,28 @@ class FakeApi implements HistoryApi {
 					content: [{ type: 'paragraph', content: [{ type: 'text', text: `message number${n}` }] }]
 				},
 				timestamp: new Date(Date.UTC(2025, 0, 1, 0, 0, n)).toISOString(),
+				server_id: 'serverId' in t ? t.serverId : null,
+				channel_id: 'channelId' in t ? t.channelId : null,
+				conversation_id: t.kind === 'direct' ? t.conversationId : null,
+				post_id: t.kind === 'post' ? t.postId : null
+			});
+		}
+	}
+
+	/** An import adds messages dated before everything already there. */
+	pushOlder(key: string, count: number) {
+		const entry = this.threads.get(key)!;
+		const t = entry.thread;
+		for (let i = 0; i < count; i++) {
+			const n = ++this.counter;
+			entry.messages.push({
+				id: `old${n}`,
+				user_id: 1,
+				content: {
+					type: 'doc',
+					content: [{ type: 'paragraph', content: [{ type: 'text', text: `imported number${n}` }] }]
+				},
+				timestamp: new Date(Date.UTC(2020, 0, 1, 0, 0, n)).toISOString(),
 				server_id: 'serverId' in t ? t.serverId : null,
 				channel_id: 'channelId' in t ? t.channelId : null,
 				conversation_id: t.kind === 'direct' ? t.conversationId : null,
@@ -682,5 +717,142 @@ describe('progress', () => {
 		await sync({ onProgress: (p) => reports.push(p) });
 
 		expect(reports.at(-1)).toEqual({ threads: 1, complete: 1 });
+	});
+});
+
+describe('import revisions', () => {
+	const imported = (rev?: number) => ({ import: rev === undefined ? {} : { rev } });
+
+	it('reads the revision of a channel', () => {
+		const channel = (channel_settings: unknown) => ({ channel_settings }) as Channel;
+		expect(importRev(channel({}))).toBeNull();
+		expect(importRev(channel(null))).toBeNull();
+		expect(importRev(channel({ import: null }))).toBeNull();
+		expect(importRev(channel({ import: {} }))).toBe(0);
+		expect(importRev(channel({ import: { rev: '2' } }))).toBe(0);
+		expect(importRev(channel({ import: { rev: 1.5 } }))).toBe(0);
+		expect(importRev(channel({ import: { rev: 3 } }))).toBe(3);
+	});
+
+	it('walks a complete channel again, from the top, when its revision moves', async () => {
+		fake.addChannel(1, 10, 5, 'text', imported(1));
+		await sync();
+		expect(await db.threadSync.get('10')).toMatchObject({ complete: true, rev: 1 });
+		fake.pushOlder('10', 4);
+		fake.setSettings(1, 10, imported(2));
+		fake.pageCalls = [];
+
+		await sync();
+
+		expect(fake.pagesFor('10')).toEqual([null, '3', '6']);
+		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+		expect(await db.threadSync.get('10')).toMatchObject({ complete: true, rev: 2 });
+	});
+
+	it('makes no request while the revision stays put', async () => {
+		fake.addChannel(1, 10, 5, 'text', imported(1));
+		await sync();
+		fake.pageCalls = [];
+
+		await sync();
+
+		expect(fake.pageCalls).toEqual([]);
+	});
+
+	it('walks the posts of a forum again when the forum revision moves', async () => {
+		fake.addChannel(1, 20, 0, 'forum', imported(1));
+		fake.addPost(1, 20, 100, 'First', 4);
+		fake.addPost(1, 20, 101, 'Second', 2);
+		await sync();
+		expect(await db.threadSync.get('post:100')).toMatchObject({ rev: 1 });
+		fake.pushOlder('post:100', 2);
+		fake.setSettings(1, 20, imported(2));
+		fake.pageCalls = [];
+
+		await sync();
+
+		expect(fake.pagesFor('post:100')).toEqual([null, '3']);
+		expect(fake.pagesFor('post:101')).toEqual([null]);
+		expect(await storedIds('post:100')).toEqual(fake.ids('post:100').sort());
+		expect(await db.threadSync.get('post:101')).toMatchObject({ complete: true, rev: 2 });
+	});
+
+	it('walks a row from before revisions once when the channel has an import marker', async () => {
+		fake.addChannel(1, 10, 5, 'text', imported());
+		await sync();
+		const row = (await db.threadSync.get('10'))!;
+		await db.threadSync.put({ ...row, rev: undefined });
+		fake.pageCalls = [];
+
+		await sync();
+
+		expect(fake.pagesFor('10')).toEqual([null, '3']);
+		expect(await db.threadSync.get('10')).toMatchObject({ complete: true, rev: 0 });
+		fake.pageCalls = [];
+
+		await sync();
+
+		expect(fake.pageCalls).toEqual([]);
+	});
+
+	it('leaves a row from before revisions alone when the channel was never imported into', async () => {
+		fake.addChannel(1, 10, 5);
+		await sync();
+		const row = (await db.threadSync.get('10'))!;
+		await db.threadSync.put({ ...row, rev: undefined });
+		fake.pageCalls = [];
+
+		await sync();
+
+		expect(fake.pageCalls).toEqual([]);
+	});
+
+	it('overwrites stored messages, so a changed author shows up', async () => {
+		fake.addChannel(1, 10, 5, 'text', imported(1));
+		await sync();
+		const message = fake.threads.get('10')!.messages[4];
+		message.user_id = 9;
+		fake.setSettings(1, 10, imported(2));
+
+		await sync();
+
+		expect((await db.messages.get(message.id))?.user_id).toBe(9);
+	});
+});
+
+describe('forgetSyncedChannels', () => {
+	beforeEach(async () => {
+		fake.addChannel(1, 10, 3);
+		fake.addChannel(1, 11, 3);
+		fake.addChannel(1, 20, 0, 'forum');
+		fake.addPost(1, 20, 100, 'First', 2);
+		fake.addChannel(2, 30, 3);
+		fake.addConversation(7, 3);
+		await sync({ serverIds: [1, 2] });
+	});
+
+	const syncKeys = async () => (await db.threadSync.toArray()).map((r) => r.key).sort();
+
+	it('removes the rows of the channels and of their posts, and keeps every message', async () => {
+		const messages = await db.messages.count();
+
+		await forgetSyncedChannels(1, [10, 20]);
+
+		expect(await syncKeys()).toEqual(['11', '30', 'dm:7'].sort());
+		expect(await db.messages.count()).toBe(messages);
+		expect(await db.posts.count()).toBe(1);
+	});
+
+	it('removes every row of the server when no channels are named', async () => {
+		await forgetSyncedChannels(1, null);
+
+		expect(await syncKeys()).toEqual(['30', 'dm:7']);
+		expect(await storedIds('10')).toHaveLength(3);
+	});
+
+	it('does nothing for an empty list', async () => {
+		await forgetSyncedChannels(1, []);
+
+		expect(await syncKeys()).toHaveLength(5);
 	});
 });

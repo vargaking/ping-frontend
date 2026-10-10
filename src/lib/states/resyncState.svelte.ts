@@ -2,7 +2,7 @@ import { serversState } from './serversState.svelte';
 import { conversationsState } from './conversationsState.svelte';
 import { closeReadNotifications } from '$lib/utils/notificationSweep';
 
-export type ResyncReason = 'reconnect' | 'resume' | 'notification';
+export type ResyncReason = 'reconnect' | 'resume' | 'notification' | 'import';
 
 /** How long the page has to be hidden before coming back counts as a possible gap. */
 export const HIDDEN_RESYNC_MS = 10_000;

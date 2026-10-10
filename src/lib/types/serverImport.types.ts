@@ -133,4 +133,6 @@ export type ServerImportUpdatedFrame = {
 export type ServerImportFinishedFrame = {
 	type: 'server_import_finished';
 	server_id: number;
+	/** Channels the run wrote to that we can view; absent from older servers (= every channel). */
+	channel_ids?: number[];
 };
