@@ -32,10 +32,23 @@ export async function registerUser(context: BrowserContext, name = 'user'): Prom
 	return { id: me.id, username, password: PASSWORD };
 }
 
+/** The server comes back without channels, whether or not the backend seeds default ones. */
 export async function createServer(context: BrowserContext, name: string) {
-	return json<{ id: number; name: string }>(
+	const server = await json<{ id: number; name: string }>(
 		await context.request.post('/servers/', { data: { name } })
 	);
+	await clearChannels(context, server.id);
+	return server;
+}
+
+export async function clearChannels(context: BrowserContext, serverId: number) {
+	const { channels } = await json<{ channels: { id: number }[] }>(
+		await context.request.get(`/servers/${serverId}/channels`)
+	);
+	for (const { id } of channels) {
+		const response = await context.request.delete(`/channels/${id}`);
+		expect(response.status(), `deleting channel ${id}`).toBe(204);
+	}
 }
 
 export async function createCategory(context: BrowserContext, serverId: number, name: string) {
