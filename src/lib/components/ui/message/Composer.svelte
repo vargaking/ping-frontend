@@ -14,7 +14,8 @@
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import {
 		MAX_ATTACHMENTS_PER_MESSAGE,
-		MAX_ATTACHMENT_BYTES,
+		maxAttachmentBytes,
+		formatSizeLimit,
 		formatBytes,
 		uploadAttachment
 	} from '$lib/requests/attachments/uploadAttachment';
@@ -174,8 +175,9 @@
 
 		let overLimit = false;
 		for (const file of files) {
-			if (file.size > MAX_ATTACHMENT_BYTES) {
-				toast.error(`${file.name} is larger than 10 MB`);
+			const cap = maxAttachmentBytes();
+			if (file.size > cap) {
+				toast.error(`${file.name} is larger than ${formatSizeLimit(cap)}`);
 				continue;
 			}
 			if (pending.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
