@@ -9,6 +9,10 @@
 	import type { User } from '$lib/types/auth.types';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
+	import { MessageCodeBlock } from '$lib/editor/codeBlock';
+	import { closeFencedCode, openFencedCode } from '$lib/editor/fenceShortcuts';
+	import { MarkdownPaste } from '$lib/editor/markdownPaste';
+	import { withoutTrailingEmptyParagraphs } from '$lib/editor/trimDocument';
 
 	let {
 		content = '',
@@ -44,7 +48,7 @@
 
 	export function submit() {
 		if (!editor || (editor.isEmpty && !allowEmpty)) return;
-		onSubmit(editor.getJSON());
+		onSubmit(withoutTrailingEmptyParagraphs(editor.getJSON()));
 	}
 
 	export function clear() {
@@ -69,9 +73,11 @@
 
 		const Shortcuts = Extension.create({
 			name: 'messageEditorShortcuts',
+			priority: 1000,
 			addKeyboardShortcuts() {
 				return {
 					Enter: ({ editor }) => {
+						if (openFencedCode(editor) || closeFencedCode(editor)) return true;
 						// Touch keyboards have no Shift+Enter, so Enter is a newline and the send button sends.
 						if (phoneState.touch) return false;
 						const multilineNodes = [
@@ -84,6 +90,10 @@
 						if (multilineNodes.some((node) => editor.isActive(node))) {
 							return false; // let Tiptap insert a newline
 						}
+						submit();
+						return true;
+					},
+					'Mod-Enter': () => {
 						submit();
 						return true;
 					},
@@ -116,13 +126,16 @@
 				if (editor.isEmpty !== untrack(() => isEmpty)) isEmpty = editor.isEmpty;
 			},
 			extensions: [
-				StarterKit,
+				StarterKit.configure({ codeBlock: false }),
+				MessageCodeBlock,
+				MarkdownPaste,
 				Shortcuts,
 				Placeholder.configure({
 					placeholder,
 					emptyEditorClass: 'is-editor-empty'
 				}),
-				Mention.configure({
+				// Above Shortcuts, so Enter and Escape reach an open mention list first.
+				Mention.extend({ priority: 1100 }).configure({
 					HTMLAttributes: {
 						class: 'bg-primary/15 text-primary font-semibold px-1.5 py-0.5 rounded-md'
 					},
