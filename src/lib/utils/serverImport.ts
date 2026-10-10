@@ -109,6 +109,23 @@ export function togglePrivate(picks: PrivateSelection, id: string, on: boolean):
 	return { ...picks, [id]: picks[id] ?? 'only_me' };
 }
 
+/**
+ * What the plan starts with: the stored selection once a start has stored one, otherwise
+ * the private channels an earlier import already brought in, so a newer export keeps them
+ * up to date without ticking them again.
+ */
+export function initialPicks(
+	imp: Pick<Import, 'status' | 'plan' | 'private_channels'>
+): PrivateSelection {
+	const stored = imp.private_channels ?? {};
+	if (imp.status !== 'ready' || !imp.plan || Object.keys(stored).length) return { ...stored };
+	return Object.fromEntries(
+		privateChoices(imp.plan)
+			.filter((c) => c.private_action === 'existing')
+			.map((c) => [c.source_id, 'only_me' as const])
+	);
+}
+
 export function setAllPrivate(plan: Plan, picks: PrivateSelection, on: boolean): PrivateSelection {
 	if (!on) return {};
 	return Object.fromEntries(

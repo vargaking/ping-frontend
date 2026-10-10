@@ -12,6 +12,7 @@
 		count,
 		existingLine,
 		importedTotals,
+		initialPicks,
 		fileProblem,
 		mappingChanged,
 		mappingOf,
@@ -103,11 +104,10 @@
 		mapping = mappingOf(imp.authors);
 	});
 
-	// A new import starts from the selection the server stored for it.
 	$effect(() => {
 		if (!imp || imp.id === syncedPicksFor) return;
 		syncedPicksFor = imp.id;
-		privatePicks = { ...(imp.private_channels ?? {}) };
+		privatePicks = initialPicks(imp);
 	});
 
 	// Move on from leftovers of one state when another takes over.

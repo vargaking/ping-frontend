@@ -25,6 +25,7 @@ import {
 	platformName,
 	privateChoices,
 	setAllPrivate,
+	initialPicks,
 	setVisibility,
 	togglePrivate,
 	totalsLine,
@@ -289,6 +290,22 @@ describe('private picks', () => {
 			}
 		);
 		expect(setAllPrivate(planWithPrivate(), { '103': 'everyone' }, false)).toEqual({});
+	});
+
+	it('starts with the private channels an earlier import brought in', () => {
+		const ready = { status: 'ready' as const, plan: planWithPrivate(), private_channels: {} };
+		expect(initialPicks(ready)).toEqual({ '107': 'only_me' });
+		expect(initialPicks({ ...ready, private_channels: undefined })).toEqual({ '107': 'only_me' });
+	});
+
+	it('starts with the stored selection once there is one', () => {
+		const stored = { '103': 'everyone' as const };
+		expect(
+			initialPicks({ status: 'ready', plan: planWithPrivate(), private_channels: stored })
+		).toEqual(stored);
+		expect(
+			initialPicks({ status: 'failed', plan: planWithPrivate(), private_channels: {} })
+		).toEqual({});
 	});
 
 	it('changes who sees a channel without touching the rest', () => {
