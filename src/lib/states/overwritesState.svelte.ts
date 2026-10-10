@@ -13,6 +13,8 @@ type TargetKey = `${OverwriteTarget['kind']}:${number}`;
 type RowKey = `${OverwriteSubject['kind']}:${number}`;
 /** `intent` is the row the user asked for, `changed` the bits they touched while it was unsaved. */
 type Pending = { intent: Bits; changed: bigint };
+/** The rows of one target waiting for their write, oldest click first. */
+type Chain = { queue: RowKey[]; running: boolean };
 
 const targetKey = (target: OverwriteTarget): TargetKey => `${target.kind}:${target.id}`;
 const rowKey = (subject: OverwriteSubject): RowKey => `${subject.kind}:${subject.id}`;
@@ -30,7 +32,7 @@ function subjectOf(key: RowKey): OverwriteSubject {
 class OverwritesState {
 	private saved: Record<TargetKey, Overwrites> = $state({});
 	private pending: Record<TargetKey, Record<RowKey, Pending>> = $state({});
-	private sending = new Set<string>();
+	private chains = new Map<TargetKey, Chain>();
 	/** Clicks not yet covered by a request; the request that carries them settles them. */
 	private waiters = new Map<string, ((saved: boolean) => void)[]>();
 	private loads = new Map<TargetKey, { seq: number; fresh: Map<RowKey, Bits> }>();
@@ -71,7 +73,8 @@ class OverwritesState {
 	}
 
 	/**
-	 * Show `next` at once and save it after any write already in flight for that row.
+	 * Show `next` at once and save it after the writes already waiting for this target, one at a
+	 * time in click order. A row's newest click replaces its own unsent one and keeps its place.
 	 * `changed` is the bits the click touched. Resolves true once saved, false when rolled back.
 	 */
 	save(
@@ -92,7 +95,11 @@ class OverwritesState {
 		const saved = new Promise<boolean>((resolve) => {
 			this.waiters.set(id, [...(this.waiters.get(id) ?? []), resolve]);
 		});
-		if (!this.sending.has(id)) void this.send(target, subject);
+
+		let chain = this.chains.get(key);
+		if (!chain) this.chains.set(key, (chain = { queue: [], running: false }));
+		if (!chain.queue.includes(rk)) chain.queue.push(rk);
+		if (!chain.running) void this.drain(target, chain);
 		return saved;
 	}
 
@@ -111,43 +118,51 @@ class OverwritesState {
 		this.loads.clear();
 	}
 
-	private async send(target: OverwriteTarget, subject: OverwriteSubject) {
+	private async drain(target: OverwriteTarget, chain: Chain) {
+		chain.running = true;
+		try {
+			for (let rk = chain.queue.shift(); rk; rk = chain.queue.shift()) {
+				await this.send(target, subjectOf(rk), chain);
+			}
+		} finally {
+			chain.running = false;
+			const key = targetKey(target);
+			if (this.chains.get(key) === chain) this.chains.delete(key);
+		}
+	}
+
+	/** Writes the row's newest intent. A failure rolls back this row only. */
+	private async send(target: OverwriteTarget, subject: OverwriteSubject, chain: Chain) {
 		const key = targetKey(target);
 		const rk = rowKey(subject);
 		const id = `${key}|${rk}`;
-		this.sending.add(id);
-		try {
-			for (;;) {
-				const intent = this.pending[key]?.[rk]?.intent;
-				if (!intent) return;
-				const bits = { allow: intent.allow, deny: intent.deny };
-				const covered = this.takeWaiters(id);
-				try {
-					this.store(
-						target,
-						subject,
-						rowOf(await setOverwrite(target, subject, bits.allow, bits.deny))
-					);
-				} catch (e) {
-					delete this.pending[key][rk];
-					this.settle(covered, false);
-					this.settle(this.takeWaiters(id), false);
-					toast.error(`Couldn't save permissions: ${getErrorMessage(e)}`, {
-						id: 'overwrite-save'
-					});
-					return;
-				}
-				this.settle(covered, true);
-				const latest = this.pending[key]?.[rk];
-				if (!latest || sameBits(latest.intent, bits)) {
-					delete this.pending[key]?.[rk];
-					this.settle(this.takeWaiters(id), true);
-					return;
-				}
-			}
-		} finally {
-			this.sending.delete(id);
+		const intent = this.pending[key]?.[rk]?.intent;
+		if (!intent) {
+			this.settle(this.takeWaiters(id), false);
+			return;
 		}
+		if (sameBits(intent, rowBits(this.saved[key] ?? null, subject))) {
+			delete this.pending[key][rk];
+			this.settle(this.takeWaiters(id), true);
+			return;
+		}
+		const covered = this.takeWaiters(id);
+		try {
+			this.store(
+				target,
+				subject,
+				rowOf(await setOverwrite(target, subject, intent.allow, intent.deny))
+			);
+		} catch (e) {
+			delete this.pending[key]?.[rk];
+			chain.queue = chain.queue.filter((queued) => queued !== rk);
+			this.settle(covered, false);
+			this.settle(this.takeWaiters(id), false);
+			toast.error(`Couldn't save permissions: ${getErrorMessage(e)}`, { id: 'overwrite-save' });
+			return;
+		}
+		this.settle(covered, true);
+		if (!chain.queue.includes(rk)) delete this.pending[key]?.[rk];
 	}
 
 	private takeWaiters(id: string) {

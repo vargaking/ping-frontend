@@ -114,21 +114,65 @@ describe('save', () => {
 		expect(overwritesState.pendingBits(channel, everyone)).toBe(0n);
 	});
 
-	it('sends writes for two rows at the same time', async () => {
+	it('sends the rows of one target one at a time, in click order', async () => {
 		await loaded();
 		const a = deferred<RoleOverwrite>();
 		const b = deferred<RoleOverwrite>();
 		setOverwrite.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
 
+		const first = overwritesState.save(channel, mod, { allow: VIEW, deny: 0n }, VIEW);
+		const second = overwritesState.save(channel, everyone, { allow: 0n, deny: VIEW }, VIEW);
+
+		expect(setOverwrite).toHaveBeenCalledTimes(1);
+		expect(setOverwrite).toHaveBeenLastCalledWith(channel, mod, VIEW, 0n);
+		expect(bitsOf(channel, everyone)).toEqual({ allow: 0n, deny: VIEW });
+		expect(overwritesState.pendingBits(channel, everyone)).toBe(VIEW);
+
+		a.resolve(roleRow(11, VIEW, 0n));
+		await vi.waitFor(() => expect(setOverwrite).toHaveBeenCalledTimes(2));
+		expect(setOverwrite).toHaveBeenLastCalledWith(channel, everyone, 0n, VIEW);
+
+		b.resolve(roleRow(10, 0n, VIEW));
+		await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+	});
+
+	it('keeps a row where it queued when its newest click replaces the earlier one', async () => {
+		await loaded();
+		const head = deferred<RoleOverwrite>();
+		setOverwrite
+			.mockReturnValueOnce(head.promise)
+			.mockResolvedValueOnce(roleRow(11, SEND, 0n))
+			.mockResolvedValueOnce(roleRow(10, 0n, VIEW));
+		const other: OverwriteSubject = { kind: 'roles', id: 12 };
+
+		const a = overwritesState.save(channel, other, { allow: VIEW, deny: 0n }, VIEW);
+		const b = overwritesState.save(channel, mod, { allow: VIEW, deny: 0n }, VIEW);
+		const c = overwritesState.save(channel, everyone, { allow: 0n, deny: VIEW }, VIEW);
+		const d = overwritesState.save(channel, mod, { allow: SEND, deny: 0n }, SEND);
+
+		head.resolve(roleRow(12, VIEW, 0n));
+		await expect(Promise.all([a, b, c, d])).resolves.toEqual([true, true, true, true]);
+		expect(setOverwrite.mock.calls.map((call) => [call[1].id, call[2], call[3]])).toEqual([
+			[12, VIEW, 0n],
+			[11, SEND, 0n],
+			[10, 0n, VIEW]
+		]);
+	});
+
+	it('sends the writes of different targets at the same time', async () => {
+		await loaded();
+		await loaded(empty, group);
+		const a = deferred<RoleOverwrite>();
+		const b = deferred<RoleOverwrite>();
+		setOverwrite.mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise);
+
 		const first = overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND);
-		const second = overwritesState.save(channel, mod, { allow: VIEW, deny: 0n }, VIEW);
+		const second = overwritesState.save(group, everyone, { allow: VIEW, deny: 0n }, VIEW);
 
 		expect(setOverwrite).toHaveBeenCalledTimes(2);
-		expect(overwritesState.pendingBits(channel, everyone)).toBe(SEND);
-		expect(overwritesState.pendingBits(channel, mod)).toBe(VIEW);
 
 		a.resolve(roleRow(10, SEND, 0n));
-		b.resolve(roleRow(11, VIEW, 0n));
+		b.resolve(roleRow(10, VIEW, 0n));
 		await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
 	});
 
@@ -181,6 +225,50 @@ describe('save', () => {
 
 		await expect(Promise.all([a, b])).resolves.toEqual([true, false]);
 		expect(bitsOf(channel, everyone)).toEqual({ allow: SEND, deny: 0n });
+	});
+
+	it('still sends a queued write for another row when an earlier row fails', async () => {
+		await loaded();
+		const first = deferred<RoleOverwrite>();
+		setOverwrite.mockReturnValueOnce(first.promise).mockResolvedValueOnce(roleRow(10, 0n, VIEW));
+
+		const a = overwritesState.save(channel, mod, { allow: VIEW, deny: 0n }, VIEW);
+		const b = overwritesState.save(channel, everyone, { allow: 0n, deny: VIEW }, VIEW);
+		const c = overwritesState.save(channel, mod, { allow: SEND, deny: 0n }, SEND);
+
+		first.reject(new Error('forbidden'));
+		await expect(Promise.all([a, b, c])).resolves.toEqual([false, true, false]);
+
+		expect(setOverwrite).toHaveBeenCalledTimes(2);
+		expect(setOverwrite).toHaveBeenLastCalledWith(channel, everyone, 0n, VIEW);
+		expect(bitsOf(channel, mod)).toEqual({ allow: 0n, deny: 0n });
+		expect(bitsOf(channel, everyone)).toEqual({ allow: 0n, deny: VIEW });
+		expect(toastError).toHaveBeenCalledTimes(1);
+	});
+
+	it('settles false and frees the row when the session is reset under a failing write', async () => {
+		await loaded();
+		const put = deferred<RoleOverwrite>();
+		setOverwrite.mockReturnValueOnce(put.promise);
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+
+		const saved = overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND);
+		const queued = overwritesState.save(channel, everyone, { allow: VIEW, deny: 0n }, VIEW);
+		overwritesState.reset();
+		put.reject(new Error('Unauthorized'));
+
+		await expect(Promise.all([saved, queued])).resolves.toEqual([false, false]);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		process.off('unhandledRejection', onUnhandled);
+		expect(unhandled).toEqual([]);
+
+		await loaded();
+		setOverwrite.mockResolvedValueOnce(roleRow(10, SEND, 0n));
+		await expect(
+			overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND)
+		).resolves.toBe(true);
 	});
 
 	it('removes the row when the server answers 204', async () => {

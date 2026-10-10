@@ -153,7 +153,7 @@
 		if (!scope || !everyone || !everyoneSubject) return null;
 		if (everyoneLocked) return "You can't change @everyone, so you can't change this.";
 		if (privateOn || !losesView(everyoneSubject, privateRow(scope, everyone.id, true))) return null;
-		return `Turning this on would take this ${noun} away from you. Allow View for one of your roles or for yourself below first.`;
+		return `Turning this on would take this ${noun} away from you. Allow View for one of your lower roles first, or ask someone above you.`;
 	});
 
 	type Entry = {
