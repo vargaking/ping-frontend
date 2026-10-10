@@ -44,8 +44,108 @@ export const fencedCode: BlockRule = (lines, start) => {
 	return { node, next };
 };
 
-/** In order; the first rule that reads a block wins. Lines no rule claims become paragraphs. */
-export const blockRules: BlockRule[] = [fencedCode];
+const paragraph = (text: string): JSONContent => ({
+	type: 'paragraph',
+	content: [{ type: 'text', text }]
+});
+
+const HORIZONTAL_RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+const HEADING = /^ {0,3}(#{1,6})[ \t]+(\S.*?)[ \t]*$/;
+const QUOTE = /^ {0,3}>(?:[ \t](.*))?$/;
+const LIST_ITEM = /^([ \t]*)(?:([-*+])|(\d{1,9})[.)])[ \t]+(\S.*?)[ \t]*$/;
+const TASK_ITEM = /^\[[ xX]\](?:\s|$)/;
+const TAB_WIDTH = 4;
+const MAX_START_INDENT = 3;
+
+export const horizontalRule: BlockRule = (lines, start) =>
+	HORIZONTAL_RULE.test(lines[start]) ? { node: { type: 'horizontalRule' }, next: start + 1 } : null;
+
+export const heading: BlockRule = (lines, start) => {
+	const match = HEADING.exec(lines[start]);
+	if (!match) return null;
+	return {
+		node: {
+			type: 'heading',
+			attrs: { level: match[1].length },
+			content: [{ type: 'text', text: match[2] }]
+		},
+		next: start + 1
+	};
+};
+
+export const blockquote: BlockRule = (lines, start) => {
+	const content: JSONContent[] = [];
+	let next = start;
+	for (; next < lines.length; next++) {
+		const match = QUOTE.exec(lines[next]);
+		if (!match) break;
+		const text = (match[1] ?? '').trim();
+		if (text) content.push(paragraph(text));
+	}
+	return content.length ? { node: { type: 'blockquote', content }, next } : null;
+};
+
+type ListItem = { indent: number; ordered: boolean; number: number; text: string };
+
+function readListItem(line: string): ListItem | null {
+	const match = LIST_ITEM.exec(line);
+	if (!match || TASK_ITEM.test(match[4])) return null;
+	let indent = 0;
+	for (const char of match[1]) indent += char === '\t' ? TAB_WIDTH : 1;
+	return { indent, ordered: match[3] !== undefined, number: Number(match[3] ?? 0), text: match[4] };
+}
+
+function listNode(items: ListItem[]): JSONContent {
+	let at = 0;
+
+	const read = (): JSONContent => {
+		const head = items[at];
+		const entries: JSONContent[] = [];
+		const list: JSONContent = {
+			type: head.ordered ? 'orderedList' : 'bulletList',
+			content: entries
+		};
+		if (head.ordered && head.number !== 1) list.attrs = { start: head.number };
+
+		while (at < items.length) {
+			const item = items[at];
+			if (item.indent < head.indent) break;
+			if (item.indent > head.indent) {
+				entries[entries.length - 1].content!.push(read());
+				continue;
+			}
+			if (item.ordered !== head.ordered) break;
+			entries.push({ type: 'listItem', content: [paragraph(item.text)] });
+			at++;
+		}
+		return list;
+	};
+
+	return read();
+}
+
+export const list: BlockRule = (lines, start) => {
+	const first = readListItem(lines[start]);
+	if (!first || first.indent > MAX_START_INDENT) return null;
+
+	const items = [first];
+	let next = start + 1;
+	for (let i = start + 1; i < lines.length; i++) {
+		if (!lines[i].trim()) continue;
+		const item = readListItem(lines[i]);
+		if (!item || item.indent < first.indent) break;
+		if (item.indent === first.indent && item.ordered !== first.ordered) break;
+		items.push(item);
+		next = i + 1;
+	}
+	return { node: listNode(items), next };
+};
+
+/**
+ * In order; the first rule that reads a block wins. Lines no rule claims become paragraphs.
+ * Only nodes the server accepts: tables, images, task lists and HTML stay as text.
+ */
+export const blockRules: BlockRule[] = [fencedCode, horizontalRule, heading, blockquote, list];
 
 /** The blocks of a pasted text, or null when no rule matched (the editor's own paste is used then). */
 export function markdownToBlocks(
@@ -68,7 +168,7 @@ export function markdownToBlocks(
 			matched = true;
 			continue;
 		}
-		if (lines[i]) blocks.push({ type: 'paragraph', content: [{ type: 'text', text: lines[i] }] });
+		if (lines[i]) blocks.push(paragraph(lines[i]));
 		i++;
 	}
 

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { Editor, Extension, type FocusPosition, type JSONContent } from '@tiptap/core';
-	import StarterKit from '@tiptap/starter-kit';
 	import Mention from '@tiptap/extension-mention';
 	import Placeholder from '@tiptap/extension-placeholder';
 	import tippy, { type Instance } from 'tippy.js';
@@ -9,8 +8,9 @@
 	import type { User } from '$lib/types/auth.types';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
-	import { MessageCodeBlock } from '$lib/editor/codeBlock';
+	import { contentExtensions } from '$lib/editor/extensions';
 	import { closeFencedCode, openFencedCode } from '$lib/editor/fenceShortcuts';
+	import { MarkdownLinks } from '$lib/editor/markdownLinks';
 	import { MarkdownPaste } from '$lib/editor/markdownPaste';
 	import { withoutTrailingEmptyParagraphs } from '$lib/editor/trimDocument';
 
@@ -130,9 +130,9 @@
 				if (editor.isEmpty !== untrack(() => isEmpty)) isEmpty = editor.isEmpty;
 			},
 			extensions: [
-				StarterKit.configure({ codeBlock: false }),
-				MessageCodeBlock,
+				...contentExtensions,
 				MarkdownPaste,
+				MarkdownLinks,
 				Shortcuts,
 				Placeholder.configure({
 					placeholder,

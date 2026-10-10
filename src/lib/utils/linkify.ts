@@ -68,3 +68,27 @@ export function firstLinkHref(text: string): string | null {
 	const first = linkify(text).find((segment) => segment.kind === 'link');
 	return first?.kind === 'link' ? first.href : null;
 }
+
+const URL_TEXT = /^https?:\/\/\S+$/i;
+const DOMAIN_TEXT = /^(?:[\p{L}\p{N}-]+\.)+(?:\p{L}{2,}|xn--[a-z0-9-]+)(?::\d+)?(?:[/?#]\S*)?$/iu;
+
+function hostOf(address: string): string | null {
+	try {
+		const url = new URL(/^https?:\/\//i.test(address) ? address : `https://${address}`);
+		return url.hostname.replace(/^www\./, '');
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * What to show for a link. Text that reads as an address of its own is only kept when it
+ * points at the same host as the link; otherwise the real target is shown instead.
+ */
+export function linkLabel(text: string, href: string): string {
+	const shown = text.trim();
+	if (!URL_TEXT.test(shown) && !DOMAIN_TEXT.test(shown)) return text;
+
+	const shownHost = hostOf(shown);
+	return shownHost !== null && shownHost === hostOf(href) ? text : href;
+}

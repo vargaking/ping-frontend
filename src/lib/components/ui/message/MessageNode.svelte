@@ -2,7 +2,7 @@
 	import type { JSONContent } from '@tiptap/core';
 	import MessageNode from './MessageNode.svelte';
 	import CodeBlock from './CodeBlock.svelte';
-	import { linkify, safeHref } from '$lib/utils/linkify';
+	import { linkLabel, linkify, safeHref } from '$lib/utils/linkify';
 
 	let { node }: { node: JSONContent | string } = $props();
 
@@ -37,6 +37,8 @@
 			<strong>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</strong>
 		{:else if mark.type === 'italic'}
 			<em>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</em>
+		{:else if mark.type === 'underline'}
+			<u>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</u>
 		{:else if mark.type === 'strike'}
 			<s>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</s>
 		{:else if mark.type === 'code'}
@@ -47,7 +49,12 @@
 			{@const href = safeHref(mark.attrs?.href)}
 			{#if href}
 				<a {href} target="_blank" rel="noopener noreferrer nofollow" class={linkClass}
-					>{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}</a
+					>{@render renderMarks(
+						marksRemaining,
+						currentIndex + 1,
+						linkLabel(text, href),
+						autolink
+					)}</a
 				>
 			{:else}
 				{@render renderMarks(marksRemaining, currentIndex + 1, text, autolink)}
