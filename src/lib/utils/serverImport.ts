@@ -87,11 +87,14 @@ export function existingLine(existing: number): string | null {
 }
 
 export function channelAction(channel: PlanChannel): string {
-	if (channel.action === 'create') return 'New channel';
-	if (channel.action === 'existing') {
-		const prefix = channel.type === 'voice' ? '' : '#';
-		return `Into existing ${prefix}${channel.target_name ?? channel.name}`;
+	const prefix = channel.type === 'voice' ? '' : '#';
+	const name = `${prefix}${channel.target_name ?? channel.name}`;
+	if (channel.action === 'create') {
+		return channel.name_taken
+			? `New channel (${name} already exists, this adds a second one)`
+			: 'New channel';
 	}
+	if (channel.action === 'existing') return `Continue in ${name}`;
 	return channel.reason ? `Skipped: ${channel.reason}` : 'Skipped';
 }
 

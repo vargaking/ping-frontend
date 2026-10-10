@@ -276,19 +276,29 @@ describe('plan formatting', () => {
 	it('says what happens to a channel', () => {
 		expect(channelAction(channel())).toBe('New channel');
 		expect(channelAction(channel({ action: 'existing', target_name: 'chat' }))).toBe(
-			'Into existing #chat'
+			'Continue in #chat'
 		);
 		expect(channelAction(channel({ action: 'skipped', reason: 'private' }))).toBe(
 			'Skipped: private'
 		);
 	});
 
-	it('leaves the # off an existing voice channel', () => {
+	it('warns when a new channel reuses a name', () => {
+		expect(channelAction(channel({ name: 'general', name_taken: true }))).toBe(
+			'New channel (#general already exists, this adds a second one)'
+		);
+		expect(channelAction(channel({ name: 'Lounge', type: 'voice', name_taken: true }))).toBe(
+			'New channel (Lounge already exists, this adds a second one)'
+		);
+		expect(channelAction(channel({ name: 'general', name_taken: false }))).toBe('New channel');
+	});
+
+	it('leaves the # off a continued voice channel', () => {
 		expect(
 			channelAction(channel({ action: 'existing', target_name: 'Lounge', type: 'voice' }))
-		).toBe('Into existing Lounge');
+		).toBe('Continue in Lounge');
 		expect(channelAction(channel({ action: 'existing', target_name: 'chat', type: 'forum' }))).toBe(
-			'Into existing #chat'
+			'Continue in #chat'
 		);
 	});
 
