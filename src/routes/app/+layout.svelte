@@ -20,6 +20,7 @@
 	import { resyncState } from '$lib/states/resyncState.svelte';
 	import { updateState } from '$lib/states/updateState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { whatsNewState } from '$lib/states/whatsNewState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
 	import { closeReadNotifications, readThreadTags } from '$lib/utils/notificationSweep';
 	import { desktop } from '$lib/desktop';
@@ -85,6 +86,17 @@
 		void serverIdsKey;
 		void resyncState.generation;
 		untrack(() => historySyncState.request());
+	});
+
+	// Logging out clears the user, which drops the previous account's state.
+	$effect(() => {
+		const id = usersState.loggedInUser?.id ?? null;
+		untrack(() => whatsNewState.sync(id));
+	});
+
+	$effect(() => {
+		if (resyncState.generation === 0) return;
+		untrack(() => void whatsNewState.refresh());
 	});
 
 	$effect(() => {
