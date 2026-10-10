@@ -72,8 +72,12 @@ class ShareDialogState {
 			const id = this.armed;
 			this.armed = null;
 			if (sources.some((s) => s.id === id)) return Promise.resolve(id);
-			// Some shells list again for the capture, with new ids for the same pick.
-			if (sources.length === 1) return Promise.resolve(sources[0].id);
+			// Some shells list again for the capture, with new ids for the same pick. A lone
+			// window is that re-listing; Windows and X11 always list screens, so a lone screen
+			// means the chosen window closed.
+			if (sources.length === 1 && sources[0].kind === 'window') {
+				return Promise.resolve(sources[0].id);
+			}
 			this.missedArmed = sources.length > 0;
 			return Promise.resolve(null);
 		}

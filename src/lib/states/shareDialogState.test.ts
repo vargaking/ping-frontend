@@ -92,6 +92,19 @@ describe('a capture the dialog armed', () => {
 		expect(mocks.toastError).not.toHaveBeenCalled();
 	});
 
+	it('does not fall back to a lone screen when the chosen window is gone', async () => {
+		useShell({ listing: [source('window')] });
+		await showAndWait();
+		shareDialogState.selected = 'window';
+		const answer = shellAsks([source('screen', 'screen')]);
+
+		await shareDialogState.share();
+
+		expect(answer.id).toBeNull();
+		expect(mocks.toastError).toHaveBeenCalledTimes(1);
+		expect(mocks.toastError.mock.calls[0][0]).toMatch(/no longer available/);
+	});
+
 	it('declines and says so when the chosen id is gone among several sources', async () => {
 		useShell({ listing: [source('old')] });
 		await showAndWait();
