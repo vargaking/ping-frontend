@@ -6,6 +6,7 @@
 	import type { AdminServer, AdminStats } from '$lib/types/admin.types';
 	import * as Card from '$lib/components/ui/card/index';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
+	import StatsHistory from '$lib/components/admin/StatsHistory.svelte';
 
 	const POLL_MS = 10_000;
 	const STALE_AFTER_MS = 30_000;
@@ -349,4 +350,6 @@
 			</Card.Root>
 		</div>
 	{/if}
+
+	<StatsHistory />
 </div>
