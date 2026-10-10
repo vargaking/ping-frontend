@@ -37,6 +37,17 @@ describe('ComposerDraftState', () => {
 		expect(state.takeRestored('channel:1', 2000)).toEqual(content);
 	});
 
+	it('discards a saved draft', () => {
+		const storage = memoryStorage();
+		const state = new ComposerDraftState(() => storage);
+		state.register(composer());
+		state.saveForReload(1000);
+
+		state.discardReloadDraft();
+
+		expect(state.takeRestored('channel:1', 2000)).toBeUndefined();
+	});
+
 	it('reads the thread key when saving, not when registering', () => {
 		const storage = memoryStorage();
 		const state = new ComposerDraftState(() => storage);

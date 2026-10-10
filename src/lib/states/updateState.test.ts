@@ -8,6 +8,7 @@ import {
 	UpdateState,
 	type UpdateDeps
 } from './updateState.svelte';
+import { ComposerDraftState } from './composerDraftState.svelte';
 
 vi.mock('$app/state', () => ({ updated: { current: false, check: vi.fn() } }));
 vi.mock('$app/environment', () => ({ version: 'page-v' }));
@@ -18,7 +19,13 @@ function deferred<T>() {
 	return { promise, resolve };
 }
 
-function setup(options: { registration?: FakeRegistration | null; serverIsNewer?: boolean } = {}) {
+function setup(
+	options: {
+		registration?: FakeRegistration | null;
+		serverIsNewer?: boolean;
+		controlled?: boolean;
+	} = {}
+) {
 	const registration =
 		options.registration === undefined ? new FakeRegistration() : options.registration;
 	const changes = controllerChanges();
@@ -33,10 +40,12 @@ function setup(options: { registration?: FakeRegistration | null; serverIsNewer?
 		checkVersion: vi.fn(async () => options.serverIsNewer ?? false),
 		watchUpdated: vi.fn((callback: () => void) => (onUpdated = callback)),
 		getRegistration: vi.fn(async () => registration),
+		hasController: vi.fn(() => options.controlled ?? true),
 		onControllerChange: changes.subscribe,
 		askVersion: vi.fn(async (worker: FakeWorker) => workerVersions.get(worker) ?? null),
 		online: vi.fn(() => online),
 		saveDraft: vi.fn(() => void calls.push('saveDraft')),
+		discardDraft: vi.fn(() => void calls.push('discardDraft')),
 		reload: vi.fn(() => void calls.push('reload')),
 		now: vi.fn(() => clock)
 	};
@@ -204,6 +213,16 @@ describe('UpdateState finding a version', () => {
 		expect(state.phase).toBe('ready');
 	});
 
+	it('shows the notice at once in a page no worker controls, without waiting for an install', async () => {
+		const { state, registration } = setup({ serverIsNewer: true, controlled: false });
+
+		await state.check();
+		await flush();
+
+		expect(state.phase).toBe('ready');
+		expect(registration!.update).not.toHaveBeenCalled();
+	});
+
 	it('keeps the update available after the notice is dismissed', async () => {
 		const { state } = setup({ registration: null, serverIsNewer: true });
 		await state.check();
@@ -321,6 +340,66 @@ describe('UpdateState reload', () => {
 
 		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS);
 		expect(state.phase).toBe('ready');
+	});
+});
+
+describe('UpdateState reload that does not happen', () => {
+	function memoryStorage() {
+		const data = new Map<string, string>();
+		return {
+			getItem: (key: string) => data.get(key) ?? null,
+			setItem: (key: string, value: string) => void data.set(key, value),
+			removeItem: (key: string) => void data.delete(key)
+		};
+	}
+
+	async function readyWithOpenComposer() {
+		const setupResult = setup({ registration: null, serverIsNewer: true });
+		const text = { type: 'doc', content: [{ type: 'paragraph' }] };
+		const storage = memoryStorage();
+		const drafts = new ComposerDraftState(() => storage);
+		drafts.register({
+			threadKey: () => 'channel:1',
+			content: () => text,
+			hasAttachments: () => false
+		});
+		setupResult.deps.saveDraft.mockImplementation(() => void drafts.saveForReload());
+		setupResult.deps.discardDraft.mockImplementation(() => void drafts.discardReloadDraft());
+		await setupResult.state.check();
+		await flush();
+		return { ...setupResult, drafts, text };
+	}
+
+	it('removes the saved draft when the page is still alive at the stuck timeout', async () => {
+		const { state, drafts, deps } = await readyWithOpenComposer();
+
+		await state.reload();
+		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS);
+
+		expect(state.phase).toBe('ready');
+		expect(deps.discardDraft).toHaveBeenCalledTimes(1);
+		expect(drafts.takeRestored('channel:1')).toBeUndefined();
+	});
+
+	it('keeps the saved draft until the timeout while the reload may still commit', async () => {
+		const { state, drafts, deps, text } = await readyWithOpenComposer();
+
+		await state.reload();
+		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS - 1);
+
+		expect(deps.discardDraft).not.toHaveBeenCalled();
+		expect(drafts.takeRestored('channel:1')).toEqual(text);
+	});
+
+	it('saves the draft again on a second Reload after a stuck one', async () => {
+		const { state, deps } = await readyWithOpenComposer();
+
+		await state.reload();
+		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS);
+		await state.reload();
+
+		expect(deps.saveDraft).toHaveBeenCalledTimes(2);
+		expect(deps.discardDraft).toHaveBeenCalledTimes(1);
 	});
 });
 

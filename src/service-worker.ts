@@ -17,6 +17,7 @@ import { notificationBadgeCount, setAppBadge } from '$lib/utils/appBadge';
 import { isApplePushEndpoint } from '$lib/utils/pushEndpoint';
 import {
 	IMMUTABLE_PREFIX,
+	INSTALLING_MARKER,
 	SKIP_WAITING,
 	VERSION_QUERY,
 	staleShellCaches
@@ -249,15 +250,31 @@ async function resubscribe(event: SubscriptionChangeEvent) {
 async function precache() {
 	const cache = await caches.open(CACHE);
 	// One failed file must not block the worker update; push depends on it.
-	await Promise.allSettled([SHELL, ...PRECACHED].map((path) => cache.add(path)));
+	await Promise.allSettled([
+		cache.put(INSTALLING_MARKER, new Response()),
+		...[SHELL, ...PRECACHED].map((path) => cache.add(path))
+	]);
+}
+
+async function wasActivated(key: string): Promise<boolean> {
+	return !(await (await caches.open(key)).match(INSTALLING_MARKER));
 }
 
 async function dropOldCaches() {
+	await (await caches.open(CACHE)).delete(INSTALLING_MARKER);
 	const [keys, windows] = await Promise.all([
 		caches.keys(),
 		sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
 	]);
-	await Promise.all(staleShellCaches(keys, CACHE, windows.length).map((key) => caches.delete(key)));
+	const shell = await Promise.all(
+		keys.map(async (key) => ({
+			key,
+			activated: key === CACHE || !key.startsWith('shell-') || (await wasActivated(key))
+		}))
+	);
+	await Promise.all(
+		staleShellCaches(shell, CACHE, windows.length).map((key) => caches.delete(key))
+	);
 }
 
 async function navigate(request: Request): Promise<Response> {

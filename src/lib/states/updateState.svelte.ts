@@ -25,10 +25,13 @@ export type UpdateDeps = {
 	/** Calls back once the background poll has found a different build. */
 	watchUpdated: (onUpdated: () => void) => void;
 	getRegistration: () => Promise<RegistrationLike | null>;
+	/** False for a page no worker controls: a new worker activates by itself, so none ever waits. */
+	hasController: () => boolean;
 	onControllerChange: (listener: () => void) => () => void;
 	askVersion: (worker: WorkerLike) => Promise<string | null>;
 	online: () => boolean;
 	saveDraft: () => void;
+	discardDraft: () => void;
 	reload: () => void;
 	now: () => number;
 };
@@ -103,7 +106,9 @@ export class UpdateState {
 		this.deps.reload();
 		// A beforeunload prompt answered with "stay" leaves this page running.
 		setTimeout(() => {
-			if (this.phase === 'reloading') this.phase = 'ready';
+			if (this.phase !== 'reloading') return;
+			this.phase = 'ready';
+			this.deps.discardDraft();
 		}, RELOAD_STUCK_MS);
 	}
 
@@ -115,6 +120,10 @@ export class UpdateState {
 	}
 
 	private async prepare() {
+		if (!this.deps.hasController()) {
+			this.phase = 'ready';
+			return;
+		}
 		await this.startup;
 		const registration = await this.deps.getRegistration();
 		for (const delay of [0, ...PREPARE_RETRY_MS]) {
@@ -198,6 +207,7 @@ export const updateState = new UpdateState({
 			return null;
 		}
 	},
+	hasController: () => serviceWorkers()?.controller != null,
 	onControllerChange: (listener) => {
 		const container = serviceWorkers();
 		container?.addEventListener('controllerchange', listener);
@@ -206,6 +216,7 @@ export const updateState = new UpdateState({
 	askVersion: (worker) => askWorkerVersion(worker),
 	online: () => navigator.onLine,
 	saveDraft: () => composerDraftState.saveForReload(),
+	discardDraft: () => composerDraftState.discardReloadDraft(),
 	reload: () => location.reload(),
 	now: () => Date.now()
 });
