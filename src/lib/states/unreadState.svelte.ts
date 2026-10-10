@@ -1,7 +1,22 @@
 import { getServerChannelSnapshot } from '$lib/requests/channels/getServerChannelSnapshot';
 import { markChannelRead } from '$lib/requests/channels/markChannelRead';
+import { markConversationRead } from '$lib/requests/conversations/markConversationRead';
 import type { Channel } from '$lib/types/channel.types';
+import { channelThreadKey, directThreadKey } from '$lib/utils/threadKeys';
 import { conversationsState } from './conversationsState.svelte';
+
+/** A thread with its own read marker. A MessageTarget without a post fits. */
+export type ReadTarget =
+	| { kind: 'channel'; channelId: number }
+	| { kind: 'direct'; conversationId: number };
+
+const READ_SEND_DELAY_MS = 750;
+
+function readKey(target: ReadTarget): string {
+	return target.kind === 'channel'
+		? channelThreadKey(target.channelId)
+		: directThreadKey(target.conversationId);
+}
 
 type ChannelUnread = {
 	serverId: number;
@@ -20,15 +35,30 @@ class UnreadState {
 	/** Keyed by channel id. */
 	private channels: Record<number, ChannelUnread> = $state({});
 
-	/** The thread currently "being read" (route's thread, visible + focused). */
+	/** The thread on screen in front of the user: its messages don't notify. */
 	private activeThreadKey: string | null = $state(null);
+
+	/** The active thread while its newest messages are in view: what arrives there is read. */
+	private readingThreadKey: string | null = $state(null);
+
+	private queuedReads = new Map<string, { target: ReadTarget; messageId: string }>();
+	private readTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	private readsInFlight = new Map<string, number>();
 
 	setActiveThread(key: string | null) {
 		this.activeThreadKey = key;
 	}
 
-	isBeingRead(key: string): boolean {
+	isActive(key: string): boolean {
 		return this.activeThreadKey === key;
+	}
+
+	setReadingThread(key: string | null) {
+		this.readingThreadKey = key;
+	}
+
+	isReading(key: string): boolean {
+		return this.readingThreadKey === key;
 	}
 
 	private isChannelUnread(c: ChannelUnread): boolean {
@@ -152,17 +182,16 @@ class UnreadState {
 	/**
 	 * A `message` frame landed for this channel. `mine` means it arrived from one
 	 * of our own other tabs (the server already advanced our marker); `mentionsMe`
-	 * is computed client-side from the live frame's content; `read` means the
-	 * channel is currently being read, so treat it as read right away.
+	 * is computed client-side from the live frame's content.
 	 */
 	noteChannelMessage(
 		channelId: number,
 		serverId: number,
 		messageId: string,
-		opts: { mine?: boolean; mentionsMe?: boolean; read?: boolean }
+		opts: { mine?: boolean; mentionsMe?: boolean }
 	) {
 		const existing = this.channels[channelId];
-		const becomesRead = opts.mine || opts.read;
+		const becomesRead = opts.mine;
 		this.channels[channelId] = {
 			serverId,
 			name: existing?.name ?? '',
@@ -189,6 +218,59 @@ class UnreadState {
 		const existing = this.channels[channelId];
 		if (!existing) return;
 		this.channels[channelId] = { ...existing, lastReadId: messageId, mentions: 0 };
+	}
+
+	/** The user has seen `messageId`, the newest message of the thread: mark it read here and tell the server shortly. */
+	markThreadRead(target: ReadTarget, messageId: string) {
+		const key = readKey(target);
+		if (target.kind === 'channel') {
+			this.markChannelReadLocally(target.channelId, messageId);
+		} else {
+			conversationsState.markReadLocally(target.conversationId, messageId);
+		}
+		this.queuedReads.set(key, { target, messageId });
+		if (!this.readTimers.has(key)) {
+			this.readTimers.set(
+				key,
+				setTimeout(() => void this.sendRead(key), READ_SEND_DELAY_MS)
+			);
+		}
+	}
+
+	/** This tab moved the thread's marker and the server hasn't answered yet. */
+	readPending(key: string): boolean {
+		return this.readTimers.has(key) || (this.readsInFlight.get(key) ?? 0) > 0;
+	}
+
+	private async sendRead(key: string) {
+		this.readTimers.delete(key);
+		const queued = this.queuedReads.get(key);
+		if (!queued) return;
+		this.queuedReads.delete(key);
+		const { target, messageId } = queued;
+
+		this.readsInFlight.set(key, (this.readsInFlight.get(key) ?? 0) + 1);
+		let serverMarker: string | null = null;
+		try {
+			const response =
+				target.kind === 'channel'
+					? await markChannelRead(target.channelId, messageId)
+					: await markConversationRead(target.conversationId, messageId);
+			serverMarker = response.last_read_message_id || null;
+		} catch (e) {
+			console.warn('Failed to persist read state', e);
+		} finally {
+			const left = (this.readsInFlight.get(key) ?? 1) - 1;
+			if (left > 0) this.readsInFlight.set(key, left);
+			else this.readsInFlight.delete(key);
+		}
+
+		if (!serverMarker || this.readPending(key)) return;
+		if (target.kind === 'channel') {
+			this.applyChannelReadState(target.channelId, serverMarker);
+		} else {
+			conversationsState.applyReadState(target.conversationId, serverMarker);
+		}
 	}
 
 	/** Mark a channel read up to its newest message and persist it. */
@@ -233,6 +315,11 @@ class UnreadState {
 	reset() {
 		this.channels = {};
 		this.activeThreadKey = null;
+		this.readingThreadKey = null;
+		for (const timer of this.readTimers.values()) clearTimeout(timer);
+		this.readTimers.clear();
+		this.queuedReads.clear();
+		this.readsInFlight.clear();
 	}
 }
 

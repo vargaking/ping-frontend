@@ -29,6 +29,7 @@ import { channelTag, dmTag } from '$lib/utils/notificationTags';
 import { postPath } from '$lib/utils/channelRoutes';
 import { messageMentionsUser, messagePreviewText } from '$lib/utils/messageContent';
 import { db } from '$lib/utils/db';
+import { incomingMessageEffects } from '$lib/utils/incomingMessage';
 import { channelRemoved } from '$lib/utils/channelRemoved';
 import { serverRemoved } from '$lib/utils/serverRemoved';
 import { getUser } from '$lib/requests/users/getUser';
@@ -454,25 +455,27 @@ class SocketState {
 			messagesState.addMessage(message);
 		}
 
+		// Decided before the IndexedDB write so the list sees the final read state.
+		let effects: ReturnType<typeof incomingMessageEffects> | null = null;
+		const mentionsMe = !mine && me != null && messageMentionsUser(message.content, me.id);
+		if (channelId != null && serverId != null) {
+			const key = channelThreadKey(channelId);
+			unreadState.noteChannelMessage(channelId, serverId, message.id, { mine, mentionsMe });
+			effects = incomingMessageEffects({
+				mine,
+				active: unreadState.isActive(key),
+				reading: unreadState.isReading(key),
+				inPost: postId != null
+			});
+			if (effects.markRead) unreadState.markThreadRead({ kind: 'channel', channelId }, message.id);
+		}
+
 		// Sockets now fan out chat frames to every socket of every recipient
 		// (minus the sender's own socket), so this can be our own message arriving
 		// on another tab — put avoids a ConstraintError from the duplicate id.
 		await db.messages.put(message);
 
-		if (channelId == null || serverId == null) return;
-
-		const beingRead = unreadState.isBeingRead(channelThreadKey(channelId));
-		const mentionsMe = !mine && me != null && messageMentionsUser(message.content, me.id);
-
-		// Forum channels are read as a whole: the forum views mark them read, as
-		// no single message list is open to do it.
-		unreadState.noteChannelMessage(channelId, serverId, message.id, {
-			mine,
-			mentionsMe,
-			read: beingRead && postId == null
-		});
-
-		if (mine || beingRead) return;
+		if (!effects?.notify || channelId == null || serverId == null) return;
 
 		this.notifyIncoming({
 			kind: 'channel',
@@ -500,13 +503,24 @@ class SocketState {
 			messagesState.addMessage(message);
 		}
 
-		const beingRead =
-			conversationId != null && unreadState.isBeingRead(directThreadKey(conversationId));
-		conversationsState.noteMessage(message, { mine, read: beingRead });
+		let effects: ReturnType<typeof incomingMessageEffects> | null = null;
+		conversationsState.noteMessage(message, { mine });
+		if (conversationId != null) {
+			const key = directThreadKey(conversationId);
+			effects = incomingMessageEffects({
+				mine,
+				active: unreadState.isActive(key),
+				reading: unreadState.isReading(key),
+				inPost: false
+			});
+			if (effects.markRead) {
+				unreadState.markThreadRead({ kind: 'direct', conversationId }, message.id);
+			}
+		}
 
 		await db.messages.put(message);
 
-		if (mine || beingRead || conversationId == null) return;
+		if (!effects?.notify || conversationId == null) return;
 
 		this.notifyIncoming({
 			kind: 'direct',
@@ -676,9 +690,12 @@ class SocketState {
 		conversation_id: number | null;
 		last_read_message_id: string;
 	}) {
+		// Our own unanswered read is newer; its response brings the server's marker.
 		if (frame.channel_id != null) {
+			if (unreadState.readPending(channelThreadKey(frame.channel_id))) return;
 			unreadState.applyChannelReadState(frame.channel_id, frame.last_read_message_id);
 		} else if (frame.conversation_id != null) {
+			if (unreadState.readPending(directThreadKey(frame.conversation_id))) return;
 			conversationsState.applyReadState(frame.conversation_id, frame.last_read_message_id);
 		}
 	}

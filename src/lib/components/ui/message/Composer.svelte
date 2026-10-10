@@ -24,6 +24,7 @@
 	import { LinkPreview } from '$lib/utils/linkPreview.svelte';
 	import { mentionCandidates } from '$lib/utils/mentions';
 	import { isTypingKey } from '$lib/utils/typeToFocus';
+	import { hasOpenLayer, isEditable } from '$lib/utils/openLayer';
 	import { messagePlainText, messagePreviewText } from '$lib/utils/messageContent';
 	import LinkEmbed from './LinkEmbed.svelte';
 	import * as Popover from '$lib/components/ui/popover/index';
@@ -284,21 +285,9 @@
 		editor?.focus();
 	}
 
-	const OPEN_LAYER =
-		'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-popover-content]';
-
-	function isEditable(element: Element | null) {
-		return (
-			element instanceof HTMLInputElement ||
-			element instanceof HTMLTextAreaElement ||
-			element instanceof HTMLSelectElement ||
-			(element instanceof HTMLElement && element.isContentEditable)
-		);
-	}
-
 	function handleWindowKeydown(event: KeyboardEvent) {
 		if (!target || !isTypingKey(event) || phoneState.navCoversContent) return;
-		if (isEditable(document.activeElement) || document.querySelector(OPEN_LAYER)) return;
+		if (isEditable(document.activeElement) || hasOpenLayer()) return;
 		editor?.focusNow();
 	}
 
@@ -349,6 +338,7 @@
 	<div
 		role="group"
 		aria-label="Message composer"
+		data-message-composer
 		class="flex flex-col rounded-xl border border-input bg-surface-input transition-colors focus-within:border-ring {dragging
 			? 'ring-2 ring-ring'
 			: ''}"

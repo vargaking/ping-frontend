@@ -164,6 +164,7 @@
 									propsState.command = props.command;
 
 									const targetDiv = document.createElement('div');
+									targetDiv.dataset.escapeLayer = '';
 
 									component = mount(MentionList, {
 										target: targetDiv,

@@ -357,3 +357,40 @@ test('on a phone holding a message highlights it and opens its menu quickly, swi
 	await expect(row).not.toHaveAttribute('data-held');
 	await cdp.detach();
 });
+
+test('on a phone the jump button stays above the composer while the keyboard is up', async ({
+	context,
+	page
+}) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Jump Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	const messages = page.locator('[data-message-id]');
+	for (let i = 1; i <= 8; i++) {
+		await composer.fill(`message ${i} ` + 'filler '.repeat(60));
+		await page.getByRole('button', { name: 'Send message' }).tap();
+		await expect(messages).toHaveCount(i);
+	}
+	await composer.blur();
+	const appHeight = () =>
+		page.evaluate(() => document.documentElement.style.getPropertyValue('--app-height'));
+	const fullHeight = await appHeight();
+
+	const scroller = messages
+		.first()
+		.locator('xpath=ancestor::div[contains(@class, "overflow-y-auto")][1]');
+	await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+	const jump = page.getByRole('button', { name: /^Jump to latest/ });
+	await expect(jump).toBeInViewport();
+
+	await composer.tap();
+	await expect.poll(appHeight).not.toBe(fullHeight);
+	await expect(jump, 'the button follows the shell above the keyboard').toBeInViewport();
+	const box = (await jump.boundingBox())!;
+	const composerTop = (await page.getByRole('group', { name: 'Message composer' }).boundingBox())!
+		.y;
+	expect(box.y + box.height, 'the button sits above the composer').toBeLessThanOrEqual(composerTop);
+});

@@ -27,6 +27,8 @@ export function reactionsWith(
 type ThreadMessages = {
 	messages: MessageType[];
 	hasMore: boolean;
+	/** The loaded messages stop short of the newest ones, with a gap in between. */
+	newerExists?: boolean;
 };
 
 export function messageThreadKey(message: MessageType): string {
@@ -62,6 +64,16 @@ class MessagesState {
 		return this.threads[key]?.hasMore ?? false;
 	}
 
+	newerExists(key: string): boolean {
+		return this.threads[key]?.newerExists ?? false;
+	}
+
+	/** The loaded window isn't the newest page: live messages wait until it is. */
+	markNewerExists(key: string) {
+		const thread = this.threads[key];
+		if (thread) thread.newerExists = true;
+	}
+
 	/** Replace a thread's list with a freshly loaded newest page. Our unsent
 	 *  messages aren't on the server yet, so they stay after it. */
 	set(key: string, messages: MessageType[], hasMore: boolean) {
@@ -95,6 +107,8 @@ class MessagesState {
 	addMessage(message: MessageType) {
 		const thread = this.ensure(messageThreadKey(message));
 		if (thread.messages.some((m) => m.id === message.id)) return;
+		// Past a gap, server messages come with the newest page; our unsent ones must still show.
+		if (thread.newerExists && !message.status) return;
 		thread.messages.push(message);
 	}
 

@@ -18,7 +18,7 @@ export function trackForumRead(channelId: () => number | null) {
 		const key = channelThreadKey(id);
 		unreadState.setActiveThread(key);
 		return () => {
-			if (unreadState.isBeingRead(key)) unreadState.setActiveThread(null);
+			if (unreadState.isActive(key)) unreadState.setActiveThread(null);
 		};
 	});
 

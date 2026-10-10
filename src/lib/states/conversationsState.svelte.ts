@@ -1,6 +1,5 @@
 import { getConversations } from '$lib/requests/conversations/getConversations';
 import { openConversation } from '$lib/requests/conversations/openConversation';
-import { markConversationRead } from '$lib/requests/conversations/markConversationRead';
 import type { Conversation } from '$lib/types/conversation.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { timestampMs } from '$lib/utils/messageContent';
@@ -69,10 +68,9 @@ class ConversationsState {
 	/**
 	 * Move a conversation to the top with this message as its preview, and update
 	 * its read markers. `mine` is a message that arrived from one of our own other
-	 * tabs (the server already advanced our marker); `read` means the thread is
-	 * currently being looked at, so it's treated as read locally right away.
+	 * tabs (the server already advanced our marker).
 	 */
-	noteMessage(message: MessageType, opts: { mine?: boolean; read?: boolean } = {}) {
+	noteMessage(message: MessageType, opts: { mine?: boolean } = {}) {
 		const id = message.conversation_id;
 		if (id == null) return;
 
@@ -83,7 +81,7 @@ class ConversationsState {
 			return;
 		}
 
-		const becomesRead = opts.mine || opts.read;
+		const becomesRead = opts.mine;
 
 		this.conversations[id] = {
 			...conversation,
@@ -126,16 +124,6 @@ class ConversationsState {
 			last_read_message_id: messageId,
 			unread_count: 0
 		};
-	}
-
-	/** Persist the read marker for a conversation. Never throws — a failed PUT
-	 *  is a console.warn, the local state already moved on optimistically. */
-	async persistRead(conversationId: number, messageId: string) {
-		try {
-			await markConversationRead(conversationId, messageId);
-		} catch (e) {
-			console.warn('Failed to persist conversation read state', e);
-		}
 	}
 
 	/** Keep a preview in step when the message it shows is edited. */

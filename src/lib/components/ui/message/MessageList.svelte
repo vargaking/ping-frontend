@@ -12,14 +12,29 @@
 	import { normalizeError } from '$lib/requests/errors';
 	import { db } from '$lib/utils/db';
 	import { tick, untrack } from 'svelte';
-	import { MessagesSquare } from 'lucide-svelte';
+	import { fade } from 'svelte/transition';
+	import { ArrowDown, MessagesSquare } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { replyState } from '$lib/states/replyState.svelte';
+	import { messageEditState } from '$lib/states/messageEditState.svelte';
+	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { documentFocusState } from '$lib/utils/documentFocus.svelte';
 	import { resyncState } from '$lib/states/resyncState.svelte';
 	import { mergeNewestPage, replaceWithNewestPage } from '$lib/utils/mergeNewestPage';
+	import {
+		countNewBelow,
+		escapeJumpsToLatest,
+		isAtBottom,
+		isFarFromBottom,
+		jumpBehavior,
+		jumpLabel,
+		showJumpButton,
+		type SeenMarker
+	} from '$lib/utils/jumpToLatest';
+	import { hasEscapeLayer, isEditable } from '$lib/utils/openLayer';
 
 	type Props = {
 		/** messagesState key of the thread shown (see threadKey). */
@@ -75,7 +90,18 @@
 	// Whether the viewport is parked at the bottom. Tracked from real scroll
 	// events (not measured the instant a message lands) so reading older history
 	// is never yanked back down when a new message arrives.
-	let stickToBottom = true;
+	let stickToBottom = $state(true);
+
+	// More than a screen above the bottom (the button's threshold, apart from stickToBottom's).
+	let farFromBottom = $state(false);
+
+	// The newest message on screen the last time the view was at the bottom; what comes after counts as new.
+	let seenThrough = $state<SeenMarker | null>(null);
+
+	// A smooth jump is under way: its intermediate scroll events say nothing about where the user wants to be.
+	let smoothJumping = false;
+	let smoothJumpTimer: ReturnType<typeof setTimeout> | null = null;
+	const SMOOTH_JUMP_SETTLE_MS = 1000;
 
 	// True from the moment a thread's newest page renders until its first scroll to the bottom has
 	// settled. The list is at the top until then, which must not read as a request for history.
@@ -93,9 +119,30 @@
 
 	function handleScroll() {
 		const el = messageWrapper;
-		if (!el || el.clientHeight !== viewHeight) return;
-		stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+		if (!el) return;
+		if (smoothJumping && !isAtBottom(el)) return;
+		stopSmoothJump();
+		farFromBottom = isFarFromBottom(el);
+		if (el.clientHeight !== viewHeight) return;
+		stickToBottom = isAtBottom(el);
 		if (stickToBottom && staleOlder && !resyncing) void resync();
+	}
+
+	function startSmoothJump() {
+		smoothJumping = true;
+		if (smoothJumpTimer) clearTimeout(smoothJumpTimer);
+		smoothJumpTimer = setTimeout(endSmoothJump, SMOOTH_JUMP_SETTLE_MS);
+	}
+
+	function stopSmoothJump() {
+		smoothJumping = false;
+		if (smoothJumpTimer) clearTimeout(smoothJumpTimer);
+		smoothJumpTimer = null;
+	}
+
+	function endSmoothJump() {
+		stopSmoothJump();
+		handleScroll();
 	}
 
 	// Id of the last message read before this open (from unreadState/conversationsState,
@@ -194,29 +241,15 @@
 		};
 	}
 
-	function markReadLocally(messageId: string) {
-		if (!target) return;
-		if (target.kind === 'channel') {
-			unreadState.markChannelReadLocally(target.channelId, messageId);
-		} else {
-			conversationsState.markReadLocally(target.conversationId, messageId);
-		}
-	}
-
-	function persistRead(messageId: string) {
-		if (!target) return;
-		if (target.kind === 'channel') {
-			unreadState.persistChannelRead(target.channelId, messageId);
-		} else {
-			conversationsState.persistRead(target.conversationId, messageId);
-		}
-	}
-
 	function applyPage(key: string, messages: MessageType[], hasMore: boolean) {
 		messagesState.set(key, messages, hasMore);
 		autoScrollAnchorId = messagesState.messages(key).at(-1)?.id ?? null;
 		const jumping = jumpTo != null && jumpDone !== `${key}:${jumpTo}`;
 		stickToBottom = !jumping;
+		farFromBottom = false;
+		stopSmoothJump();
+		const newest = messagesState.messages(key).at(-1);
+		seenThrough = newest ? { id: newest.id, timestamp: newest.timestamp } : null;
 
 		// Pin the unread divider to the message right after the boundary, once. If
 		// the boundary is older than this page, anchor on the first loaded message.
@@ -394,7 +427,10 @@
 
 		staleOlder = pageData.has_more;
 		const merged = mergeNewestPage(current, page, { complete: !pageData.has_more, knownBefore });
-		if (!merged) return;
+		if (!merged) {
+			messagesState.markNewerExists(key);
+			return;
+		}
 
 		const anchors = visibleRows();
 		const hasMore = merged.keptOlder ? messagesState.hasMore(key) : pageData.has_more;
@@ -544,6 +580,7 @@
 			if (el.clientHeight === viewHeight) return;
 			viewHeight = el.clientHeight;
 			if (stickToBottom) scrollToBottom();
+			farFromBottom = isFarFromBottom(el);
 		});
 		observer.observe(el);
 		return () => observer.disconnect();
@@ -572,128 +609,200 @@
 		return () => observer.disconnect();
 	});
 
-	// Pin the view to the bottom when a new message lands there, but never when
-	// older history is prepended (the newest id is unchanged in that case).
-	$effect(() => {
-		const msgs = messagesState.messages(threadKey);
-		const newestId = msgs.length ? msgs[msgs.length - 1].id : null;
-		if (!newestId || newestId === autoScrollAnchorId) return;
+	function measureFar() {
+		if (messageWrapper) farFromBottom = isFarFromBottom(messageWrapper);
+	}
 
-		autoScrollAnchorId = newestId;
-		if (stickToBottom) tick().then(scrollToBottom);
+	function isOwnUnsent(message: MessageType) {
+		return message.status === 'pending' && message.user_id === usersState.loggedInUser?.id;
+	}
+
+	// Pin the view to the bottom when a new message lands there, but never when
+	// older history is prepended (the newest id is unchanged in that case). Sending
+	// from further up brings the view down to the message.
+	$effect(() => {
+		const newest = messagesState.messages(threadKey).at(-1);
+		if (!newest || newest.id === autoScrollAnchorId) return;
+
+		autoScrollAnchorId = newest.id;
+		untrack(() => {
+			if (stickToBottom) tick().then(scrollToBottom);
+			else if (loadedKey === threadKey && isOwnUnsent(newest)) void jumpToLatest();
+			else tick().then(measureFar);
+		});
 	});
+
+	$effect(() => {
+		if (!stickToBottom || loadedKey !== threadKey) return;
+		const newest = messagesState.messages(threadKey).at(-1);
+		seenThrough = newest ? { id: newest.id, timestamp: newest.timestamp } : null;
+	});
+
+	const newCount = $derived(
+		countNewBelow(
+			messagesState.messages(threadKey),
+			seenThrough,
+			usersState.loggedInUser?.id ?? null
+		)
+	);
+
+	const showJump = $derived(
+		loadState === 'ready' &&
+			loadedKey === threadKey &&
+			showJumpButton({
+				newerExists: messagesState.newerExists(threadKey),
+				atBottom: stickToBottom,
+				far: farFromBottom,
+				newCount
+			})
+	);
+
+	async function jumpToLatest() {
+		if (messagesState.newerExists(threadKey)) {
+			await loadMessages(threadKey);
+			return;
+		}
+		stickToBottom = true;
+		markNewestRead();
+		await tick();
+		const el = messageWrapper;
+		if (!el) return;
+		const behavior = jumpBehavior(el, matchMedia('(prefers-reduced-motion: reduce)').matches);
+		if (behavior === 'smooth') startSmoothJump();
+		el.scrollTo({ top: el.scrollHeight, behavior });
+	}
+
+	function escapeTaken(): boolean {
+		if (hasEscapeLayer() || replyState.target[threadKey] || messageEditState.editingId) return true;
+		const focused = document.activeElement;
+		return isEditable(focused) && !focused?.closest('[data-message-composer]');
+	}
+
+	function handleEscape(event: KeyboardEvent) {
+		if (event.key !== 'Escape') return;
+		const desktop = !phoneState.phone && !phoneState.navCoversContent;
+		if (
+			!escapeJumpsToLatest(event, { desktop, buttonShown: showJump, escapeTaken: escapeTaken() })
+		) {
+			return;
+		}
+		event.preventDefault();
+		void jumpToLatest();
+	}
 
 	documentFocusState.attach();
 
-	// The thread is "being read" when it's the one this list shows and the page is
-	// in front of the user — never just because a message arrived while we're
-	// hidden, unfocused or covered by the phone navigation.
-	const beingRead = $derived(trackRead && target != null && documentFocusState.reading);
+	// The thread is active when it's the one this list shows and the page is in front of the
+	// user — never just because a message arrived while we're hidden, unfocused or covered by
+	// the phone navigation. It is being read only while its newest messages are in view.
+	const active = $derived(trackRead && target != null && documentFocusState.reading);
+	const reading = $derived(
+		active &&
+			stickToBottom &&
+			loadState === 'ready' &&
+			loadedKey === threadKey &&
+			!messagesState.newerExists(threadKey)
+	);
 
 	$effect(() => {
 		if (!trackRead) return;
 		const key = threadKey;
-		unreadState.setActiveThread(beingRead ? key : null);
+		unreadState.setActiveThread(active ? key : null);
 		return () => {
 			// Only clear if we're still the active thread when this effect tears
 			// down — otherwise a newer thread's registration would be wiped out.
-			if (unreadState.isBeingRead(key)) unreadState.setActiveThread(null);
+			if (unreadState.isActive(key)) unreadState.setActiveThread(null);
 		};
 	});
 
-	let markReadTimer: ReturnType<typeof setTimeout> | null = null;
-	let lastPersisted: string | null = null;
+	$effect(() => {
+		if (!trackRead) return;
+		const key = threadKey;
+		unreadState.setReadingThread(reading ? key : null);
+		return () => {
+			if (unreadState.isReading(key)) unreadState.setReadingThread(null);
+		};
+	});
 
-	function scheduleMarkRead() {
-		if (!beingRead || !target) return;
-
-		const msgs = messagesState.messages(threadKey);
-		const newest = msgs.at(-1);
+	function markNewestRead() {
+		if (!reading || !target) return;
+		const newest = messagesState.messages(threadKey).at(-1);
 		if (!newest) return;
-
-		const me = usersState.loggedInUser;
-		const isOwn = me != null && newest.user_id === me.id;
-		const snapshot = readSnapshot();
-		const alreadyRead = snapshot?.lastReadId === newest.id;
-
-		// The server already advanced our marker when we sent it (and an optimistic
-		// send may not even be persisted yet), and there's nothing to do if we're
-		// already caught up.
-		if (isOwn || alreadyRead) return;
-
-		markReadLocally(newest.id);
-
-		if (markReadTimer) clearTimeout(markReadTimer);
-		markReadTimer = setTimeout(() => {
-			markReadTimer = null;
-			if (lastPersisted === newest.id) return;
-			lastPersisted = newest.id;
-			persistRead(newest.id);
-		}, 750);
+		// Our own message moved the server's marker when it was stored; an unsent one isn't stored yet.
+		if (newest.user_id === usersState.loggedInUser?.id) return;
+		if (readSnapshot()?.lastReadId === newest.id) return;
+		unreadState.markThreadRead(target, newest.id);
 	}
 
-	// Re-check whenever the thread becomes read-eligible or the newest loaded
-	// message changes (a fresh send/receive). scheduleMarkRead re-reads current
-	// state itself; this effect only needs to establish the dependencies.
+	// Re-check whenever the thread becomes read-eligible or the newest loaded message
+	// changes. markNewestRead reads the read markers itself, so it also runs again if
+	// they are moved back while we sit at the bottom.
 	$effect(() => {
-		const read = beingRead;
+		const read = reading;
 		const newestId = messagesState.messages(threadKey).at(-1)?.id ?? null;
-		if (read && newestId) scheduleMarkRead();
-	});
-
-	// Cancel any pending PUT for the thread we're leaving, and forget what we
-	// last persisted so a revisit re-evaluates from scratch.
-	$effect(() => {
-		void threadKey;
-		return () => {
-			if (markReadTimer) {
-				clearTimeout(markReadTimer);
-				markReadTimer = null;
-			}
-			lastPersisted = null;
-		};
+		if (read && newestId) markNewestRead();
 	});
 </script>
 
-<div
-	bind:this={messageWrapper}
-	onscroll={handleScroll}
-	class="min-h-0 flex-1 overflow-y-auto scrollbar-stable"
->
-	{#if loadState === 'loading'}
-		<div class="px-8 pt-6 max-md:px-3">
-			<LoadingList rows={6} avatar />
-		</div>
-	{:else if loadState === 'error'}
-		<div class="flex h-full items-center justify-center px-8 max-md:px-3">
-			<ErrorState
-				title="Couldn’t load messages"
-				description={errorDescription}
-				onRetry={() => loadMessages(threadKey)}
-			/>
-		</div>
-	{:else if items.length === 0}
-		<div class="flex h-full items-center justify-center px-8 max-md:px-3">
-			<EmptyState title="No messages yet" description={emptyDescription}>
-				{#snippet icon()}
-					<MessagesSquare size={20} strokeWidth={1.75} />
-				{/snippet}
-			</EmptyState>
-		</div>
-	{:else}
-		<div
-			class="flex flex-col gap-[18px] px-8 pt-6 pb-2 select-text max-md:px-3 pointer-coarse:select-none"
+<svelte:window onkeydowncapture={handleEscape} />
+
+<div class="relative flex min-h-0 flex-1 flex-col">
+	<div
+		bind:this={messageWrapper}
+		onscroll={handleScroll}
+		onscrollend={() => smoothJumping && endSmoothJump()}
+		class="min-h-0 flex-1 overflow-y-auto scrollbar-stable"
+	>
+		{#if loadState === 'loading'}
+			<div class="px-8 pt-6 max-md:px-3">
+				<LoadingList rows={6} avatar />
+			</div>
+		{:else if loadState === 'error'}
+			<div class="flex h-full items-center justify-center px-8 max-md:px-3">
+				<ErrorState
+					title="Couldn’t load messages"
+					description={errorDescription}
+					onRetry={() => loadMessages(threadKey)}
+				/>
+			</div>
+		{:else if items.length === 0}
+			<div class="flex h-full items-center justify-center px-8 max-md:px-3">
+				<EmptyState title="No messages yet" description={emptyDescription}>
+					{#snippet icon()}
+						<MessagesSquare size={20} strokeWidth={1.75} />
+					{/snippet}
+				</EmptyState>
+			</div>
+		{:else}
+			<div
+				class="flex flex-col gap-[18px] px-8 pt-6 pb-2 select-text max-md:px-3 pointer-coarse:select-none"
+			>
+				<div bind:this={topSentinel} aria-hidden="true"></div>
+				{#each items as item (item.key)}
+					{#if item.kind === 'date'}
+						<DateDivider label={item.label} />
+					{:else if item.kind === 'unread'}
+						<UnreadDivider />
+					{:else}
+						<MessageGroup messages={item.messages} onJumpToMessage={jumpToMessage} />
+					{/if}
+				{/each}
+			</div>
+		{/if}
+	</div>
+
+	{#if showJump}
+		<button
+			type="button"
+			aria-label={jumpLabel(newCount)}
+			onclick={() => void jumpToLatest()}
+			transition:fade={{ duration: 120 }}
+			class="absolute right-8 bottom-3 z-10 flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full border border-border bg-surface-input px-2.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-md:right-3 pointer-coarse:h-11 pointer-coarse:min-w-11"
 		>
-			<div bind:this={topSentinel} aria-hidden="true"></div>
-			{#each items as item (item.key)}
-				{#if item.kind === 'date'}
-					<DateDivider label={item.label} />
-				{:else if item.kind === 'unread'}
-					<UnreadDivider />
-				{:else}
-					<MessageGroup messages={item.messages} onJumpToMessage={jumpToMessage} />
-				{/if}
-			{/each}
-		</div>
+			{#if newCount > 0}
+				<span>{newCount > 99 ? '99+' : newCount} new</span>
+			{/if}
+			<ArrowDown size={16} strokeWidth={1.75} aria-hidden="true" />
+		</button>
 	{/if}
 </div>
