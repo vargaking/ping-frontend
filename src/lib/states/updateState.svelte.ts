@@ -30,8 +30,9 @@ export type UpdateDeps = {
 	onControllerChange: (listener: () => void) => () => void;
 	askVersion: (worker: WorkerLike) => Promise<string | null>;
 	online: () => boolean;
+	/** Calls back once, when the page is going away. Returns a function that disarms it. */
+	onPageHide: (listener: () => void) => () => void;
 	saveDraft: () => void;
-	discardDraft: () => void;
 	reload: () => void;
 	now: () => number;
 };
@@ -52,6 +53,7 @@ export class UpdateState {
 	private lastCheckAt: number | null = null;
 	private checking: Promise<void> | null = null;
 	private ownActivations = 0;
+	private disarmDraftSave: (() => void) | null = null;
 
 	constructor(private deps: UpdateDeps) {}
 
@@ -100,16 +102,27 @@ export class UpdateState {
 		this.offline = false;
 		this.phase = 'reloading';
 		console.info('Reloading for the new version');
+		this.armDraftSave();
 		const waiting = (await this.deps.getRegistration())?.waiting;
 		if (waiting) await this.activate(waiting);
-		this.deps.saveDraft();
 		this.deps.reload();
 		// A beforeunload prompt answered with "stay" leaves this page running.
 		setTimeout(() => {
-			if (this.phase !== 'reloading') return;
-			this.phase = 'ready';
-			this.deps.discardDraft();
+			if (this.phase === 'reloading') this.phase = 'ready';
 		}, RELOAD_STUCK_MS);
+	}
+
+	/**
+	 * The draft is saved only when the page really goes away, so a reload that is cancelled saves
+	 * nothing and one that is merely slow still does. It stays armed after the stuck timeout, as
+	 * the reload may yet commit; only a new Reload replaces it.
+	 */
+	private armDraftSave() {
+		this.disarmDraftSave?.();
+		this.disarmDraftSave = this.deps.onPageHide(() => {
+			this.disarmDraftSave = null;
+			this.deps.saveDraft();
+		});
 	}
 
 	private found() {
@@ -215,8 +228,11 @@ export const updateState = new UpdateState({
 	},
 	askVersion: (worker) => askWorkerVersion(worker),
 	online: () => navigator.onLine,
+	onPageHide: (listener) => {
+		window.addEventListener('pagehide', listener, { once: true });
+		return () => window.removeEventListener('pagehide', listener);
+	},
 	saveDraft: () => composerDraftState.saveForReload(),
-	discardDraft: () => composerDraftState.discardReloadDraft(),
 	reload: () => location.reload(),
 	now: () => Date.now()
 });

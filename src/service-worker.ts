@@ -20,7 +20,9 @@ import {
 	INSTALLING_MARKER,
 	SKIP_WAITING,
 	VERSION_QUERY,
-	staleShellCaches
+	staleShellCaches,
+	supersededShellCaches,
+	type ShellCache
 } from '$lib/utils/workerProtocol';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
@@ -248,30 +250,38 @@ async function resubscribe(event: SubscriptionChangeEvent) {
 }
 
 async function precache() {
+	// A cache that already exists was activated before; marking it would get it deleted while in use.
+	const existed = await caches.has(CACHE);
 	const cache = await caches.open(CACHE);
 	// One failed file must not block the worker update; push depends on it.
 	await Promise.allSettled([
-		cache.put(INSTALLING_MARKER, new Response()),
+		...(existed ? [] : [cache.put(INSTALLING_MARKER, new Response())]),
 		...[SHELL, ...PRECACHED].map((path) => cache.add(path))
 	]);
+	await dropSupersededCaches().catch((e) => console.warn('[cache] superseded caches kept', e));
 }
 
-async function wasActivated(key: string): Promise<boolean> {
-	return !(await (await caches.open(key)).match(INSTALLING_MARKER));
+async function shellCaches(): Promise<ShellCache[]> {
+	const keys = (await caches.keys()).filter((key) => key.startsWith('shell-'));
+	return Promise.all(
+		keys.map(async (key) => ({
+			key,
+			activated: !(await (await caches.open(key)).match(INSTALLING_MARKER))
+		}))
+	);
+}
+
+async function dropSupersededCaches() {
+	const superseded = supersededShellCaches(await shellCaches(), CACHE);
+	await Promise.all(superseded.map((key) => caches.delete(key)));
 }
 
 async function dropOldCaches() {
 	await (await caches.open(CACHE)).delete(INSTALLING_MARKER);
-	const [keys, windows] = await Promise.all([
-		caches.keys(),
+	const [shell, windows] = await Promise.all([
+		shellCaches(),
 		sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
 	]);
-	const shell = await Promise.all(
-		keys.map(async (key) => ({
-			key,
-			activated: key === CACHE || !key.startsWith('shell-') || (await wasActivated(key))
-		}))
-	);
 	await Promise.all(
 		staleShellCaches(shell, CACHE, windows.length).map((key) => caches.delete(key))
 	);

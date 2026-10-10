@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { staleShellCaches, type ShellCache } from './workerProtocol';
+import { staleShellCaches, supersededShellCaches, type ShellCache } from './workerProtocol';
 
 const ran = (...keys: string[]): ShellCache[] => keys.map((key) => ({ key, activated: true }));
 
@@ -88,5 +88,33 @@ describe('staleShellCaches', () => {
 			];
 			expect(staleShellCaches(caches, B, 1)).toEqual([A]);
 		});
+	});
+});
+
+describe('supersededShellCaches', () => {
+	const waiting = (key: string): ShellCache => ({ key, activated: false });
+
+	it('returns every other shell cache that still carries the marker', () => {
+		const caches = [...ran('shell-1'), waiting('shell-2'), waiting('shell-3'), ...ran('shell-4')];
+		expect(supersededShellCaches(caches, 'shell-4')).toEqual(['shell-2', 'shell-3']);
+	});
+
+	it('never returns the cache that just installed', () => {
+		const caches = [waiting('shell-2'), waiting('shell-3')];
+		expect(supersededShellCaches(caches, 'shell-3')).toEqual(['shell-2']);
+	});
+
+	it('leaves caches whose worker already activated, however old', () => {
+		expect(supersededShellCaches(ran('shell-1', 'shell-2', 'shell-3'), 'shell-3')).toEqual([]);
+	});
+
+	it('leaves caches that are not shell caches', () => {
+		const caches = [{ key: 'zeta-prefs', activated: false }, waiting('shell-2')];
+		expect(supersededShellCaches(caches, 'shell-2')).toEqual([]);
+	});
+
+	it('returns nothing when only the current cache exists', () => {
+		expect(supersededShellCaches([waiting('shell-2')], 'shell-2')).toEqual([]);
+		expect(supersededShellCaches([], 'shell-2')).toEqual([]);
 	});
 });

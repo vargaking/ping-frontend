@@ -34,6 +34,7 @@ function setup(
 	let onUpdated: () => void = () => {};
 	let clock = 1_000_000;
 	let online = true;
+	const pageHideListeners = new Set<() => void>();
 
 	const deps = {
 		pageVersion: 'page-v',
@@ -44,8 +45,11 @@ function setup(
 		onControllerChange: changes.subscribe,
 		askVersion: vi.fn(async (worker: FakeWorker) => workerVersions.get(worker) ?? null),
 		online: vi.fn(() => online),
+		onPageHide: vi.fn((listener: () => void) => {
+			pageHideListeners.add(listener);
+			return () => void pageHideListeners.delete(listener);
+		}),
 		saveDraft: vi.fn(() => void calls.push('saveDraft')),
-		discardDraft: vi.fn(() => void calls.push('discardDraft')),
 		reload: vi.fn(() => void calls.push('reload')),
 		now: vi.fn(() => clock)
 	};
@@ -59,6 +63,13 @@ function setup(
 		calls,
 		workerVersions,
 		found: () => onUpdated(),
+		armedPageHideListeners: () => pageHideListeners.size,
+		firePageHide: () => {
+			for (const listener of [...pageHideListeners]) {
+				pageHideListeners.delete(listener);
+				listener();
+			}
+		},
 		advanceClock: (ms: number) => (clock += ms),
 		goOffline: () => (online = false),
 		goOnline: () => (online = true)
@@ -251,7 +262,7 @@ describe('UpdateState reload', () => {
 		return { ...setupResult, worker };
 	}
 
-	it('activates the waiting worker, then saves the draft and reloads once', async () => {
+	it('activates the waiting worker, then reloads once', async () => {
 		const { state, worker, changes, calls, deps } = await readyWithWaitingWorker();
 
 		const done = state.reload();
@@ -263,7 +274,7 @@ describe('UpdateState reload', () => {
 		worker.setState('activated');
 		await done;
 
-		expect(calls).toEqual(['saveDraft', 'reload']);
+		expect(calls).toEqual(['reload']);
 		expect(state.phase).toBe('reloading');
 	});
 
@@ -296,7 +307,7 @@ describe('UpdateState reload', () => {
 
 		await state.reload();
 
-		expect(calls).toEqual(['saveDraft', 'reload']);
+		expect(calls).toEqual(['reload']);
 		expect(deps.reload).toHaveBeenCalledTimes(1);
 	});
 
@@ -343,7 +354,7 @@ describe('UpdateState reload', () => {
 	});
 });
 
-describe('UpdateState reload that does not happen', () => {
+describe('UpdateState reload draft', () => {
 	function memoryStorage() {
 		const data = new Map<string, string>();
 		return {
@@ -364,42 +375,69 @@ describe('UpdateState reload that does not happen', () => {
 			hasAttachments: () => false
 		});
 		setupResult.deps.saveDraft.mockImplementation(() => void drafts.saveForReload());
-		setupResult.deps.discardDraft.mockImplementation(() => void drafts.discardReloadDraft());
 		await setupResult.state.check();
 		await flush();
 		return { ...setupResult, drafts, text };
 	}
 
-	it('removes the saved draft when the page is still alive at the stuck timeout', async () => {
-		const { state, drafts, deps } = await readyWithOpenComposer();
+	it('saves nothing on Reload itself, only when the page goes away', async () => {
+		const { state, deps, drafts, firePageHide, text } = await readyWithOpenComposer();
+
+		await state.reload();
+		expect(deps.saveDraft).not.toHaveBeenCalled();
+		expect(drafts.takeRestored('channel:1')).toBeUndefined();
+
+		firePageHide();
+		expect(deps.saveDraft).toHaveBeenCalledTimes(1);
+		expect(drafts.takeRestored('channel:1')).toEqual(text);
+	});
+
+	it('saves nothing for a cancelled reload: no pagehide fires, so no stale draft', async () => {
+		const { state, deps, drafts } = await readyWithOpenComposer();
 
 		await state.reload();
 		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS);
 
 		expect(state.phase).toBe('ready');
-		expect(deps.discardDraft).toHaveBeenCalledTimes(1);
+		expect(deps.saveDraft).not.toHaveBeenCalled();
 		expect(drafts.takeRestored('channel:1')).toBeUndefined();
 	});
 
-	it('keeps the saved draft until the timeout while the reload may still commit', async () => {
-		const { state, drafts, deps, text } = await readyWithOpenComposer();
+	it('still saves when a slow reload commits after the stuck timeout: the listener stays armed', async () => {
+		const { state, deps, drafts, firePageHide, text } = await readyWithOpenComposer();
 
 		await state.reload();
-		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS - 1);
+		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS + 5_000);
+		expect(state.phase).toBe('ready');
 
-		expect(deps.discardDraft).not.toHaveBeenCalled();
+		firePageHide();
+
+		expect(deps.saveDraft).toHaveBeenCalledTimes(1);
 		expect(drafts.takeRestored('channel:1')).toEqual(text);
 	});
 
-	it('saves the draft again on a second Reload after a stuck one', async () => {
-		const { state, deps } = await readyWithOpenComposer();
+	it('replaces the armed listener on a new Reload, so one pagehide saves once', async () => {
+		const { state, deps, armedPageHideListeners, firePageHide } = await readyWithOpenComposer();
 
 		await state.reload();
 		await vi.advanceTimersByTimeAsync(RELOAD_STUCK_MS);
 		await state.reload();
+		expect(deps.onPageHide).toHaveBeenCalledTimes(2);
+		expect(armedPageHideListeners()).toBe(1);
 
-		expect(deps.saveDraft).toHaveBeenCalledTimes(2);
-		expect(deps.discardDraft).toHaveBeenCalledTimes(1);
+		firePageHide();
+
+		expect(deps.saveDraft).toHaveBeenCalledTimes(1);
+		expect(armedPageHideListeners()).toBe(0);
+	});
+
+	it('does not arm a listener while offline', async () => {
+		const { state, deps, goOffline } = await readyWithOpenComposer();
+
+		goOffline();
+		await state.reload();
+
+		expect(deps.onPageHide).not.toHaveBeenCalled();
 	});
 });
 

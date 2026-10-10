@@ -34,10 +34,6 @@ export class ComposerDraftState {
 		);
 	}
 
-	discardReloadDraft() {
-		saveReloadDraft(this.storage(), null);
-	}
-
 	takeRestored(threadKey: string, now = Date.now()): JSONContent | undefined {
 		return takeReloadDraft(this.storage(), threadKey, now) ?? undefined;
 	}

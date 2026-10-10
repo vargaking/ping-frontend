@@ -36,3 +36,14 @@ export function staleShellCaches(
 	);
 	return shell.filter(({ key }) => dropped.has(key)).map(({ key }) => key);
 }
+
+/**
+ * The shell caches to delete once `current` has installed: every other one still holding the
+ * installing marker. Such a worker never activated, and an install replaces whichever worker
+ * was waiting, so nothing can come to use them.
+ */
+export function supersededShellCaches(caches: readonly ShellCache[], current: string): string[] {
+	return caches
+		.filter(({ key, activated }) => key.startsWith('shell-') && key !== current && !activated)
+		.map(({ key }) => key);
+}
