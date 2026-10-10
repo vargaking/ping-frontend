@@ -8,6 +8,7 @@ import {
 	joinInvite,
 	newUser,
 	openConversation,
+	sendMessageViaUi,
 	seedMessages,
 	uniqueName
 } from './helpers';
@@ -246,4 +247,75 @@ test('after missing more than a page offline, the button loads the newest messag
 	await jumpButton(a.page).click();
 	await expect(row(a.page, 'after gap')).toBeInViewport();
 	await expect(jumpButton(a.page)).toHaveCount(0);
+});
+
+test('an edit left open in another channel does not take Esc', async ({ browser }) => {
+	const { a, server } = await channelWithHistory(browser);
+	const quiet = await createChannel(a.context, server.id, 'quiet');
+	const channelLink = (name: string) => a.page.getByRole('link', { name: new RegExp(`^${name}`) });
+
+	await a.page.goto(channelPath(server.id, quiet.id));
+	await sendMessageViaUi(a.page, 'left half edited');
+	await expect(async () => {
+		await composerOf(a.page).press('ArrowUp');
+		await expect(a.page.getByText('escape to cancel'), 'the edit is open').toBeVisible({
+			timeout: 500
+		});
+	}).toPass();
+
+	await channelLink('general').click();
+	await expect(row(a.page, label(HISTORY))).toBeInViewport({ timeout: 20_000 });
+	await scrollUp(a.page, 2);
+	await expect(jumpButton(a.page)).toBeVisible();
+
+	await a.page.keyboard.press('Escape');
+	await expect(row(a.page, label(HISTORY))).toBeInViewport();
+	await expect(jumpButton(a.page)).toHaveCount(0);
+});
+
+test('a message arriving while the newest page loads is kept', async ({ browser }) => {
+	test.setTimeout(120_000);
+	const { a, b, server, thread } = await channelWithHistory(browser);
+	await scrollUp(a.page, 2);
+	await expect(jumpButton(a.page)).toBeVisible();
+
+	await a.context.setOffline(true);
+	await expect(a.page.getByLabel('Connection status: Reconnecting')).toBeVisible({
+		timeout: 40_000
+	});
+	await seedMessages(
+		b.context,
+		thread,
+		Array.from({ length: HISTORY }, (_, i) => `gap ${String(i + 1).padStart(3, '0')}`)
+	);
+	await a.context.setOffline(false);
+	await expect(jumpButton(a.page)).toHaveAccessibleName('Jump to latest', { timeout: 20_000 });
+	await seedMessages(b.context, thread, ['after gap']);
+	await a.page.waitForTimeout(1500);
+	await expect(row(a.page, 'after gap'), 'the window is waiting for the newest page').toHaveCount(
+		0
+	);
+
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => (release = resolve));
+	let fetched = false;
+	await a.page.route(/\/channels\/\d+\/messages/, async (route) => {
+		const response = await route.fetch();
+		fetched = true;
+		await released;
+		await route.fulfill({ response });
+	});
+
+	await jumpButton(a.page).click();
+	await expect.poll(() => fetched).toBe(true);
+	await seedMessages(b.context, thread, ['sent during the load']);
+	await a.page.waitForTimeout(1000);
+	release();
+
+	await expect(row(a.page, 'sent during the load')).toBeInViewport();
+	await expect(jumpButton(a.page)).toHaveCount(0);
+	await expect(
+		serverLink(a.page, server.name),
+		'the channel is not left unread'
+	).toHaveAccessibleName(server.name);
 });

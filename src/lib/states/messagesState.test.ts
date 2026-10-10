@@ -63,3 +63,56 @@ describe('newer messages exist', () => {
 		expect(messagesState.newerExists(KEY)).toBe(false);
 	});
 });
+
+describe('loading the newest page past a gap', () => {
+	beforeEach(() => {
+		messagesState.markNewerExists(KEY);
+		messagesState.beginNewestLoad(KEY);
+	});
+
+	it('keeps what arrives meanwhile after the page, once', () => {
+		messagesState.addMessage(msg('during-1'));
+		messagesState.addMessage(msg('during-2'));
+		messagesState.addMessage(msg('during-1'));
+		expect(ids(), 'live messages still wait out of the old window').toEqual(['a', 'b']);
+
+		messagesState.set(KEY, [msg('x'), msg('y'), msg('during-1')], true);
+		expect(ids()).toEqual(['x', 'y', 'during-1', 'during-2']);
+		expect(messagesState.newerExists(KEY)).toBe(false);
+	});
+
+	it('keeps our own message that was acked while the page loaded', () => {
+		messagesState.addMessage(msg('mine', { status: 'pending' }));
+		messagesState.updateMessage('mine', { status: undefined });
+		messagesState.addMessage(msg('during'));
+
+		messagesState.set(KEY, [msg('x'), msg('y')], true);
+		expect(ids()).toEqual(['x', 'y', 'mine', 'during']);
+	});
+
+	it('keeps our unsent messages last', () => {
+		messagesState.addMessage(msg('mine', { status: 'pending' }));
+		messagesState.addMessage(msg('during'));
+
+		messagesState.set(KEY, [msg('x')], false);
+		expect(ids()).toEqual(['x', 'during', 'mine']);
+	});
+
+	it('applies edits and deletes to what is waiting', () => {
+		messagesState.addMessage(msg('edited'));
+		messagesState.addMessage(msg('removed'));
+		messagesState.updateMessage('edited', { edited_at: '2026-10-08T12:05:00Z' });
+		messagesState.removeMessage('removed');
+
+		messagesState.set(KEY, [msg('x')], false);
+		expect(ids()).toEqual(['x', 'edited']);
+		expect(messagesState.messages(KEY)[1].edited_at).toBe('2026-10-08T12:05:00Z');
+	});
+
+	it('stops waiting once the load ends without a page', () => {
+		messagesState.endNewestLoad(KEY);
+		messagesState.addMessage(msg('late'));
+		messagesState.set(KEY, [msg('x')], false);
+		expect(ids()).toEqual(['x']);
+	});
+});

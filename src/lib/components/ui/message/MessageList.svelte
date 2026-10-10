@@ -278,6 +278,7 @@
 	async function loadMessages(key: string) {
 		const token = ++loadToken;
 		nextCursor = null;
+		messagesState.beginNewestLoad(key);
 
 		// Only flash the skeleton on a first visit, when there's nothing cached
 		// for this thread yet. Revisits keep their messages on screen while we
@@ -306,6 +307,7 @@
 		} catch (e) {
 			if (token !== loadToken) return;
 			if (onNotFound && normalizeError(e).status === 404) {
+				messagesState.endNewestLoad(key);
 				onNotFound();
 				return;
 			}
@@ -319,6 +321,7 @@
 			} catch (cacheError) {
 				if (token !== loadToken) return;
 				console.error('Failed to load messages', cacheError);
+				messagesState.endNewestLoad(key);
 				if (messagesState.messages(key).length === 0) loadState = 'error';
 			}
 		}
@@ -673,7 +676,10 @@
 	}
 
 	function escapeTaken(): boolean {
-		if (hasEscapeLayer() || replyState.target[threadKey] || messageEditState.editingId) return true;
+		const editingId = messageEditState.editingId;
+		const editingHere =
+			editingId != null && messagesState.messages(threadKey).some((m) => m.id === editingId);
+		if (hasEscapeLayer() || replyState.target[threadKey] || editingHere) return true;
 		const focused = document.activeElement;
 		return isEditable(focused) && !focused?.closest('[data-message-composer]');
 	}
