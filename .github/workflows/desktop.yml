@@ -33,6 +33,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run check
+      - run: npm test
 
   version:
     runs-on: ubuntu-latest
