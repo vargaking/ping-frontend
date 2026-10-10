@@ -14,7 +14,8 @@ const config = {
 		adapter: adapter(),
 		// The service worker serves one cached page for every app URL offline,
 		// so asset paths must not depend on the page's depth.
-		paths: { relative: false }
+		paths: { relative: false },
+		version: { pollInterval: 5 * 60_000 }
 	}
 };
 

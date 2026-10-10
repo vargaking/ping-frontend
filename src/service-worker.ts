@@ -15,6 +15,12 @@ import {
 import { readPushPrefs } from '$lib/utils/pushPrefs';
 import { notificationBadgeCount, setAppBadge } from '$lib/utils/appBadge';
 import { isApplePushEndpoint } from '$lib/utils/pushEndpoint';
+import {
+	IMMUTABLE_PREFIX,
+	SKIP_WAITING,
+	VERSION_QUERY,
+	staleShellCaches
+} from '$lib/utils/workerProtocol';
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -110,9 +116,18 @@ function safePath(url: unknown): string {
 const activity = new Map<string, 'active' | 'idle'>();
 
 sw.addEventListener('message', (event) => {
+	const data = event.data ?? {};
+	if (data.type === SKIP_WAITING) {
+		event.waitUntil(sw.skipWaiting());
+		return;
+	}
+	if (data.type === VERSION_QUERY) {
+		event.ports[0]?.postMessage({ version });
+		return;
+	}
 	const source = event.source;
 	if (!source || !('id' in source)) return;
-	const { type, state } = event.data ?? {};
+	const { type, state } = data;
 	if (type !== 'activity' || (state !== 'active' && state !== 'idle')) return;
 	activity.set(source.id, state);
 });
@@ -238,29 +253,32 @@ async function precache() {
 }
 
 async function dropOldCaches() {
-	const keys = await caches.keys();
-	await Promise.all(
-		keys.filter((key) => key.startsWith('shell-') && key !== CACHE).map((key) => caches.delete(key))
-	);
+	const [keys, windows] = await Promise.all([
+		caches.keys(),
+		sw.clients.matchAll({ type: 'window', includeUncontrolled: true })
+	]);
+	await Promise.all(staleShellCaches(keys, CACHE, windows.length).map((key) => caches.delete(key)));
 }
 
 async function navigate(request: Request): Promise<Response> {
 	try {
 		return await fetch(request);
 	} catch (e) {
-		const shell = await caches.match(SHELL);
+		const shell = (await (await caches.open(CACHE)).match(SHELL)) ?? (await caches.match(SHELL));
 		if (shell) return shell;
 		throw e;
 	}
 }
 
-async function cacheFirst(request: Request): Promise<Response> {
-	return (await caches.match(request)) ?? fetch(request);
+async function cacheFirst(request: Request, pathname: string): Promise<Response> {
+	const cached = pathname.startsWith(IMMUTABLE_PREFIX)
+		? await caches.match(request)
+		: await (await caches.open(CACHE)).match(request);
+	return cached ?? fetch(request);
 }
 
-sw.addEventListener('install', (event) => {
-	event.waitUntil(precache().then(() => sw.skipWaiting()));
-});
+// No skipWaiting: an open page keeps its own build's files until it reloads.
+sw.addEventListener('install', (event) => event.waitUntil(precache()));
 
 sw.addEventListener('activate', (event) => event.waitUntil(dropOldCaches()));
 
@@ -273,8 +291,8 @@ sw.addEventListener('fetch', (event) => {
 	if (request.mode === 'navigate') {
 		if (url.pathname.startsWith('/invite/')) return;
 		event.respondWith(navigate(request));
-	} else if (PRECACHED.has(url.pathname)) {
-		event.respondWith(cacheFirst(request));
+	} else if (PRECACHED.has(url.pathname) || url.pathname.startsWith(IMMUTABLE_PREFIX)) {
+		event.respondWith(cacheFirst(request, url.pathname));
 	}
 });
 

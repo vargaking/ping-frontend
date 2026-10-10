@@ -4,19 +4,21 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { installState } from '$lib/states/installState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
+	import { updateState } from '$lib/states/updateState.svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { blockedHelp } from '$lib/utils/install';
 	import { dismissPushPrompt, isPushPromptSnoozed } from '$lib/utils/pushPrompt';
 
 	let snoozed = $state(isPushPromptSnoozed());
 
-	// Steps aside while the mic prompt for a voice join is up; they share this corner.
-	// On a phone the install hint goes first.
+	// Steps aside while the mic prompt for a voice join or the update notice is up; they share
+	// this corner. On a phone the install hint goes first.
 	const visible = $derived(
 		notificationsState.pushChecked &&
 			notificationsState.push === 'off' &&
 			!snoozed &&
 			!voiceState.micPrompt &&
+			!updateState.noticeVisible &&
 			!installState.visible
 	);
 	const blocked = $derived(notificationsState.permission === 'denied');
