@@ -15,6 +15,7 @@ type RowKey = `${OverwriteSubject['kind']}:${number}`;
 type Pending = { intent: Bits; changed: bigint };
 /** The rows of one target waiting for their write, oldest click first. */
 type Chain = { queue: RowKey[]; running: boolean };
+type Waiters = ((saved: boolean) => void)[];
 
 const targetKey = (target: OverwriteTarget): TargetKey => `${target.kind}:${target.id}`;
 const rowKey = (subject: OverwriteSubject): RowKey => `${subject.kind}:${subject.id}`;
@@ -34,7 +35,11 @@ class OverwritesState {
 	private pending: Record<TargetKey, Record<RowKey, Pending>> = $state({});
 	private chains = new Map<TargetKey, Chain>();
 	/** Clicks not yet covered by a request; the request that carries them settles them. */
-	private waiters = new Map<string, ((saved: boolean) => void)[]>();
+	private waiters = new Map<string, Waiters>();
+	/** Waiters of the requests on the wire, which `reset` settles because the answer may never come. */
+	private covered = new Set<Waiters>();
+	/** Counts resets; work that started in an earlier session sees a different number and stops. */
+	private session = 0;
 	private loads = new Map<TargetKey, { seq: number; fresh: Map<RowKey, Bits> }>();
 	private loadSeq = 0;
 
@@ -113,16 +118,23 @@ class OverwritesState {
 	}
 
 	reset() {
+		this.session++;
+		for (const waiting of [...this.waiters.values(), ...this.covered]) this.settle(waiting, false);
+		this.waiters.clear();
+		this.covered.clear();
+		this.chains.clear();
 		this.saved = {};
 		this.pending = {};
 		this.loads.clear();
 	}
 
 	private async drain(target: OverwriteTarget, chain: Chain) {
+		const session = this.session;
 		chain.running = true;
 		try {
 			for (let rk = chain.queue.shift(); rk; rk = chain.queue.shift()) {
 				await this.send(target, subjectOf(rk), chain);
+				if (session !== this.session) return;
 			}
 		} finally {
 			chain.running = false;
@@ -133,6 +145,7 @@ class OverwritesState {
 
 	/** Writes the row's newest intent. A failure rolls back this row only. */
 	private async send(target: OverwriteTarget, subject: OverwriteSubject, chain: Chain) {
+		const session = this.session;
 		const key = targetKey(target);
 		const rk = rowKey(subject);
 		const id = `${key}|${rk}`;
@@ -147,19 +160,21 @@ class OverwritesState {
 			return;
 		}
 		const covered = this.takeWaiters(id);
+		this.covered.add(covered);
 		try {
-			this.store(
-				target,
-				subject,
-				rowOf(await setOverwrite(target, subject, intent.allow, intent.deny))
-			);
+			const row = rowOf(await setOverwrite(target, subject, intent.allow, intent.deny));
+			if (session !== this.session) return;
+			this.store(target, subject, row);
 		} catch (e) {
+			if (session !== this.session) return;
 			delete this.pending[key]?.[rk];
 			chain.queue = chain.queue.filter((queued) => queued !== rk);
 			this.settle(covered, false);
 			this.settle(this.takeWaiters(id), false);
 			toast.error(`Couldn't save permissions: ${getErrorMessage(e)}`, { id: 'overwrite-save' });
 			return;
+		} finally {
+			this.covered.delete(covered);
 		}
 		this.settle(covered, true);
 		if (!chain.queue.includes(rk)) delete this.pending[key]?.[rk];
@@ -171,7 +186,7 @@ class OverwritesState {
 		return waiting;
 	}
 
-	private settle(waiting: ((saved: boolean) => void)[], saved: boolean) {
+	private settle(waiting: Waiters, saved: boolean) {
 		for (const resolve of waiting) resolve(saved);
 	}
 

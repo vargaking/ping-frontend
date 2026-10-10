@@ -290,6 +290,72 @@ describe('save', () => {
 	});
 });
 
+describe('reset', () => {
+	const stillPending = (promise: Promise<boolean>) =>
+		Promise.race([promise, new Promise<'pending'>((resolve) => setTimeout(resolve, 0, 'pending'))]);
+
+	it('settles the in-flight and queued saves at once and lets a new session send immediately', async () => {
+		await loaded();
+		const stuck = deferred<RoleOverwrite>();
+		setOverwrite.mockReturnValueOnce(stuck.promise);
+
+		const inFlight = overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND);
+		const queued = overwritesState.save(channel, mod, { allow: VIEW, deny: 0n }, VIEW);
+		overwritesState.reset();
+
+		await expect(stillPending(inFlight)).resolves.toBe(false);
+		await expect(stillPending(queued)).resolves.toBe(false);
+
+		await loaded();
+		setOverwrite.mockResolvedValueOnce(roleRow(11, VIEW, 0n));
+		const fresh = overwritesState.save(channel, mod, { allow: VIEW, deny: 0n }, VIEW);
+
+		expect(setOverwrite).toHaveBeenCalledTimes(2);
+		await expect(fresh).resolves.toBe(true);
+	});
+
+	it('keeps a failing write from before the reset away from the new session', async () => {
+		await loaded();
+		const old = deferred<RoleOverwrite>();
+		const next = deferred<RoleOverwrite>();
+		setOverwrite.mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
+
+		const before = overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND);
+		overwritesState.reset();
+		await loaded();
+		const after = overwritesState.save(channel, everyone, { allow: 0n, deny: VIEW }, VIEW);
+
+		old.reject(new Error('Unauthorized'));
+		await expect(stillPending(before)).resolves.toBe(false);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(toastError).not.toHaveBeenCalled();
+		expect(bitsOf(channel, everyone)).toEqual({ allow: 0n, deny: VIEW });
+		expect(overwritesState.pendingBits(channel, everyone)).toBe(VIEW);
+		expect(setOverwrite).toHaveBeenCalledTimes(2);
+		expect(setOverwrite).toHaveBeenLastCalledWith(channel, everyone, 0n, VIEW);
+
+		next.resolve(roleRow(10, 0n, VIEW));
+		await expect(after).resolves.toBe(true);
+		expect(bitsOf(channel, everyone)).toEqual({ allow: 0n, deny: VIEW });
+	});
+
+	it('keeps a write that succeeds after the reset out of the new session', async () => {
+		await loaded();
+		const old = deferred<RoleOverwrite>();
+		setOverwrite.mockReturnValueOnce(old.promise);
+
+		const before = overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND);
+		overwritesState.reset();
+		await loaded();
+		old.resolve(roleRow(10, SEND, 0n));
+
+		await expect(stillPending(before)).resolves.toBe(false);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(overwritesState.rows(channel)?.roles).toEqual([]);
+	});
+});
+
 describe('applyFrame', () => {
 	it('adds, replaces and removes a row, and a repeated frame changes nothing', async () => {
 		await loaded();
