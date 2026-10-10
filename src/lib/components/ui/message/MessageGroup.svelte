@@ -51,7 +51,7 @@
 	);
 </script>
 
-<div class="flex gap-3">
+{#snippet avatar()}
 	<Avatar
 		{user}
 		name={imported?.name}
@@ -59,26 +59,32 @@
 		rounded="rounded-[10px]"
 		className="mt-0.5 h-9 w-9"
 	/>
-	<div class="flex min-w-0 flex-1 flex-col">
-		{#if messages[0].reply_to}
-			<ReplyContext reply={messages[0].reply_to} onJump={onJumpToMessage} />
-		{/if}
-		<div class="flex max-w-[760px] items-baseline gap-2">
-			<span class="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-foreground">
-				<AuthorName
-					name={imported?.name ?? user?.username ?? '…'}
-					imported={imported != null}
-					color={nameColor}
-				/>
-			</span>
-			<span class="shrink-0 font-mono text-[11px] whitespace-nowrap text-text-subtle">
-				{headerTime}
-			</span>
-		</div>
-		<div class="mt-0.5 flex flex-col gap-0.5">
-			{#each messages as message, i (message.id)}
-				<MessageRow {message} showHoverTime={i > 0} />
-			{/each}
-		</div>
+{/snippet}
+
+{#snippet header()}
+	{#if messages[0].reply_to}
+		<ReplyContext reply={messages[0].reply_to} onJump={onJumpToMessage} />
+	{/if}
+	<div class="mb-0.5 flex max-w-[760px] items-baseline gap-2">
+		<span class="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-foreground">
+			<AuthorName
+				name={imported?.name ?? user?.username ?? '…'}
+				imported={imported != null}
+				color={nameColor}
+			/>
+		</span>
+		<span class="shrink-0 font-mono text-[11px] whitespace-nowrap text-text-subtle">
+			{headerTime}
+		</span>
 	</div>
+{/snippet}
+
+<div class="-my-px flex flex-col">
+	{#each messages as message, i (message.id)}
+		<MessageRow
+			{message}
+			avatar={i === 0 ? avatar : undefined}
+			header={i === 0 ? header : undefined}
+		/>
+	{/each}
 </div>

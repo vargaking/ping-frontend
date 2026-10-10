@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { JSONContent } from '@tiptap/core';
 	import type { MessageType } from '$lib/types/messages.types';
 	import MessageNode from './MessageNode.svelte';
@@ -30,9 +31,8 @@
 	import { Pencil, Reply, SmilePlus, Trash2 } from 'lucide-svelte';
 	import ReplyIcon from '@lucide/svelte/icons/reply';
 
-	// The first row in a group already shows the timestamp in the group header,
-	// so the hover-gutter time is only rendered on continuation rows.
-	let { message, showHoverTime = true }: { message: MessageType; showHoverTime?: boolean } =
+	// A group's first row gets the avatar and header; the others show the time in the gutter on hover.
+	let { message, avatar, header }: { message: MessageType; avatar?: Snippet; header?: Snippet } =
 		$props();
 
 	const parsedContent = $derived(parseMessageContent(message.content));
@@ -94,163 +94,172 @@
 		<div
 			{...menuProps}
 			bind:this={row}
-			class="group/row relative rounded-md transition-[translate] duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none"
+			class="group/row relative -mx-2 flex gap-3 rounded-md px-2 py-px transition-[translate] duration-150 hover:bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-card motion-reduce:transition-none {pickerOpen
+				? 'bg-card'
+				: ''}"
 			tabindex="0"
 			data-message-id={message.id}
 		>
-			{#if editing}
-				<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
-					<MessageEditor
-						bind:this={editor}
-						bind:isEmpty={editorEmpty}
-						content={parsedContent}
-						autofocus
-						allowEmpty={attachments.length > 0}
-						mentionCandidates={() =>
-							mentionCandidates({
-								serverId: message.server_id,
-								conversationId: message.conversation_id
-							})}
-						onSubmit={saveEdit}
-						onCancel={() => messageEditState.stop()}
-						editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
-					/>
-					<div class="mt-1 text-[11px] text-text-subtle pointer-coarse:hidden">
-						escape to
-						<button
-							type="button"
-							class="underline hover:text-text-body"
-							onclick={() => messageEditState.stop()}>cancel</button
-						>
-						· enter to save
-					</div>
-					<div class="mt-2 hidden justify-end gap-2 pointer-coarse:flex">
-						<Button
-							size="sm"
-							variant="ghost"
-							class="pointer-coarse:h-10"
-							onclick={() => messageEditState.stop()}>Cancel</Button
-						>
-						<Button
-							size="sm"
-							class="pointer-coarse:h-10"
-							disabled={editorEmpty && attachments.length === 0}
-							onclick={() => editor?.submit()}>Save</Button
-						>
-					</div>
-				</div>
-			{:else}
-				{#if swipeable && phoneState.phone && phoneState.touch}
-					<span
-						class="pointer-events-none absolute top-1/2 left-full flex w-(--swipe-distance,0px) -translate-y-1/2 items-center justify-center overflow-hidden text-muted-foreground opacity-(--swipe-progress,0) group-data-armed/row:text-foreground"
-						aria-hidden="true"
-					>
-						<ReplyIcon size={20} strokeWidth={1.75} />
-					</span>
-				{/if}
-				{#if showHoverTime}
-					<span
-						class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block pointer-coarse:hidden!"
-						aria-hidden="true"
-					>
-						{hoverTime}
-					</span>
-				{/if}
-
-				{#if !pending && !failed}
-					<div
-						class="absolute -top-3 right-0 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex {pickerOpen
-							? 'flex pointer-coarse:invisible'
-							: 'hidden pointer-coarse:hidden!'}"
-					>
-						<ReactionPicker {message} bind:open={pickerOpen}>
-							{#snippet trigger(props)}
-								<button
-									{...props}
-									type="button"
-									aria-label="Add reaction"
-									class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-								>
-									<SmilePlus size={15} strokeWidth={1.75} />
-								</button>
-							{/snippet}
-						</ReactionPicker>
-						<button
-							type="button"
-							aria-label="Reply"
-							onclick={() => replyState.start(messageThreadKey(message), message)}
-							class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-						>
-							<Reply size={16} strokeWidth={1.75} />
-						</button>
-						{#if canEdit}
+			<div class="w-10 shrink-0">
+				{@render avatar?.()}
+			</div>
+			<div class="relative min-w-0 flex-1">
+				{@render header?.()}
+				{#if editing}
+					<div class="max-w-[760px] rounded-lg border border-input bg-surface-input px-3 py-1.5">
+						<MessageEditor
+							bind:this={editor}
+							bind:isEmpty={editorEmpty}
+							content={parsedContent}
+							autofocus
+							allowEmpty={attachments.length > 0}
+							mentionCandidates={() =>
+								mentionCandidates({
+									serverId: message.server_id,
+									conversationId: message.conversation_id
+								})}
+							onSubmit={saveEdit}
+							onCancel={() => messageEditState.stop()}
+							editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
+						/>
+						<div class="mt-1 text-[11px] text-text-subtle pointer-coarse:hidden">
+							escape to
 							<button
 								type="button"
-								aria-label="Edit message"
-								onclick={() => messageEditState.start(message.id)}
+								class="underline hover:text-text-body"
+								onclick={() => messageEditState.stop()}>cancel</button
+							>
+							· enter to save
+						</div>
+						<div class="mt-2 hidden justify-end gap-2 pointer-coarse:flex">
+							<Button
+								size="sm"
+								variant="ghost"
+								class="pointer-coarse:h-10"
+								onclick={() => messageEditState.stop()}>Cancel</Button
+							>
+							<Button
+								size="sm"
+								class="pointer-coarse:h-10"
+								disabled={editorEmpty && attachments.length === 0}
+								onclick={() => editor?.submit()}>Save</Button
+							>
+						</div>
+					</div>
+				{:else}
+					{#if !avatar}
+						<span
+							class="pointer-events-none absolute top-0.5 right-full hidden pr-2 font-mono text-[11px] whitespace-nowrap text-text-subtle select-none group-hover/row:block pointer-coarse:hidden!"
+							aria-hidden="true"
+						>
+							{hoverTime}
+						</span>
+					{/if}
+
+					<div class={pending ? 'opacity-55' : ''}>
+						{#if pending}<span class="sr-only">Sending</span>{/if}
+						{#if hasText || attachments.length === 0}
+							<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
+							<div
+								class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert {message.edited_at
+									? '[&>p:nth-last-child(2)]:inline'
+									: ''}"
+							>
+								<MessageNode node={parsedContent} />{#if message.edited_at}<span
+										class="ml-1 align-baseline text-[11px] text-text-subtle select-none"
+										>(edited)</span
+									>{/if}
+							</div>
+						{/if}
+						{#if attachments.length > 0}
+							<div class={hasText ? 'mt-1.5' : ''}>
+								<MessageAttachments {attachments} />
+							</div>
+							{#if !hasText && message.edited_at}
+								<span class="text-[11px] text-text-subtle select-none">(edited)</span>
+							{/if}
+						{/if}
+						{#each embeds as embed (embed.url)}
+							<div class="mt-1.5">
+								<LinkEmbed {embed} />
+							</div>
+						{/each}
+						<MessageReactions {message} />
+					</div>
+					{#if failed}
+						<div class="mt-0.5 flex items-center gap-2 text-xs text-destructive select-none">
+							<span>Not sent</span>
+							<button
+								type="button"
+								class="rounded-sm underline hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+								onclick={() => socketState.retryMessage(message.id)}>Retry</button
+							>
+							<button
+								type="button"
+								class="rounded-sm underline hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+								onclick={() => socketState.discardMessage(message.id)}>Delete</button
+							>
+						</div>
+					{/if}
+				{/if}
+			</div>
+
+			{#if !editing && !pending && !failed}
+				<div
+					class="absolute -top-3 right-2 items-center gap-0.5 rounded-md border border-border bg-surface-input p-0.5 shadow-sm group-hover/row:flex {pickerOpen
+						? 'flex pointer-coarse:invisible'
+						: 'hidden pointer-coarse:hidden!'}"
+				>
+					<ReactionPicker {message} bind:open={pickerOpen}>
+						{#snippet trigger(props)}
+							<button
+								{...props}
+								type="button"
+								aria-label="Add reaction"
 								class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 							>
-								<Pencil size={15} strokeWidth={1.75} />
+								<SmilePlus size={15} strokeWidth={1.75} />
 							</button>
-						{/if}
-						{#if canDelete}
-							<button
-								type="button"
-								aria-label="Delete message"
-								onclick={() => promptDeleteMessage(message.id)}
-								class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-							>
-								<Trash2 size={15} strokeWidth={1.75} />
-							</button>
-						{/if}
-					</div>
-				{/if}
-
-				<div class={pending ? 'opacity-55' : ''}>
-					{#if pending}<span class="sr-only">Sending</span>{/if}
-					{#if hasText || attachments.length === 0}
-						<!-- No whitespace after MessageNode: under pre-wrap it renders as an extra line. -->
-						<div
-							class="prose prose-sm max-w-[760px] text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-text-body prose-invert {message.edited_at
-								? '[&>p:nth-last-child(2)]:inline'
-								: ''}"
+						{/snippet}
+					</ReactionPicker>
+					<button
+						type="button"
+						aria-label="Reply"
+						onclick={() => replyState.start(messageThreadKey(message), message)}
+						class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					>
+						<Reply size={16} strokeWidth={1.75} />
+					</button>
+					{#if canEdit}
+						<button
+							type="button"
+							aria-label="Edit message"
+							onclick={() => messageEditState.start(message.id)}
+							class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 						>
-							<MessageNode node={parsedContent} />{#if message.edited_at}<span
-									class="ml-1 align-baseline text-[11px] text-text-subtle select-none"
-									>(edited)</span
-								>{/if}
-						</div>
+							<Pencil size={15} strokeWidth={1.75} />
+						</button>
 					{/if}
-					{#if attachments.length > 0}
-						<div class={hasText ? 'mt-1.5' : ''}>
-							<MessageAttachments {attachments} />
-						</div>
-						{#if !hasText && message.edited_at}
-							<span class="text-[11px] text-text-subtle select-none">(edited)</span>
-						{/if}
+					{#if canDelete}
+						<button
+							type="button"
+							aria-label="Delete message"
+							onclick={() => promptDeleteMessage(message.id)}
+							class="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						>
+							<Trash2 size={15} strokeWidth={1.75} />
+						</button>
 					{/if}
-					{#each embeds as embed (embed.url)}
-						<div class="mt-1.5">
-							<LinkEmbed {embed} />
-						</div>
-					{/each}
-					<MessageReactions {message} />
 				</div>
-				{#if failed}
-					<div class="mt-0.5 flex items-center gap-2 text-xs text-destructive select-none">
-						<span>Not sent</span>
-						<button
-							type="button"
-							class="rounded-sm underline hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-							onclick={() => socketState.retryMessage(message.id)}>Retry</button
-						>
-						<button
-							type="button"
-							class="rounded-sm underline hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-							onclick={() => socketState.discardMessage(message.id)}>Delete</button
-						>
-					</div>
-				{/if}
+			{/if}
+
+			{#if swipeable && phoneState.phone && phoneState.touch}
+				<span
+					class="pointer-events-none absolute top-1/2 left-full flex w-(--swipe-distance,0px) -translate-y-1/2 items-center justify-center overflow-hidden text-muted-foreground opacity-(--swipe-progress,0) group-data-armed/row:text-foreground"
+					aria-hidden="true"
+				>
+					<ReplyIcon size={20} strokeWidth={1.75} />
+				</span>
 			{/if}
 		</div>
 	{/snippet}
