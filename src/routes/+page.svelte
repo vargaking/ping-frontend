@@ -132,7 +132,8 @@
 			{#if !desktop}
 				<p class="mt-3 max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
 					The installer isn't signed yet, so Windows warns about an unknown publisher. Choose "More
-					info", then "Run anyway". On Linux, make the AppImage executable, then run it.
+					info", then "Run anyway". On Linux, move the AppImage somewhere permanent, make it
+					executable, then run it. It adds itself to your app launcher.
 				</p>
 			{/if}
 		</section>
