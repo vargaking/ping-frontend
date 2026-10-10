@@ -65,3 +65,16 @@ test('a stored message is found with Ctrl+K and opened in its channel', async ({
 	await page.keyboard.press('Control+k');
 	await expect(search).toBeHidden();
 });
+
+test('the top bar search bar opens the search dialog', async ({ browser }) => {
+	const context = await browser.newContext();
+	await registerUser(context, 'barsearcher');
+	const page = await context.newPage();
+
+	const server = await createServer(context, uniqueName('Guild'));
+	const general = await createChannel(context, server.id, 'general');
+
+	await page.goto(channelPath(server.id, general.id));
+	await page.getByRole('button', { name: 'Search' }).click();
+	await expect(page.getByRole('combobox', { name: 'Search messages' })).toBeFocused();
+});
