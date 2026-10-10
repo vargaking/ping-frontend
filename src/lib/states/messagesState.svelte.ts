@@ -1,4 +1,5 @@
 import type { MessageType, Reaction, ReplyRef } from '$lib/types/messages.types';
+import { timestampMs } from '$lib/utils/messageContent';
 import { replaceWithNewestPage } from '$lib/utils/mergeNewestPage';
 import { channelThreadKey, directThreadKey, postThreadKey } from '$lib/utils/threadKeys';
 
@@ -41,6 +42,15 @@ type ThreadMessages = {
 
 function listsOf(thread: ThreadMessages): MessageType[][] {
 	return thread.newestLoad ? [thread.messages, thread.newestLoad.arrived] : [thread.messages];
+}
+
+/** Server messages by time (those held in the window and those that arrived), then unsent ones. */
+function inArrivalOrder(held: MessageType[], arrived: MessageType[]): MessageType[] {
+	const all = [...held, ...arrived];
+	const sent = all
+		.filter((m) => !m.status)
+		.sort((a, b) => timestampMs(a.timestamp) - timestampMs(b.timestamp));
+	return [...sent, ...all.filter((m) => m.status)];
 }
 
 export function messageThreadKey(message: MessageType): string {
@@ -105,7 +115,9 @@ class MessagesState {
 	 *  loaded and our unsent messages aren't on it, so they stay after it. */
 	set(key: string, messages: MessageType[], hasMore: boolean) {
 		const thread = this.threads[key];
-		const current = [...(thread?.messages ?? []), ...(thread?.newestLoad?.arrived ?? [])];
+		const current = thread?.newestLoad
+			? inArrivalOrder(thread.messages, thread.newestLoad.arrived)
+			: (thread?.messages ?? []);
 		const known =
 			thread?.newestLoad?.known ?? new Set(current.filter((m) => !m.status).map((m) => m.id));
 		this.threads[key] = { messages: replaceWithNewestPage(current, messages, known), hasMore };

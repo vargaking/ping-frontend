@@ -90,6 +90,15 @@ describe('loading the newest page past a gap', () => {
 		expect(ids()).toEqual(['x', 'y', 'mine', 'during']);
 	});
 
+	it('orders what arrived and our acked message by time, not by where it was held', () => {
+		messagesState.addMessage(msg('theirs', { timestamp: '2026-10-08T12:01:00Z' }));
+		messagesState.addMessage(msg('mine', { timestamp: '2026-10-08T12:02:00Z', status: 'pending' }));
+		messagesState.updateMessage('mine', { status: undefined });
+
+		messagesState.set(KEY, [msg('x')], false);
+		expect(ids()).toEqual(['x', 'theirs', 'mine']);
+	});
+
 	it('keeps our unsent messages last', () => {
 		messagesState.addMessage(msg('mine', { status: 'pending' }));
 		messagesState.addMessage(msg('during'));
