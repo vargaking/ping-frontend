@@ -22,8 +22,11 @@ export type OlderHistoryHost<Page> = {
 	fetch(): Promise<Page>;
 	/** Prepends the page and returns how many messages it added. */
 	apply(page: Page): number;
-	/** Runs `change`, then restores the view to the messages it showed before. */
-	keepView(change: () => void): Promise<void>;
+	/**
+	 * Runs `change`, then restores the view to the messages it showed before. With `revealTop`, a
+	 * view at the very top stays there instead, so rows `change` adds above the messages are seen.
+	 */
+	keepView(change: () => void, options?: { revealTop?: boolean }): Promise<void>;
 };
 
 /** Loads older pages of a thread when the user is at its top, and tracks what to show meanwhile. */
@@ -39,6 +42,8 @@ export class OlderHistory<Page> {
 	#run: Promise<OlderResult> | null = null;
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#generation = 0;
+	/** Set by a failure at the top; scrolling alone retries only after the user leaves the top. */
+	#failedAtTop = false;
 
 	constructor(host: OlderHistoryHost<Page>, delayMs = SKELETON_DELAY_MS) {
 		this.#host = host;
@@ -47,13 +52,21 @@ export class OlderHistory<Page> {
 
 	/**
 	 * Loads pages while the user is at the top, or the list is too short to scroll. Safe to call
-	 * on every scroll: it does nothing while a fetch is running, and after a failure only a
-	 * later call (another scroll, or `force` from a retry button) tries again.
+	 * on every scroll: it does nothing while a fetch is running, and after a failure it waits
+	 * until the user has left the top and come back, or `force` (a retry button) asks again.
+	 * Without a measurable list nothing loads unless forced.
 	 */
 	async request(force = false): Promise<void> {
 		if (this.#run || !this.#host.available()) return;
 		const position = this.#host.metrics();
-		if (!force && position && !wantsOlder(position)) return;
+		if (!force) {
+			if (!position) return;
+			if (!wantsOlder(position)) {
+				this.#failedAtTop = false;
+				return;
+			}
+			if (this.#failedAtTop) return;
+		}
 		const result = await this.load();
 		if (result.ok && result.added > 0) await this.request();
 	}
@@ -79,12 +92,16 @@ export class OlderHistory<Page> {
 		this.#run = null;
 		this.#finish();
 		this.failed = false;
+		this.#failedAtTop = false;
 	}
 
 	async #fetchPage(): Promise<OlderResult> {
 		const generation = this.#generation;
 		this.loading = true;
-		this.#timer = setTimeout(() => (this.slow = true), this.#delayMs);
+		this.#timer = setTimeout(() => {
+			this.#timer = null;
+			void this.#host.keepView(() => (this.slow = true), { revealTop: true });
+		}, this.#delayMs);
 
 		let page: Page;
 		try {
@@ -92,10 +109,15 @@ export class OlderHistory<Page> {
 		} catch (e) {
 			if (generation !== this.#generation) return { ok: true, added: 0 };
 			console.error('Failed to load older messages', e);
-			await this.#host.keepView(() => {
-				this.#finish();
-				this.failed = true;
-			});
+			const position = this.#host.metrics();
+			this.#failedAtTop = position != null && wantsOlder(position);
+			await this.#host.keepView(
+				() => {
+					this.#finish();
+					this.failed = true;
+				},
+				{ revealTop: true }
+			);
 			return { ok: false };
 		}
 		if (generation !== this.#generation) return { ok: true, added: 0 };

@@ -37,9 +37,11 @@ function setup({
 	};
 	let remaining = pages;
 	let opening = false;
+	let detached = false;
+	const keptViews: Array<{ revealTop?: boolean } | undefined> = [];
 	const fetched = vi.fn(fetch ?? (async () => ({ messages: 10 })));
 	const older = new OlderHistory<Page>({
-		metrics: () => position,
+		metrics: () => (detached ? null : position),
 		available: () => !opening && remaining > 0,
 		fetch: fetched,
 		apply(page) {
@@ -47,7 +49,8 @@ function setup({
 			position.scrollHeight += PAGE_HEIGHT;
 			return page.messages;
 		},
-		async keepView(change) {
+		async keepView(change, options) {
+			keptViews.push(options);
 			change();
 			await Promise.resolve();
 			if (view === 'pinned') position.scrollTop += PAGE_HEIGHT;
@@ -58,7 +61,9 @@ function setup({
 		older,
 		position,
 		fetched,
-		setOpening: (value: boolean) => (opening = value)
+		keptViews,
+		setOpening: (value: boolean) => (opening = value),
+		detach: () => (detached = true)
 	};
 }
 
@@ -160,9 +165,9 @@ describe('a first page that is shorter than the view', () => {
 });
 
 describe('a failed fetch', () => {
-	it('shows the failure, loads nothing further, and retries on the next request', async () => {
+	it('shows the failure, loads nothing further, and retries once the user returns to the top', async () => {
 		let fail = true;
-		const { older, fetched } = setup({
+		const { older, position, fetched } = setup({
 			pages: 1,
 			view: 'stay',
 			fetch: async () => {
@@ -177,9 +182,71 @@ describe('a failed fetch', () => {
 		expect(fetched).toHaveBeenCalledTimes(1);
 
 		fail = false;
+		position.scrollTop = 1000;
+		await older.request();
+		position.scrollTop = 0;
 		await older.request();
 		expect(fetched).toHaveBeenCalledTimes(2);
 		expect(older.failed).toBe(false);
+	});
+
+	it('does not ask again on every scroll in the top band', async () => {
+		const { older, position, fetched } = setup({
+			pages: 5,
+			view: 'stay',
+			fetch: async () => {
+				throw new Error('offline');
+			}
+		});
+		await older.request();
+
+		for (const top of [0, 10, 40, NEAR_TOP_PX, 5, 0]) {
+			position.scrollTop = top;
+			await older.request();
+		}
+
+		expect(fetched).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not hold back the retry when the user scrolled away before the failure', async () => {
+		let fail = () => {};
+		let first = true;
+		const { older, position, fetched } = setup({
+			pages: 5,
+			fetch: () => {
+				if (!first) return Promise.resolve({ messages: 10 });
+				first = false;
+				return new Promise<Page>((_, reject) => (fail = () => reject(new Error('offline'))));
+			}
+		});
+		const request = older.request();
+		position.scrollTop = 1000;
+		fail();
+		await request;
+
+		position.scrollTop = 20;
+		await older.request();
+
+		expect(fetched).toHaveBeenCalledTimes(2);
+	});
+
+	it('forgets the failure when another thread is shown', async () => {
+		let fail = true;
+		const { older, fetched } = setup({
+			pages: 1,
+			view: 'stay',
+			fetch: async () => {
+				if (fail) throw new Error('offline');
+				return { messages: 10 };
+			}
+		});
+		await older.request();
+
+		fail = false;
+		older.reset();
+		await older.request();
+
+		expect(fetched).toHaveBeenCalledTimes(2);
 	});
 
 	it('asks once per request while offline', async () => {
@@ -274,6 +341,19 @@ describe('placeholder rows', () => {
 		expect(older.slow).toBe(false);
 	});
 
+	it('are shown and hidden through the view-preserving path, revealing a view at the top', async () => {
+		const { older, keptViews } = setup({ pages: 1, fetch: slowFetch(SKELETON_DELAY_MS + 300) });
+
+		const request = older.request();
+		await vi.advanceTimersByTimeAsync(SKELETON_DELAY_MS + 1);
+		expect(older.slow).toBe(true);
+		expect(keptViews).toEqual([{ revealTop: true }]);
+
+		await vi.advanceTimersByTimeAsync(300);
+		await request;
+		expect(keptViews).toEqual([{ revealTop: true }, undefined]);
+	});
+
 	it('are replaced by the failure when the fetch fails', async () => {
 		const { older } = setup({
 			pages: 1,
@@ -318,5 +398,59 @@ describe('switching threads', () => {
 		await Promise.all([stale, fresh]);
 
 		expect(fetched).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('leaving the thread', () => {
+	beforeEach(() => vi.useFakeTimers());
+
+	it('does not keep loading pages once the list is gone', async () => {
+		let release = () => {};
+		const { older, fetched, detach } = setup({
+			pages: 5,
+			view: 'stay',
+			fetch: () => new Promise<Page>((resolve) => (release = () => resolve({ messages: 10 })))
+		});
+
+		const request = older.request();
+		detach();
+		older.reset();
+		release();
+		await request;
+
+		expect(fetched).toHaveBeenCalledTimes(1);
+		expect(older.loading).toBe(false);
+	});
+
+	it('does not start a fetch without a list to measure', async () => {
+		const { older, fetched, detach } = setup({ pages: 5, view: 'stay' });
+		detach();
+
+		await older.request();
+
+		expect(fetched).not.toHaveBeenCalled();
+	});
+
+	it('still loads on an explicit request without a measurement', async () => {
+		const { older, fetched, detach } = setup({ pages: 1 });
+		detach();
+
+		await older.request(true);
+
+		expect(fetched).toHaveBeenCalledTimes(1);
+	});
+
+	it('shows no placeholder rows after a reset', async () => {
+		const { older, keptViews } = setup({
+			pages: 1,
+			fetch: () => new Promise<Page>((resolve) => setTimeout(() => resolve({ messages: 10 }), 1000))
+		});
+
+		void older.request();
+		older.reset();
+		await vi.advanceTimersByTimeAsync(SKELETON_DELAY_MS * 2);
+
+		expect(older.slow).toBe(false);
+		expect(keptViews).toEqual([]);
 	});
 });

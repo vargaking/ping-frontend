@@ -12,7 +12,7 @@
 	import { messagesState } from '$lib/states/messagesState.svelte';
 	import { normalizeError } from '$lib/requests/errors';
 	import { db } from '$lib/utils/db';
-	import { tick, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { ArrowDown, MessagesSquare } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
@@ -110,6 +110,9 @@
 	// settled. The list is at the top until then, which must not read as a request for history.
 	let opening = false;
 	let openingTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Set once the component is torn down; whatever was still in flight must then do nothing.
+	let destroyed = false;
 
 	// The list shows the IndexedDB cache because the API failed.
 	let fromCache = $state(false);
@@ -271,6 +274,7 @@
 		opening = true;
 		if (openingTimer) clearTimeout(openingTimer);
 		tick().then(() => {
+			if (destroyed) return;
 			scrollToBottom();
 			openingTimer = setTimeout(() => {
 				if (stickToBottom) scrollToBottom();
@@ -334,22 +338,30 @@
 	}
 
 	// Pins the view to the same messages across a change at the top of the list, such as a page
-	// arriving or placeholder rows going away. At the bottom it stays at the bottom.
-	async function keepView(change: () => void) {
+	// arriving or placeholder rows appearing or going away. At the bottom it stays at the bottom.
+	// It sets an absolute offset, so it gives the same result with or without the browser's own
+	// scroll anchoring. With `revealTop`, a view parked at the very top stays there so rows added
+	// above the messages are seen rather than pushed out of view.
+	async function keepView(change: () => void, { revealTop = false } = {}) {
 		const el = messageWrapper;
 		const prevHeight = el?.scrollHeight ?? 0;
 		const prevTop = el?.scrollTop ?? 0;
 		change();
 		await tick();
-		if (!el) return;
-		if (stickToBottom) scrollToBottom();
+		if (!el || destroyed) return;
+		if (revealTop && prevTop <= 1) el.scrollTop = prevTop;
+		else if (stickToBottom) scrollToBottom();
 		else el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
 	}
 
 	const older = new OlderHistory<MessagePage>({
 		metrics: () => messageWrapper ?? null,
 		available: () =>
-			!opening && loadedKey === threadKey && messagesState.hasMore(threadKey) && nextCursor != null,
+			!destroyed &&
+			!opening &&
+			loadedKey === threadKey &&
+			messagesState.hasMore(threadKey) &&
+			nextCursor != null,
 		fetch: () => fetchPage(nextCursor),
 		apply(pageData) {
 			const olderAscending = [...pageData.messages].reverse();
@@ -362,6 +374,15 @@
 			return messagesState.messages(threadKey).length - before;
 		},
 		keepView
+	});
+
+	onDestroy(() => {
+		destroyed = true;
+		loadToken++;
+		older.reset();
+		if (openingTimer) clearTimeout(openingTimer);
+		openingTimer = null;
+		stopSmoothJump();
 	});
 
 	let resyncing: Promise<void> | null = null;
@@ -494,7 +515,7 @@
 		for (let pages = 0; !isLoaded(id) && pages < maxPages; pages++) {
 			if (!messagesState.hasMore(key) || !nextCursor) break;
 			const result = await older.load();
-			if (key !== threadKey) return;
+			if (key !== threadKey || destroyed) return;
 			if (!result.ok) {
 				toast.error("Couldn't load older messages");
 				return;
