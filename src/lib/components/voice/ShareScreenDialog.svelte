@@ -24,6 +24,10 @@
 
 	const hasGrid = $derived(!!desktop?.listScreenSources);
 	const pickOnly = $derived(shareDialogState.pickOnly);
+	const systemPicker = $derived(shareDialogState.systemPicker && !pickOnly);
+	const chosen = $derived(
+		shareDialogState.sources?.find((s) => s.id === shareDialogState.selected) ?? null
+	);
 	const env = $derived(soundEnv());
 	const chooseSurface = $derived(!desktop && env.browser.kind === 'chromium');
 	const sound = $derived(soundOption(env, voiceSettingsState.screenSurface));
@@ -93,6 +97,34 @@
 			{#if hasGrid || pickOnly}
 				{#if shareDialogState.sources === null}
 					<p class="py-10 text-center text-sm text-muted-foreground">Loading…</p>
+				{:else if systemPicker}
+					{#if chosen}
+						<div class="flex flex-col gap-3">
+							<img
+								src={chosen.thumbnail}
+								alt=""
+								class="aspect-video max-h-[40vh] w-full rounded-md bg-black/40 object-contain"
+							/>
+							<div class="flex min-w-0 items-center justify-between gap-3">
+								<span class="flex min-w-0 items-center gap-2 text-sm">
+									{#if chosen.icon}
+										<img src={chosen.icon} alt="" class="size-4 shrink-0" />
+									{/if}
+									<span class="truncate" title={chosen.name}>{chosen.name}</span>
+								</span>
+								<Button variant="outline" size="sm" onclick={() => shareDialogState.change()}>
+									Change
+								</Button>
+							</div>
+						</div>
+					{:else}
+						<div class="flex flex-col items-center gap-3 py-10">
+							<p class="text-sm text-muted-foreground">Nothing chosen yet</p>
+							<Button variant="outline" onclick={() => shareDialogState.change()}>
+								Choose what to share
+							</Button>
+						</div>
+					{/if}
 				{:else}
 					<ScreenSourceGrid
 						sources={shareDialogState.sources}

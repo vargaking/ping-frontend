@@ -25,8 +25,12 @@ export type DesktopBridge = {
 	frameless?: boolean;
 	/** Whether the shell can capture the PC's sound with a screen share. Shells before 0.3.0 don't say. */
 	canShareAudio?: boolean;
+	/** True when the OS shows its own chooser on every listing, as on Wayland. Shells before 0.3.1 don't say. */
+	systemPicker?: boolean;
 	/** Everything that can be shared, for the page's own picker. Shells before 0.3.0 lack it and ask through onPickScreenSource instead. */
 	listScreenSources?(): Promise<ScreenSource[]>;
+	/** Tells the shell the share dialog is closed, so it drops the sources it kept. Shells before 0.3.1 lack it. */
+	shareDialogClosed?(): void;
 	/** The shell calls the handler when the page asks to share its screen. Resolve with a source id, or null to cancel. Returns an unsubscribe. */
 	onPickScreenSource?(handler: (sources: ScreenSource[]) => Promise<string | null>): () => void;
 };

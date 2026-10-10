@@ -32,6 +32,7 @@ const bridge = {
 	platform: process.platform as 'win32' | 'darwin' | 'linux',
 	frameless: true,
 	canShareAudio: process.platform === 'win32',
+	systemPicker: process.argv.includes('--zet-system-picker'),
 	setUnread(state: { count: number; unread: boolean }) {
 		ipcRenderer.send('shell:unread', state);
 	},
@@ -49,6 +50,9 @@ const bridge = {
 	},
 	listScreenSources(): Promise<ScreenSource[]> {
 		return ipcRenderer.invoke('shell:list-sources');
+	},
+	shareDialogClosed() {
+		ipcRenderer.send('shell:share-dialog-closed');
 	},
 	onPickScreenSource(handler: PickHandler) {
 		pickHandler = handler;

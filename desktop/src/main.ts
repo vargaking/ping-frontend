@@ -33,12 +33,20 @@ const ALLOWED_PERMISSIONS = new Set([
 /** Loopback capture of the PC's sound is only supported on Windows. */
 const CAN_SHARE_AUDIO = process.platform === 'win32';
 
+/** On Wayland the OS chooser opens on every listing and returns only what was picked. */
+const SYSTEM_PICKER =
+	process.platform === 'linux' &&
+	(process.env.XDG_SESSION_TYPE === 'wayland' || !!process.env.WAYLAND_DISPLAY);
+
 const SAFE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 let mainWindow: BrowserWindow | null = null;
 let quitting = false;
 
 let pageHasPicker = false;
+// What the share dialog last listed, so the capture it starts doesn't open the system chooser again.
+let keptSources: DesktopCapturerSource[] = [];
+let keptGeneration = 0;
 let sharePending = false;
 let nextRequestId = 1;
 let pendingPick: { requestId: number; settle: (result: PickResult) => void } | null = null;
@@ -101,8 +109,14 @@ function registerIpc() {
 
 	ipcMain.handle('shell:list-sources', async (event) => {
 		if (!fromApp(event) || !mainWindow) return [];
+		const generation = keptGeneration;
 		const sources = await listSources(mainWindow.getMediaSourceId());
+		if (generation === keptGeneration) keptSources = sources;
 		return sources.map(toScreenSource);
+	});
+
+	ipcMain.on('shell:share-dialog-closed', (event) => {
+		if (fromApp(event)) clearKeptSources();
 	});
 
 	ipcMain.on('shell:picker-handler', (event, registered) => {
@@ -122,8 +136,14 @@ function registerIpc() {
 	});
 }
 
+function clearKeptSources() {
+	keptSources = [];
+	keptGeneration++;
+}
+
 function resetPagePicker() {
 	pageHasPicker = false;
+	clearKeptSources();
 	pendingPick?.settle({ handled: true, id: null });
 }
 
@@ -144,8 +164,10 @@ function askPage(win: BrowserWindow, sources: DesktopCapturerSource[]): Promise<
 }
 
 async function chooseSource(win: BrowserWindow): Promise<DesktopCapturerSource | null> {
+	const kept = keptSources;
+	clearKeptSources();
 	if (!pageHasPicker) return pickSource(win);
-	const sources = await listSources(win.getMediaSourceId());
+	const sources = kept.length > 0 ? kept : await listSources(win.getMediaSourceId());
 	const result = await askPage(win, sources);
 	if (!result.handled) return pickSource(win);
 	return sources.find((source) => source.id === result.id) ?? null;
@@ -210,7 +232,10 @@ function createWindow() {
 		show: false,
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),
-			additionalArguments: [`--zet-version=${app.getVersion()}`],
+			additionalArguments: [
+				`--zet-version=${app.getVersion()}`,
+				...(SYSTEM_PICKER ? ['--zet-system-picker'] : [])
+			],
 			contextIsolation: true,
 			sandbox: true,
 			nodeIntegration: false,
