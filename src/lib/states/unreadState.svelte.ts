@@ -136,7 +136,7 @@ class UnreadState {
 
 	renameChannel(channelId: number, name: string) {
 		const existing = this.channels[channelId];
-		if (existing) this.channels[channelId] = { ...existing, name };
+		if (existing && existing.name !== name) this.channels[channelId] = { ...existing, name };
 	}
 
 	forgetChannel(channelId: number) {

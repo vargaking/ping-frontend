@@ -22,6 +22,7 @@ import { notificationsState } from './notificationsState.svelte';
 import { documentFocusState, type ActivityState } from '$lib/utils/documentFocus.svelte';
 import { reportActivity } from '$lib/utils/push';
 import { voicePresenceState } from './voicePresenceState.svelte';
+import { overwritesState } from './overwritesState.svelte';
 import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound';
 import { notifyChannelMessage, showThreadNotification } from '$lib/utils/desktopNotification';
 import { channelTag, dmTag } from '$lib/utils/notificationTags';
@@ -745,6 +746,9 @@ class SocketState {
 				break;
 			case 'permissions_updated':
 				serversState.setPermission(message.server_id, message.permissions, message.channels);
+				break;
+			case 'permission_overwrite_updated':
+				overwritesState.applyFrame(message);
 				break;
 			case 'member_roles_updated':
 				serversState.setMemberRoles(message.server_id, message.user_id, message.role_ids);

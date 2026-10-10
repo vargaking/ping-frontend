@@ -7,11 +7,21 @@
 		value: PermissionState;
 		/** What an inherited value resolves to, e.g. "Allowed, from Mod". */
 		inherited: string;
+		/** A change is on its way to the server. */
+		pending?: boolean;
 		disabled?: boolean;
 		onchange: (value: PermissionState) => void;
 	};
 
-	let { label, description, value, inherited, disabled = false, onchange }: Props = $props();
+	let {
+		label,
+		description,
+		value,
+		inherited,
+		pending = false,
+		disabled = false,
+		onchange
+	}: Props = $props();
 
 	const options: { value: PermissionState; label: string }[] = [
 		{ value: 'inherit', label: 'Inherit' },
@@ -39,6 +49,7 @@
 	<div
 		role="radiogroup"
 		aria-label={label}
+		aria-busy={pending}
 		class="flex shrink-0 overflow-hidden rounded-lg border border-input max-md:w-full {disabled
 			? 'opacity-50'
 			: ''}"
@@ -52,7 +63,7 @@
 				onclick={() => onchange(option.value)}
 				class="h-8 px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed max-md:flex-1 pointer-coarse:h-10 {value ===
 				option.value
-					? active[option.value]
+					? active[option.value] + (pending ? ' animate-pulse' : '')
 					: 'text-muted-foreground hover:bg-card hover:text-foreground'}"
 			>
 				{option.label}

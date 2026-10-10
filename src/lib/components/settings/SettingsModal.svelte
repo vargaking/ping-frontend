@@ -228,10 +228,10 @@
 	{/if}
 {/snippet}
 {#snippet channelPermissions()}
-	{#if channel && serversState.selectedServerId != null}
+	{#if channel && channelId != null && serversState.selectedServerId != null}
 		<ChannelPermissions
 			serverId={serversState.selectedServerId}
-			target={{ kind: 'channel', id: channel.id }}
+			target={{ kind: 'channel', id: channelId }}
 			categoryId={channel.group_id}
 		/>
 	{/if}

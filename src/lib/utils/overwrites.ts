@@ -1,6 +1,11 @@
 import { parseMask, Permission, type PermissionInfo } from '$lib/permissions';
 import type { Role } from '$lib/types/server.types';
-import type { OverwriteSubject, Overwrites } from '$lib/types/overwrite.types';
+import type {
+	MemberOverwrite,
+	OverwriteSubject,
+	Overwrites,
+	RoleOverwrite
+} from '$lib/types/overwrite.types';
 import { resolveRole, type PermissionState } from './roles';
 
 /** The bits an overwrite can change, in the order the editor shows them. */
@@ -19,15 +24,45 @@ export const CHANNEL_PERMISSIONS: PermissionInfo[] = [
 
 export type Bits = { allow: bigint; deny: bigint };
 
-const NONE: Bits = { allow: 0n, deny: 0n };
+export const NO_BITS: Bits = { allow: 0n, deny: 0n };
 
 export function rowBits(rows: Overwrites | null, subject: OverwriteSubject): Bits {
-	if (!rows) return NONE;
+	if (!rows) return NO_BITS;
 	const row =
 		subject.kind === 'roles'
 			? rows.roles.find((r) => r.role_id === subject.id)
 			: rows.members.find((m) => m.user_id === subject.id);
-	return row ? { allow: parseMask(row.allow), deny: parseMask(row.deny) } : NONE;
+	return rowOf(row ?? null);
+}
+
+export function sameBits(a: Bits, b: Bits): boolean {
+	return a.allow === b.allow && a.deny === b.deny;
+}
+
+export function rowOf(row: RoleOverwrite | MemberOverwrite | null): Bits {
+	return row ? { allow: parseMask(row.allow), deny: parseMask(row.deny) } : NO_BITS;
+}
+
+/** The rows with one subject's row replaced, added at the end, or removed when `bits` is empty. */
+export function withRow(rows: Overwrites, subject: OverwriteSubject, bits: Bits): Overwrites {
+	const empty = sameBits(bits, NO_BITS);
+	const masks = { allow: String(bits.allow), deny: String(bits.deny) };
+	if (subject.kind === 'roles') {
+		const row: RoleOverwrite = { role_id: subject.id, ...masks };
+		return { ...rows, roles: replaceRow(rows.roles, (r) => r.role_id === subject.id, row, empty) };
+	}
+	const row: MemberOverwrite = { user_id: subject.id, ...masks };
+	return {
+		...rows,
+		members: replaceRow(rows.members, (m) => m.user_id === subject.id, row, empty)
+	};
+}
+
+function replaceRow<T>(list: T[], matches: (item: T) => boolean, row: T, remove: boolean): T[] {
+	if (!list.some(matches)) return remove ? [...list] : [...list, row];
+	return remove
+		? list.filter((item) => !matches(item))
+		: list.map((item) => (matches(item) ? row : item));
 }
 
 export function bitState(bits: Bits, bit: bigint): PermissionState {

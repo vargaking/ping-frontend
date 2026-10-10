@@ -30,6 +30,15 @@ export function has(mask: bigint | undefined, perm: bigint): boolean {
 
 export const ALL_PERMISSIONS = Object.values(Permission).reduce((all, bit) => all | bit, 0n);
 
+/** The bits a channel or category overwrite can change. */
+export const CHANNEL_BITS =
+	Permission.VIEW_CHANNEL |
+	Permission.SEND_MESSAGES |
+	Permission.MANAGE_MESSAGES |
+	Permission.CONNECT |
+	Permission.SPEAK |
+	Permission.STREAM;
+
 export type PermissionInfo = { bit: bigint; label: string; description: string };
 
 export const PERMISSION_GROUPS: { label: string; permissions: PermissionInfo[] }[] = [

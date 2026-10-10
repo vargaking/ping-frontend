@@ -23,6 +23,17 @@ import {
 import { unreadState } from './unreadState.svelte';
 import { usersState } from './usersState.svelte';
 
+function sameChannel(a: Channel, b: Channel): boolean {
+	return (
+		a.name === b.name &&
+		a.topic === b.topic &&
+		a.group_id === b.group_id &&
+		a.position === b.position &&
+		a.private === b.private &&
+		JSON.stringify(a.channel_settings) === JSON.stringify(b.channel_settings)
+	);
+}
+
 export type ServerLayout = {
 	ungrouped: Channel[];
 	groups: { group: ChannelGroup; channels: Channel[] }[];
@@ -310,7 +321,12 @@ export class ServersState {
 
 	updateGroup(serverId: number, group: ChannelGroup) {
 		const existing = this.channelGroups[serverId]?.[group.id];
-		if (existing) this.channelGroups[serverId][group.id] = { ...existing, ...group };
+		if (!existing) return;
+		const next = { ...existing, ...group };
+		if ((Object.keys(next) as (keyof ChannelGroup)[]).every((key) => next[key] === existing[key])) {
+			return;
+		}
+		this.channelGroups[serverId][group.id] = next;
 	}
 
 	/** Drop a deleted category; the layout says where its channels went. */
@@ -399,7 +415,7 @@ export class ServersState {
 		const loaded = this.channels[serverId];
 		const existing = loaded?.[channel.id];
 		if (!loaded || !existing) return;
-		loaded[channel.id] = {
+		const next = {
 			...existing,
 			name: channel.name,
 			topic: channel.topic ?? null,
@@ -408,6 +424,7 @@ export class ServersState {
 			position: channel.position ?? existing.position,
 			private: channel.private ?? existing.private
 		};
+		if (!sameChannel(existing, next)) loaded[channel.id] = next;
 	}
 
 	/** Drop a deleted channel (own delete or channel_deleted). */

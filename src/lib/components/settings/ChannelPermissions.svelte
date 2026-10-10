@@ -1,13 +1,16 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
-	import { getOverwrites, setOverwrite } from '$lib/requests/channels/permissionOverwrites';
-	import { getErrorMessage } from '$lib/requests/errors';
-	import type { OverwriteSubject, OverwriteTarget, Overwrites } from '$lib/types/overwrite.types';
-	import type { Role, ServerMember } from '$lib/types/server.types';
+	import { usersState } from '$lib/states/usersState.svelte';
+	import { overwritesState } from '$lib/states/overwritesState.svelte';
+	import { CHANNEL_BITS } from '$lib/permissions';
+	import type { OverwriteSubject, OverwriteTarget } from '$lib/types/overwrite.types';
+	import type { Role } from '$lib/types/server.types';
 	import { canTouchRole, rankOf, sortRoles, type PermissionState } from '$lib/utils/roles';
 	import {
 		CHANNEL_PERMISSIONS,
+		NO_BITS,
 		bitState,
 		inheritedForMember,
 		inheritedForRole,
@@ -28,11 +31,23 @@
 		categoryId = null
 	}: { serverId: number; target: OverwriteTarget; categoryId?: number | null } = $props();
 
-	let rows = $state<Overwrites | null>(null);
-	let categoryRows = $state<Overwrites | null>(null);
-	let members = $state<ServerMember[]>([]);
+	// Only the primitives drive loading, so a new target object with the same ids reloads nothing.
+	const targetKind = $derived(target.kind);
+	const targetId = $derived(target.id);
+	const parentId = $derived(targetKind === 'channel' ? (categoryId ?? null) : null);
+	const here = $derived<OverwriteTarget>({ kind: targetKind, id: targetId });
+	const parent = $derived<OverwriteTarget | null>(
+		parentId != null ? { kind: 'group', id: parentId } : null
+	);
+
+	const rows = $derived(overwritesState.rows(here));
+	const parentRows = $derived(parent ? overwritesState.rows(parent) : null);
+
+	let hereReady = $state(false);
+	let parentReady = $state(false);
 	let loadError = $state(false);
-	let busy = $state(false);
+	let hereSeq = 0;
+	let parentSeq = 0;
 	// Subjects added in the editor that don't have a row yet.
 	let added = $state<OverwriteSubject[]>([]);
 	let keeper = $state('');
@@ -41,10 +56,28 @@
 
 	const roles = $derived(serversState.roles[serverId] ?? []);
 	const everyone = $derived(roles.find((r) => r.is_default));
+	const ownerId = $derived(serversState.servers[serverId]?.owner_id ?? null);
 	const isOwner = $derived(serversState.isOwner(serverId));
 	const rank = $derived(serversState.rankIn(serverId));
 	const privateOn = $derived(isPrivate(rows, everyone?.id));
-	const nounTarget = $derived(target.kind === 'channel' ? 'channel' : 'category');
+	const privatePending = $derived(
+		everyone != null &&
+			(overwritesState.pendingBits(here, { kind: 'roles', id: everyone.id }) &
+				CHANNEL_PERMISSIONS[0].bit) !==
+				0n
+	);
+	const nounTarget = $derived(targetKind === 'channel' ? 'channel' : 'category');
+	const ready = $derived(hereReady && parentReady && serversState.roles[serverId] != null);
+
+	type MemberInfo = { id: number; username: string; roleIds: number[] };
+
+	const members = $derived<MemberInfo[]>(
+		(serversState.servers[serverId]?.members ?? []).map((user) => ({
+			id: user.id,
+			username: usersState.users[user.id]?.username ?? user.username,
+			roleIds: serversState.memberRoles[serverId]?.[user.id] ?? []
+		}))
+	);
 
 	type Entry = { subject: OverwriteSubject; label: string; role?: Role; locked: boolean };
 
@@ -65,12 +98,12 @@
 				if (!role) continue;
 				out.push({ subject, label: role.name, role, locked: !canTouchRole(role, rank, isOwner) });
 			} else {
-				const member = members.find((m) => m.user.id === subject.id);
-				const theirRank = rankOf(roles, member?.role_ids ?? []);
+				const member = members.find((m) => m.id === subject.id);
+				const theirRank = rankOf(roles, member?.roleIds ?? []);
 				out.push({
 					subject,
-					label: member?.user.username ?? `User ${subject.id}`,
-					locked: !isOwner && (member?.is_owner === true || (theirRank > 0 && theirRank >= rank))
+					label: member?.username ?? `User ${subject.id}`,
+					locked: !isOwner && (subject.id === ownerId || (theirRank > 0 && theirRank >= rank))
 				});
 			}
 		}
@@ -85,38 +118,65 @@
 	);
 	const memberChoices = $derived(
 		members.filter(
-			(m) => !entries.some((e) => e.subject.kind === 'members' && e.subject.id === m.user.id)
+			(m) => !entries.some((e) => e.subject.kind === 'members' && e.subject.id === m.id)
 		)
 	);
 	const keeperChoices = $derived([
 		...sortRoles(roles)
 			.filter((r) => !r.is_default && canTouchRole(r, rank, isOwner))
 			.map((r) => ({ value: `roles:${r.id}`, label: r.name })),
-		...members.map((m) => ({ value: `members:${m.user.id}`, label: m.user.username }))
+		...members.map((m) => ({ value: `members:${m.id}`, label: m.username }))
 	]);
 
-	async function load() {
+	async function loadHere(t: OverwriteTarget) {
+		const seq = ++hereSeq;
+		hereReady = false;
 		loadError = false;
 		try {
-			const [own, parent, roster] = await Promise.all([
-				getOverwrites(target),
-				categoryId != null ? getOverwrites({ kind: 'group', id: categoryId }) : null,
-				serversState.loadRoster(serverId)
+			await Promise.all([
+				overwritesState.load(t),
+				serversState.roles[serverId] ? null : serversState.loadRoster(serverId)
 			]);
-			rows = own;
-			categoryRows = parent;
-			members = roster;
+			if (seq === hereSeq) hereReady = true;
 		} catch (e) {
+			if (seq !== hereSeq) return;
 			console.warn('Failed to load permission overwrites', e);
 			loadError = true;
 		}
 	}
 
+	async function loadParent(p: OverwriteTarget | null) {
+		const seq = ++parentSeq;
+		if (!p) {
+			parentReady = true;
+			return;
+		}
+		parentReady = false;
+		try {
+			await overwritesState.load(p);
+			if (seq === parentSeq) parentReady = true;
+		} catch (e) {
+			if (seq !== parentSeq) return;
+			console.warn('Failed to load category permission overwrites', e);
+			loadError = true;
+		}
+	}
+
 	$effect(() => {
-		void target.id;
-		void target.kind;
-		load();
+		const t = here;
+		untrack(() => loadHere(t));
 	});
+
+	$effect(() => {
+		const p = parent;
+		untrack(() => loadParent(p));
+	});
+
+	function retry() {
+		loadError = false;
+		void loadHere(here);
+		void loadParent(parent);
+	}
 
 	function parseSubject(value: string): OverwriteSubject | null {
 		const [kind, id] = value.split(':');
@@ -124,30 +184,14 @@
 		return { kind, id: Number(id) };
 	}
 
-	async function write(subject: OverwriteSubject, allow: bigint, deny: bigint) {
-		await setOverwrite(target, subject, allow, deny);
-	}
-
-	async function run(action: () => Promise<void>) {
-		busy = true;
-		try {
-			await action();
-		} catch (e) {
-			toast.error(`Couldn't save permissions: ${getErrorMessage(e)}`);
-		} finally {
-			await load();
-			busy = false;
-		}
-	}
-
 	function change(subject: OverwriteSubject, bit: bigint, state: PermissionState) {
 		const next = withState(rowBits(rows, subject), bit, state);
-		run(() => write(subject, next.allow, next.deny));
+		void overwritesState.save(here, subject, next, bit);
 	}
 
 	function remove(subject: OverwriteSubject) {
 		added = added.filter((s) => !(s.kind === subject.kind && s.id === subject.id));
-		run(() => write(subject, 0n, 0n));
+		void overwritesState.save(here, subject, NO_BITS, CHANNEL_BITS);
 	}
 
 	function add(kind: 'roles' | 'members', value: string) {
@@ -157,16 +201,13 @@
 		addMember = '';
 	}
 
-	function togglePrivate() {
+	async function togglePrivate() {
 		if (!everyone) return;
-		const everyoneId = everyone.id;
+		const view = CHANNEL_PERMISSIONS[0].bit;
+		const everyoneSubject: OverwriteSubject = { kind: 'roles', id: everyone.id };
 		if (privateOn) {
-			const bits = withState(
-				rowBits(rows, { kind: 'roles', id: everyoneId }),
-				CHANNEL_PERMISSIONS[0].bit,
-				'inherit'
-			);
-			run(() => write({ kind: 'roles', id: everyoneId }, bits.allow, bits.deny));
+			const bits = withState(rowBits(rows, everyoneSubject), view, 'inherit');
+			void overwritesState.save(here, everyoneSubject, bits, view);
 			return;
 		}
 		const subject = parseSubject(keeper);
@@ -174,17 +215,16 @@
 			toast.error(`Pick who keeps access to this ${nounTarget} first.`);
 			return;
 		}
-		run(async () => {
-			for (const step of privateSteps(rows, everyoneId, subject)) {
-				await write(step.subject, step.bits.allow, step.bits.deny);
-			}
-			keeper = '';
-		});
+		keeper = '';
+		const [keep] = privateSteps(rows, everyone.id, subject);
+		if (!(await overwritesState.save(here, keep.subject, keep.bits, view))) return;
+		const [, hide] = privateSteps(rows, everyone.id, subject);
+		void overwritesState.save(here, hide.subject, hide.bits, view);
 	}
 
 	function inherited(entry: Entry, bit: bigint): string {
-		if (entry.role) return inheritedForRole(entry.role, bit, roles, rows, categoryRows);
-		return inheritedForMember(categoryRows != null);
+		if (entry.role) return inheritedForRole(entry.role, bit, roles, rows, parentRows);
+		return inheritedForMember(parentRows != null);
 	}
 
 	const selectClass =
@@ -194,19 +234,20 @@
 <div class="flex flex-col gap-6 p-7 max-md:p-4" data-testid="channel-permissions">
 	{#if loadError}
 		<p class="text-sm text-destructive">
-			Couldn't load the permissions. <button class="underline" onclick={load}>Try again</button>
+			Couldn't load the permissions. <button class="underline" onclick={retry}>Try again</button>
 		</p>
-	{:else if rows === null}
+	{:else if !ready || rows === null}
 		<p class="text-sm text-muted-foreground">Loading…</p>
 	{:else}
 		<section class="flex flex-col gap-3">
 			<SettingsSwitch
 				label="Private"
-				description={target.kind === 'channel'
+				description={targetKind === 'channel'
 					? 'Only the roles and members you allow can see this channel.'
 					: 'Only the roles and members you allow can see the channels in this category.'}
 				checked={privateOn}
-				disabled={busy || !everyone}
+				pending={privatePending}
+				disabled={!everyone}
 				onclick={togglePrivate}
 			/>
 			{#if !privateOn}
@@ -214,7 +255,7 @@
 					<label for="private-keeper" class="text-[13px] font-medium text-text-label">
 						Who keeps access
 					</label>
-					<select id="private-keeper" bind:value={keeper} class={selectClass} disabled={busy}>
+					<select id="private-keeper" bind:value={keeper} class={selectClass}>
 						<option value="">Pick a role or member</option>
 						{#each keeperChoices as choice (choice.value)}
 							<option value={choice.value}>{choice.label}</option>
@@ -232,7 +273,6 @@
 					bind:value={addRole}
 					onchange={() => add('roles', addRole)}
 					class={selectClass}
-					disabled={busy}
 				>
 					<option value="">Add a role…</option>
 					{#each roleChoices as role (role.id)}
@@ -244,11 +284,10 @@
 					bind:value={addMember}
 					onchange={() => add('members', addMember)}
 					class={selectClass}
-					disabled={busy}
 				>
 					<option value="">Add a member…</option>
-					{#each memberChoices as member (member.user.id)}
-						<option value={String(member.user.id)}>{member.user.username}</option>
+					{#each memberChoices as member (member.id)}
+						<option value={String(member.id)}>{member.username}</option>
 					{/each}
 				</select>
 			</div>
@@ -279,7 +318,6 @@
 								variant="ghost"
 								size="sm"
 								aria-label="Remove {entry.label}"
-								disabled={busy}
 								onclick={(e: MouseEvent) => {
 									e.preventDefault();
 									remove(entry.subject);
@@ -301,7 +339,8 @@
 								description={permission.description}
 								value={bitState(bits, permission.bit)}
 								inherited={inherited(entry, permission.bit)}
-								disabled={busy || entry.locked}
+								pending={(overwritesState.pendingBits(here, entry.subject) & permission.bit) !== 0n}
+								disabled={entry.locked}
 								onchange={(state) => change(entry.subject, permission.bit, state)}
 							/>
 						{/each}
