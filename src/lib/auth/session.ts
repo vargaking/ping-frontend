@@ -11,6 +11,7 @@ import { notificationsState } from '$lib/states/notificationsState.svelte';
 import { socketState } from '$lib/states/socketState.svelte';
 import { historySyncState } from '$lib/states/historySyncState.svelte';
 import { searchState } from '$lib/states/searchState.svelte';
+import { overwritesState } from '$lib/states/overwritesState.svelte';
 import { clearLocalCache } from '$lib/utils/db';
 import { disablePush } from '$lib/utils/push';
 import { logout as logoutRequest } from '$lib/requests/auth/logout';
@@ -28,6 +29,7 @@ export async function clearSession(): Promise<void> {
 
 	serversState.reset();
 	serverRequestState.reset();
+	overwritesState.reset();
 
 	messagesState.clearAll();
 	forumState.reset();

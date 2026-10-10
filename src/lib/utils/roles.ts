@@ -38,11 +38,15 @@ export function resolveRole(roleId: number, roles: Role[]): { allow: bigint; den
 	return { allow, deny };
 }
 
-/** The default role's allow, then the assigned roles from lowest to highest position. */
-export function memberMask(roles: Role[], assignedIds: number[]): bigint {
-	let mask = 0n;
+/**
+ * One layer of resolution: @everyone first, then the assigned roles from lowest to highest
+ * position, so the highest role that says anything about a bit decides it.
+ */
+export function applyLayer(mask: bigint, roles: Role[], assignedIds: number[]): bigint {
 	for (const role of roles) {
-		if (role.is_default) mask |= resolveRole(role.id, roles).allow;
+		if (!role.is_default) continue;
+		const { allow, deny } = resolveRole(role.id, roles);
+		mask = (mask & ~deny) | allow;
 	}
 	const assigned = new Set(assignedIds);
 	const applied = roles
@@ -52,7 +56,11 @@ export function memberMask(roles: Role[], assignedIds: number[]): bigint {
 		const { allow, deny } = resolveRole(role.id, roles);
 		mask = (mask | allow) & ~deny;
 	}
-	return mask & ALL_PERMISSIONS;
+	return mask;
+}
+
+export function memberMask(roles: Role[], assignedIds: number[]): bigint {
+	return applyLayer(0n, roles, assignedIds) & ALL_PERMISSIONS;
 }
 
 /** Position of the member's highest role; 0 without one. */

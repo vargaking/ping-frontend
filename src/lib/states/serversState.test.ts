@@ -6,6 +6,8 @@ vi.mock('$lib/requests/channels/getServerChannelSnapshot', () => ({
 }));
 
 import { ServersState } from './serversState.svelte';
+import { unreadState } from './unreadState.svelte';
+import type { Channel, ChannelGroup } from '$lib/types/channel.types';
 
 const snapshot = { groups: [], channels: [{ id: 1, name: 'general', type: 'text', position: 0 }] };
 
@@ -53,5 +55,73 @@ describe('loadServerChannels', () => {
 		await expect(state.loadServerChannels(7)).rejects.toThrow('offline');
 		await state.loadServerChannels(7);
 		expect(getSnapshot).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('updateChannel', () => {
+	const channel = (extra: Partial<Channel> = {}): Channel => ({
+		id: 1,
+		name: 'general',
+		type: 'text',
+		topic: null,
+		group_id: 3,
+		position: 2,
+		channel_settings: { slowmode: 5 },
+		private: false,
+		...extra
+	});
+
+	function loaded() {
+		const state = new ServersState();
+		state.channels = { 7: { 1: channel() } };
+		return state;
+	}
+
+	it('keeps the stored channel when nothing changed', () => {
+		const state = loaded();
+		const before = state.channels[7][1];
+		state.updateChannel(7, channel({ channel_settings: { slowmode: 5 } }));
+		expect(state.channels[7][1]).toBe(before);
+	});
+
+	it('keeps the unread entry when the name is the same', () => {
+		unreadState.noteNewChannel(7, channel());
+		const before = unreadState['channels'][1];
+		loaded().updateChannel(7, channel());
+		expect(unreadState['channels'][1]).toBe(before);
+		unreadState.reset();
+	});
+
+	it('replaces the stored channel when the private flag flips', () => {
+		const state = loaded();
+		const before = state.channels[7][1];
+		state.updateChannel(7, channel({ private: true }));
+		expect(state.channels[7][1]).not.toBe(before);
+		expect(state.channels[7][1].private).toBe(true);
+	});
+
+	it('replaces the stored channel when its settings change', () => {
+		const state = loaded();
+		state.updateChannel(7, channel({ channel_settings: { slowmode: 10 } }));
+		expect(state.channels[7][1].channel_settings).toEqual({ slowmode: 10 });
+	});
+});
+
+describe('updateGroup', () => {
+	const group: ChannelGroup = { id: 3, server_id: 7, name: 'Staff', position: 1, private: false };
+
+	it('keeps the stored group when nothing changed', () => {
+		const state = new ServersState();
+		state.channelGroups = { 7: { 3: { ...group } } };
+		const before = state.channelGroups[7][3];
+		state.updateGroup(7, { ...group });
+		expect(state.channelGroups[7][3]).toBe(before);
+	});
+
+	it('replaces the stored group when something changed', () => {
+		const state = new ServersState();
+		state.channelGroups = { 7: { 3: { ...group } } };
+		state.updateGroup(7, { ...group, private: true });
+		expect(state.channelGroups[7][3].private).toBe(true);
 	});
 });

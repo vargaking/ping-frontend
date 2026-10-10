@@ -5,19 +5,42 @@
 		label: string;
 		description: string;
 		value: PermissionState;
-		/** What an inherited value resolves to, e.g. "Allowed, from Mod". */
-		inherited: string;
+		/** What the bit falls back to without this setting, and where that comes from. */
+		inherited?: { value: 'allow' | 'deny'; text: string };
+		/** A change is on its way to the server. */
+		pending?: boolean;
 		disabled?: boolean;
+		/** Options that can't be picked, e.g. because they would lock the user out. */
+		blocked?: PermissionState[];
+		/** Why the toggle or an option is unavailable. */
+		note?: string;
 		onchange: (value: PermissionState) => void;
 	};
 
-	let { label, description, value, inherited, disabled = false, onchange }: Props = $props();
+	let {
+		label,
+		description,
+		value,
+		inherited,
+		pending = false,
+		disabled = false,
+		blocked = [],
+		note,
+		onchange
+	}: Props = $props();
 
 	const options: { value: PermissionState; label: string }[] = [
 		{ value: 'inherit', label: 'Inherit' },
 		{ value: 'allow', label: 'Allow' },
 		{ value: 'deny', label: 'Deny' }
 	];
+
+	const inheritedLine = $derived.by(() => {
+		if (!inherited) return null;
+		if (value === 'inherit') return inherited.text;
+		if (value === inherited.value) return `Same as inherited: ${inherited.text}`;
+		return `Overrides: ${inherited.text}`;
+	});
 
 	const active: Record<PermissionState, string> = {
 		inherit: 'bg-accent text-foreground',
@@ -31,14 +54,18 @@
 >
 	<div class="flex min-w-0 flex-col gap-1">
 		<span class="text-sm font-medium">{label}</span>
-		<span class="text-xs text-muted-foreground">{description}</span>
-		{#if value === 'inherit'}
-			<span class="text-xs text-text-subtle">{inherited}</span>
+		<span class="text-xs break-words text-muted-foreground">{description}</span>
+		{#if inheritedLine}
+			<span class="text-xs break-words text-text-subtle">{inheritedLine}</span>
+		{/if}
+		{#if note}
+			<span class="text-xs break-words text-muted-foreground">{note}</span>
 		{/if}
 	</div>
 	<div
 		role="radiogroup"
 		aria-label={label}
+		aria-busy={pending}
 		class="flex shrink-0 overflow-hidden rounded-lg border border-input max-md:w-full {disabled
 			? 'opacity-50'
 			: ''}"
@@ -48,12 +75,16 @@
 				type="button"
 				role="radio"
 				aria-checked={value === option.value}
-				{disabled}
+				disabled={disabled || blocked.includes(option.value)}
 				onclick={() => onchange(option.value)}
 				class="h-8 px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed max-md:flex-1 pointer-coarse:h-10 {value ===
 				option.value
-					? active[option.value]
-					: 'text-muted-foreground hover:bg-card hover:text-foreground'}"
+					? active[option.value] + (pending ? ' animate-pulse' : '')
+					: 'text-muted-foreground hover:bg-card hover:text-foreground'} {blocked.includes(
+					option.value
+				) && !disabled
+					? 'opacity-50'
+					: ''}"
 			>
 				{option.label}
 			</button>

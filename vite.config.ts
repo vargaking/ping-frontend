@@ -37,6 +37,7 @@ export default defineConfig({
 			'/users': `http://${process.env.LOCAL_IP}:8000`,
 			'/servers': `http://${process.env.LOCAL_IP}:8000`,
 			'/channels': `http://${process.env.LOCAL_IP}:8000`,
+			'/channel-groups': `http://${process.env.LOCAL_IP}:8000`,
 			'/conversations': `http://${process.env.LOCAL_IP}:8000`,
 			'/messages': `http://${process.env.LOCAL_IP}:8000`,
 			'/posts': `http://${process.env.LOCAL_IP}:8000`,

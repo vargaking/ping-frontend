@@ -69,10 +69,11 @@
 		deny = next === 'deny' ? deny | bit : deny & ~bit;
 	}
 
-	function inheritedText(bit: bigint): string {
+	function inheritedFor(bit: bigint): { value: 'allow' | 'deny'; text: string } {
 		const source = inheritedSource(draft, bit, roles);
-		if (!source) return 'Not set';
-		return `${source.state === 'allow' ? 'Allowed' : 'Denied'}, from ${source.role.name}`;
+		if (!source) return { value: 'deny', text: 'Not set' };
+		const word = source.state === 'allow' ? 'Allowed' : 'Denied';
+		return { value: source.state, text: `${word}, from ${source.role.name}` };
 	}
 
 	function reset() {
@@ -252,7 +253,7 @@
 								label={perm.label}
 								description={perm.description}
 								value={stateOf(perm.bit)}
-								inherited={inheritedText(perm.bit)}
+								inherited={stateOf(perm.bit) === 'inherit' ? inheritedFor(perm.bit) : undefined}
 								disabled={locked || unheld}
 								onchange={(next) => setState(perm.bit, next)}
 							/>

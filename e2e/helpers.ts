@@ -38,16 +38,71 @@ export async function createServer(context: BrowserContext, name: string) {
 	);
 }
 
-export async function createChannel(context: BrowserContext, serverId: number, name: string) {
+export async function createCategory(context: BrowserContext, serverId: number, name: string) {
 	return json<{ id: number; name: string }>(
-		await context.request.post(`/channels/${serverId}/create`, { data: { name, type: 'text' } })
+		await context.request.post(`/servers/${serverId}/channel-groups`, { data: { name } })
 	);
 }
 
-export async function createRole(context: BrowserContext, serverId: number, name: string) {
+export async function createChannel(
+	context: BrowserContext,
+	serverId: number,
+	name: string,
+	groupId?: number
+) {
 	return json<{ id: number; name: string }>(
-		await context.request.post(`/servers/${serverId}/roles`, { data: { name } })
+		await context.request.post(`/channels/${serverId}/create`, {
+			data: { name, type: 'text', ...(groupId != null && { group_id: groupId }) }
+		})
 	);
+}
+
+export async function createRole(
+	context: BrowserContext,
+	serverId: number,
+	name: string,
+	extra: { allow?: string; parent_id?: number } = {}
+) {
+	return json<{ id: number; name: string }>(
+		await context.request.post(`/servers/${serverId}/roles`, { data: { name, ...extra } })
+	);
+}
+
+export async function setMemberRoles(
+	context: BrowserContext,
+	serverId: number,
+	userId: number,
+	roleIds: number[]
+) {
+	await json(
+		await context.request.put(`/servers/${serverId}/members/${userId}/roles`, {
+			data: { role_ids: roleIds }
+		})
+	);
+}
+
+export async function everyoneRoleId(context: BrowserContext, serverId: number) {
+	const roles = await json<{ id: number; is_default: boolean }[]>(
+		await context.request.get(`/servers/${serverId}/roles`)
+	);
+	const everyone = roles.find((role) => role.is_default);
+	expect(everyone, 'the server should have an @everyone role').toBeDefined();
+	return everyone!.id;
+}
+
+export async function putOverwrite(
+	context: BrowserContext,
+	target: 'channels' | 'channel-groups',
+	id: number,
+	kind: 'roles' | 'members',
+	subjectId: number,
+	allow: string,
+	deny: string
+) {
+	const response = await context.request.put(`/${target}/${id}/permissions/${kind}/${subjectId}`, {
+		data: { allow, deny }
+	});
+	expect(response.ok(), `${response.url()} responded ${response.status()}`).toBe(true);
 }
 
 export async function createInvite(context: BrowserContext, serverId: number) {

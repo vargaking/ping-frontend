@@ -5,13 +5,23 @@
 		label: string;
 		description: string;
 		checked: boolean;
+		/** A change is on its way to the server. */
+		pending?: boolean;
 		disabled?: boolean;
 		onclick: () => void;
 		/** Extra lines under the description, e.g. why the switch is disabled. */
 		children?: Snippet;
 	};
 
-	let { label, description, checked, disabled = false, onclick, children }: Props = $props();
+	let {
+		label,
+		description,
+		checked,
+		pending = false,
+		disabled = false,
+		onclick,
+		children
+	}: Props = $props();
 </script>
 
 <div class="flex items-start justify-between gap-4">
@@ -25,6 +35,7 @@
 		role="switch"
 		aria-checked={checked}
 		aria-label={label}
+		aria-busy={pending}
 		{disabled}
 		{onclick}
 		class="relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 {checked
@@ -34,7 +45,7 @@
 		<span
 			class="inline-block h-4 w-4 transform rounded-full bg-background transition-transform {checked
 				? 'translate-x-5'
-				: 'translate-x-1'}"
+				: 'translate-x-1'} {pending ? 'animate-pulse' : ''}"
 		></span>
 	</button>
 </div>
