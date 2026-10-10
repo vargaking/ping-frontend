@@ -31,6 +31,9 @@ export function registerLauncher() {
 		const { iconFile } = launcherPaths(process.env, home);
 		if (!fs.existsSync(iconFile)) {
 			writeFile(iconFile, () => fs.copyFileSync(assetPath('icon.png'), iconFile));
+			// An icon theme cache counts as stale only when the theme directory itself is newer.
+			const now = new Date();
+			fs.utimesSync(path.resolve(iconFile, '../../..'), now, now);
 		}
 		const plan = planLauncher(process.env, home, readOrNull);
 		if (plan) writeFile(plan.entryFile, () => fs.writeFileSync(plan.entryFile, plan.entry));
