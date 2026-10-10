@@ -3,16 +3,20 @@ import { Permission } from '$lib/permissions';
 import type { Role } from '$lib/types/server.types';
 import type { Overwrites } from '$lib/types/overwrite.types';
 import {
+	CHANNEL_PERMISSIONS,
 	NO_BITS,
 	bitState,
-	inheritedForRole,
+	memberInheritedText,
+	roleInheritedText,
 	rowBits,
 	rowOf,
+	rowSummary,
 	sameBits,
 	visibilityLine,
 	withRow,
 	withState
 } from './overwrites';
+import type { Decided } from './channelResolution';
 
 const VIEW = Permission.VIEW_CHANNEL;
 const SEND = Permission.SEND_MESSAGES;
@@ -32,7 +36,6 @@ const role = (id: number, extra: Partial<Role> = {}): Role => ({
 const everyone = role(1, { name: '@everyone', is_default: true, position: 0, allow: '3' });
 const mod = role(2, { name: 'Mod' });
 const junior = role(3, { name: 'Junior', parent_id: 2 });
-const roles = [everyone, mod, junior];
 
 const rows = (r: Overwrites['roles'], m: Overwrites['members'] = []): Overwrites => ({
 	roles: r,
@@ -59,22 +62,140 @@ describe('bits', () => {
 	});
 });
 
-describe('inheritedForRole', () => {
-	it('names a parent row on the same target first', () => {
-		const here = rows([{ role_id: 2, allow: String(VIEW), deny: '0' }]);
-		expect(inheritedForRole(junior, VIEW, roles, here, null)).toBe('Allowed, from Mod here');
+const place = { noun: 'channel' as const, categoryName: 'Staff' };
+
+function roleText(
+	target: Role,
+	value: 'allow' | 'deny',
+	source: Decided['source'],
+	roleSilent = false
+) {
+	return roleInheritedText(target, { value, source, roleSilent }, place);
+}
+
+describe('roleInheritedText', () => {
+	it("names the parent's setting on this channel", () => {
+		const source = { kind: 'role', layer: 'target', role: junior, via: mod } as const;
+		expect(roleText(junior, 'deny', source)).toBe('Denied, from Mod on this channel');
+		expect(
+			roleInheritedText(
+				junior,
+				{ value: 'deny', source, roleSilent: false },
+				{ ...place, noun: 'category' }
+			)
+		).toBe('Denied, from Mod on this category');
 	});
 
-	it('then the category', () => {
-		const category = rows([{ role_id: 3, allow: '0', deny: String(SEND) }]);
-		expect(inheritedForRole(junior, SEND, roles, rows([]), category)).toBe(
-			'Denied by the category'
+	it('names the category when it set the role itself', () => {
+		const source = { kind: 'role', layer: 'category', role: junior, via: null } as const;
+		expect(roleText(junior, 'allow', source)).toBe('Allowed, from the category Staff');
+	});
+
+	it('names the parent and the category', () => {
+		const source = { kind: 'role', layer: 'category', role: junior, via: mod } as const;
+		expect(roleText(junior, 'allow', source)).toBe('Allowed, from Mod in the category Staff');
+	});
+
+	it('names the server permissions of the role or its parent', () => {
+		expect(roleText(mod, 'allow', { kind: 'role', layer: 'server', role: mod, via: null })).toBe(
+			"Allowed, from Mod's server permissions"
+		);
+		expect(
+			roleText(junior, 'allow', { kind: 'role', layer: 'server', role: junior, via: mod })
+		).toBe("Allowed, from Mod's server permissions");
+	});
+
+	it('says nothing is set for the role when only @everyone speaks', () => {
+		const text = 'Not set for this role. Lower roles and @everyone decide: currently Allowed.';
+		expect(roleText(mod, 'allow', { kind: 'everyone', layer: 'server' }, true)).toBe(text);
+		expect(roleText(mod, 'deny', { kind: 'none' }, true)).toBe(
+			'Not set for this role. Lower roles and @everyone decide: currently Denied.'
 		);
 	});
 
-	it('then the role itself', () => {
-		expect(inheritedForRole(everyone, VIEW, roles, null, null)).toBe('Allowed by the role');
-		expect(inheritedForRole(mod, VIEW, roles, null, null)).toBe('Not set by the role');
+	it('names @everyone when it overrides the role', () => {
+		expect(roleText(mod, 'deny', { kind: 'everyone', layer: 'target' })).toBe(
+			'Denied, from @everyone on this channel'
+		);
+		expect(roleText(mod, 'deny', { kind: 'everyone', layer: 'category' })).toBe(
+			'Denied, from @everyone in the category Staff'
+		);
+	});
+
+	it('names where the @everyone row falls back to', () => {
+		expect(roleText(everyone, 'deny', { kind: 'everyone', layer: 'category' }, false)).toBe(
+			'Denied, from the category Staff'
+		);
+		expect(roleText(everyone, 'allow', { kind: 'everyone', layer: 'server' })).toBe(
+			"Allowed, from @everyone's server permissions"
+		);
+		expect(roleText(everyone, 'deny', { kind: 'none' }, true)).toBe('Not set anywhere: Denied.');
+	});
+});
+
+describe('memberInheritedText', () => {
+	const text = (value: 'allow' | 'deny', source: Decided['source']) =>
+		memberInheritedText({ value, source }, place);
+
+	it('says the owner owns the server', () => {
+		expect(text('allow', { kind: 'owner' })).toBe('Allowed: they own the server');
+	});
+
+	it('names the deciding role', () => {
+		const at = (layer: 'server' | 'category' | 'target', via: Role | null = null) =>
+			text('allow', { kind: 'role', layer, role: mod, via });
+		expect(at('server')).toBe('Allowed, from Mod');
+		expect(at('category')).toBe('Allowed, from Mod in the category Staff');
+		expect(at('target')).toBe('Allowed, from Mod on this channel');
+		expect(at('server', junior)).toBe('Allowed, from Mod (inherited from Junior)');
+	});
+
+	it('names @everyone', () => {
+		expect(text('deny', { kind: 'everyone', layer: 'server' })).toBe('Denied, from @everyone');
+		expect(text('deny', { kind: 'everyone', layer: 'category' })).toBe(
+			'Denied, from @everyone in the category Staff'
+		);
+		expect(text('deny', { kind: 'everyone', layer: 'target' })).toBe(
+			'Denied, from @everyone on this channel'
+		);
+	});
+
+	it('names their own setting in the category', () => {
+		expect(text('deny', { kind: 'member', layer: 'category' })).toBe(
+			'Denied, from their own setting in the category Staff'
+		);
+	});
+
+	it('says no role allows it', () => {
+		expect(text('deny', { kind: 'none' })).toBe('Denied: none of their roles allow it');
+	});
+});
+
+describe('rowSummary', () => {
+	it('has a short label for every toggle', () => {
+		expect(CHANNEL_PERMISSIONS.map((p) => p.short)).toEqual([
+			'View',
+			'Send',
+			'Manage messages',
+			'Connect',
+			'Speak',
+			'Stream'
+		]);
+	});
+
+	it('lists what is set, in the order of the toggles', () => {
+		expect(rowSummary({ allow: VIEW, deny: SEND })).toBe('View: Allow · Send: Deny');
+		expect(rowSummary({ allow: Permission.STREAM, deny: Permission.MANAGE_MESSAGES })).toBe(
+			'Manage messages: Deny · Stream: Allow'
+		);
+	});
+
+	it('says when nothing is set', () => {
+		expect(rowSummary(NO_BITS)).toBe('Nothing set');
+	});
+
+	it('ignores bits that are not channel bits', () => {
+		expect(rowSummary({ allow: Permission.MANAGE_ROLES, deny: 0n })).toBe('Nothing set');
 	});
 });
 

@@ -26,7 +26,10 @@ async function openPermissions(page: Page) {
 }
 
 function permissionRow(page: Page, name: string) {
-	return page.locator('details', { has: page.locator('summary', { hasText: name }) });
+	const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	return page.locator('details', {
+		has: page.locator('summary', { hasText: new RegExp(`^\\s*${escaped}\\s*·`) })
+	});
 }
 
 async function openRow(page: Page, name: string) {
@@ -36,7 +39,7 @@ async function openRow(page: Page, name: string) {
 	return row;
 }
 
-// A row added here stays open while it changes; one opened by hand closes again after a change.
+// A row added from the list opens at once.
 async function addRow(page: Page, name: string) {
 	await page.getByLabel('Add a role').selectOption({ label: name });
 	const row = permissionRow(page, name);
@@ -46,6 +49,10 @@ async function addRow(page: Page, name: string) {
 
 const toggle = (row: ReturnType<typeof permissionRow>, label: string) =>
 	row.getByRole('radiogroup', { name: label });
+
+// The text next to a toggle: its description and the line saying what it inherits.
+const toggleLabel = (row: ReturnType<typeof permissionRow>, label: string) =>
+	toggle(row, label).locator('..');
 
 const option = (row: ReturnType<typeof permissionRow>, label: string, value: string) =>
 	toggle(row, label).getByRole('radio', { name: value });
@@ -441,4 +448,153 @@ test("another manager's change shows up live", async ({ browser }) => {
 	await expect(option(row, 'Send messages', 'Deny')).toHaveAttribute('aria-checked', 'true');
 	await expect(option(row, 'View channel', 'Inherit')).toHaveAttribute('aria-checked', 'true');
 	expect(tabReads(requests)).toEqual([]);
+});
+
+test('rows stay open or closed as the user left them', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const manager = await newUser(browser, 'manager');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	const channel = await createChannel(owner.context, server.id, 'plans');
+	await joinInvite(manager.context, (await createInvite(owner.context, server.id)).id);
+	const managers = await createRole(owner.context, server.id, 'Managers', {
+		allow: MANAGER_PERMISSIONS
+	});
+	await setMemberRoles(owner.context, server.id, manager.user.id, [managers.id]);
+	const mods = await createRole(owner.context, server.id, 'Mods');
+	const helpers = await createRole(owner.context, server.id, 'Helpers');
+	await putOverwrite(owner.context, 'channels', channel.id, 'roles', mods.id, '0', SEND);
+	await putOverwrite(owner.context, 'channels', channel.id, 'roles', helpers.id, '0', SEND);
+
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await openPermissions(owner.page);
+	const modsRow = permissionRow(owner.page, 'Mods');
+	const helpersRow = permissionRow(owner.page, 'Helpers');
+	await expect(modsRow).toHaveJSProperty('open', false);
+	await expect(helpersRow).toHaveJSProperty('open', false);
+
+	await openRow(owner.page, 'Mods');
+	const saved = savedWrite(owner.page);
+	await option(modsRow, 'Send messages', 'Allow').click();
+	await saved;
+	await owner.page.waitForTimeout(300);
+	await expect(modsRow, 'a row opened by hand should stay open after a change').toHaveJSProperty(
+		'open',
+		true
+	);
+	await expect(option(modsRow, 'Send messages', 'Allow')).toHaveAttribute('aria-checked', 'true');
+
+	const admin = await addRow(owner.page, 'Admin');
+	await expect(modsRow, 'adding a row should not close another').toHaveJSProperty('open', true);
+	await expect(helpersRow).toHaveJSProperty('open', false);
+
+	await admin.locator('summary').click();
+	await expect(admin).toHaveJSProperty('open', false);
+
+	await putOverwrite(manager.context, 'channels', channel.id, 'roles', mods.id, VIEW, SEND);
+	await expect(option(modsRow, 'View channel', 'Allow')).toHaveAttribute('aria-checked', 'true');
+	await putOverwrite(manager.context, 'channels', channel.id, 'roles', helpers.id, '0', VIEW);
+	await expect(helpersRow.locator('summary')).toContainText('View: Deny');
+	await expect(modsRow, 'a live change should not close an open row').toHaveJSProperty(
+		'open',
+		true
+	);
+	await expect(helpersRow, 'a live change should not open a closed row').toHaveJSProperty(
+		'open',
+		false
+	);
+	await expect(admin, 'a row closed by hand should stay closed').toHaveJSProperty('open', false);
+});
+
+test('rows open and close from the keyboard', async ({ browser }) => {
+	const { owner, server, channel } = await setupChannel(browser);
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await openPermissions(owner.page);
+	const row = await addRow(owner.page, 'Mods');
+	const summary = row.locator('summary');
+
+	await summary.focus();
+	await owner.page.keyboard.press('Enter');
+	await expect(row).toHaveJSProperty('open', false);
+	await owner.page.keyboard.press('Space');
+	await expect(row).toHaveJSProperty('open', true);
+});
+
+test('each toggle names where its value comes from', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const plain = await newUser(browser, 'plain');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	await joinInvite(plain.context, (await createInvite(owner.context, server.id)).id);
+	const staff = await createCategory(owner.context, server.id, 'Staff');
+	const channel = await createChannel(owner.context, server.id, 'plans', staff.id);
+	const member = await createRole(owner.context, server.id, 'Member');
+	await createRole(owner.context, server.id, 'Core member', { parent_id: member.id });
+	await putOverwrite(owner.context, 'channels', channel.id, 'roles', member.id, '0', SEND);
+
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await openPermissions(owner.page);
+	const coreRow = await addRow(owner.page, 'Core member');
+	await expect(coreRow.locator('summary')).toContainText('Core member · inherits from Member');
+	await expect(toggleLabel(coreRow, 'Send messages')).toContainText(
+		'Denied, from Member on this channel'
+	);
+
+	await option(coreRow, 'Send messages', 'Allow').click();
+	await expect(toggleLabel(coreRow, 'Send messages')).toContainText(
+		'Overrides: Denied, from Member on this channel'
+	);
+	await coreRow.locator('summary').click();
+	await expect(coreRow).toHaveJSProperty('open', false);
+	await expect(coreRow.locator('summary')).toContainText('Send: Allow');
+
+	await putOverwrite(owner.context, 'channel-groups', staff.id, 'roles', member.id, '0', VIEW);
+	await owner.page.reload();
+	await openPermissions(owner.page);
+	const coreAfter = await openRow(owner.page, 'Core member');
+	await expect(toggleLabel(coreAfter, 'View channel')).toContainText(
+		'Denied, from Member in the category Staff'
+	);
+
+	await owner.page.getByLabel('Add a member').selectOption({ label: plain.user.username });
+	const memberRow = permissionRow(owner.page, plain.user.username);
+	await expect(memberRow).toHaveJSProperty('open', true);
+	await expect(toggleLabel(memberRow, 'View channel')).toContainText('Allowed, from @everyone');
+	await expect(memberRow.locator('summary')).toContainText('Member');
+});
+
+test('nothing overflows on a phone', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	const staff = await createCategory(
+		owner.context,
+		server.id,
+		'A category with a rather long name'
+	);
+	const channel = await createChannel(owner.context, server.id, 'plans', staff.id);
+	const parent = await createRole(owner.context, server.id, 'A parent role with a very long name');
+	await createRole(owner.context, server.id, 'Another role whose name is just as long as that', {
+		parent_id: parent.id
+	});
+	await putOverwrite(owner.context, 'channel-groups', staff.id, 'roles', parent.id, '0', VIEW);
+
+	await owner.page.setViewportSize({ width: 375, height: 800 });
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await owner.page.getByRole('button', { name: 'Channel settings' }).click();
+	await owner.page.getByRole('button', { name: 'Back to settings' }).click();
+	await owner.page.getByRole('button', { name: 'Permissions' }).click();
+	await expect(owner.page.getByLabel('Add a role')).toBeVisible();
+	await addRow(owner.page, 'Another role whose name is just as long as that');
+	await expect(permissionRow(owner.page, '@everyone')).toHaveJSProperty('open', true);
+
+	const tab = owner.page.getByTestId('channel-permissions');
+	const overflow = await tab.evaluate((el) => ({
+		tab: el.scrollWidth - el.clientWidth,
+		page: document.documentElement.scrollWidth - document.documentElement.clientWidth
+	}));
+	expect(overflow.tab, 'the tab should not scroll sideways').toBeLessThanOrEqual(0);
+	expect(overflow.page, 'the page should not scroll sideways').toBeLessThanOrEqual(0);
+	const box = await permissionRow(
+		owner.page,
+		'Another role whose name is just as long as that'
+	).boundingBox();
+	expect(box!.x + box!.width).toBeLessThanOrEqual(375);
 });

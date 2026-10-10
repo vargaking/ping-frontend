@@ -4,7 +4,11 @@ import type { Overwrites } from '$lib/types/overwrite.types';
 import type { Role } from '$lib/types/server.types';
 import {
 	canView,
+	decide,
+	inheritedForMember,
+	inheritedForRole,
 	isPrivate,
+	opinions,
 	privateRow,
 	scopeMask,
 	visibleTo,
@@ -272,5 +276,253 @@ describe('privateRow', () => {
 		expect(isPrivate(scope(withOn))).toBe(true);
 		const off = privateRow(scope(withOn), everyone, false);
 		expect(isPrivate(scope(rows({ 1: [off.allow, off.deny] })))).toBe(false);
+	});
+});
+
+describe('inheritedForRole', () => {
+	const fallback = (target: Overwrites, who: Role, bit: bigint, category?: Overwrites) =>
+		inheritedForRole(scope(target, category ?? null), who, bit);
+
+	it("names a parent's row on the target", () => {
+		const result = fallback(rows({ 2: [0n, SEND] }), JUNIOR, SEND);
+		expect(result.value).toBe('deny');
+		expect(result.source).toMatchObject({ kind: 'role', layer: 'target' });
+		const source = result.source as { role: Role; via: Role | null };
+		expect(source.role).toBe(JUNIOR);
+		expect(source.via).toBe(MOD);
+		expect(result.roleSilent).toBe(false);
+	});
+
+	it('names the category when it has a row for the role itself', () => {
+		const result = fallback(NO_ROWS, JUNIOR, VIEW, rows({ 3: [VIEW, 0n] }));
+		expect(result).toMatchObject({ value: 'allow', source: { kind: 'role', layer: 'category' } });
+		expect((result.source as { via: Role | null }).via).toBeNull();
+	});
+
+	it("names the parent when the category's row is the parent's", () => {
+		const result = fallback(NO_ROWS, JUNIOR, VIEW, rows({ 2: [0n, VIEW] }));
+		expect(result).toMatchObject({ value: 'deny', source: { kind: 'role', layer: 'category' } });
+		expect((result.source as { via: Role | null }).via).toBe(MOD);
+	});
+
+	it("names the parent's server permissions", () => {
+		const result = fallback(NO_ROWS, JUNIOR, MANAGE);
+		expect(result).toMatchObject({ value: 'allow', source: { kind: 'role', layer: 'server' } });
+		expect((result.source as { via: Role | null }).via).toBe(MOD);
+	});
+
+	it("names the role's own server permissions without a parent", () => {
+		const result = fallback(NO_ROWS, MOD, MANAGE);
+		expect(result).toMatchObject({ value: 'allow', source: { kind: 'role', layer: 'server' } });
+		expect((result.source as { via: Role | null }).via).toBeNull();
+	});
+
+	it('is silent when nothing is set for the role and @everyone decides', () => {
+		const result = fallback(NO_ROWS, JUNIOR, SEND);
+		expect(result).toMatchObject({
+			value: 'allow',
+			source: { kind: 'everyone', layer: 'server' },
+			roleSilent: true
+		});
+	});
+
+	it('is silent and denied when nothing says anything about the bit', () => {
+		const result = fallback(NO_ROWS, JUNIOR, MANAGE_ROLES);
+		expect(result).toMatchObject({ value: 'deny', source: { kind: 'none' }, roleSilent: true });
+	});
+
+	it('lets an @everyone row on the channel beat the role in the category', () => {
+		const result = fallback(rows({ 1: [0n, VIEW] }), JUNIOR, VIEW, rows({ 3: [VIEW, 0n] }));
+		expect(result).toMatchObject({
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'target' },
+			roleSilent: false
+		});
+	});
+
+	it("takes the @everyone row's value from the category or the server", () => {
+		const everyone = (target: Overwrites, bit: bigint, category?: Overwrites) =>
+			fallback(target, EVERYONE, bit, category);
+		expect(everyone(NO_ROWS, SEND, rows({ 1: [0n, SEND] }))).toMatchObject({
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'category' }
+		});
+		expect(everyone(NO_ROWS, SEND)).toMatchObject({
+			value: 'allow',
+			source: { kind: 'everyone', layer: 'server' }
+		});
+		expect(everyone(NO_ROWS, MANAGE)).toMatchObject({ value: 'deny', source: { kind: 'none' } });
+	});
+
+	it("does not take the role's own row as its source", () => {
+		const target = rows({ 2: [0n, SEND], 3: [SEND, 0n] });
+		const result = fallback(target, JUNIOR, SEND);
+		expect(result.value).toBe('deny');
+		expect((result.source as { via: Role | null }).via).toBe(MOD);
+		expect(fallback(rows({ 3: [SEND, 0n] }), JUNIOR, SEND).roleSilent).toBe(true);
+	});
+
+	it('does not count lower roles', () => {
+		const target = rows({ 3: [0n, SEND] });
+		expect(fallback(target, MOD, SEND).value).toBe('allow');
+	});
+});
+
+describe('inheritedForMember', () => {
+	const member = (roleIds: number[]): MemberInfo => ({ id: USER, username: 'ann', roleIds });
+
+	it('names the assigned role that decides', () => {
+		const result = inheritedForMember(scope(NO_ROWS), member([2]), MANAGE);
+		expect(result).toMatchObject({ value: 'allow', source: { kind: 'role', layer: 'server' } });
+		expect((result.source as { role: Role }).role).toBe(MOD);
+	});
+
+	it('names the parent when the role inherits the setting', () => {
+		const result = inheritedForMember(scope(NO_ROWS), member([3]), MANAGE);
+		expect((result.source as { role: Role; via: Role | null }).role).toBe(JUNIOR);
+		expect((result.source as { via: Role | null }).via).toBe(MOD);
+	});
+
+	it('names @everyone when no assigned role says anything', () => {
+		expect(inheritedForMember(scope(NO_ROWS), member([2]), SEND)).toMatchObject({
+			value: 'allow',
+			source: { kind: 'everyone', layer: 'server' }
+		});
+	});
+
+	it("lets the higher role's row on the channel decide", () => {
+		const target = rows({ 2: [SEND, 0n], 3: [0n, SEND] });
+		const result = inheritedForMember(scope(target), member([2, 3]), SEND);
+		expect(result).toMatchObject({ value: 'deny', source: { kind: 'role', layer: 'target' } });
+		expect((result.source as { role: Role }).role).toBe(JUNIOR);
+	});
+
+	it('names their own setting in the category', () => {
+		const category = rows({}, { [USER]: [0n, SEND] });
+		expect(inheritedForMember(scope(NO_ROWS, category), member([]), SEND)).toMatchObject({
+			value: 'deny',
+			source: { kind: 'member', layer: 'category' }
+		});
+	});
+
+	it('says the owner owns the server', () => {
+		const owner: MemberInfo = { id: 100, username: 'owner', roleIds: [] };
+		expect(inheritedForMember(scope(rows({ 1: [0n, VIEW] })), owner, VIEW)).toEqual({
+			value: 'allow',
+			source: { kind: 'owner' }
+		});
+	});
+
+	it("ignores the member row's own bit", () => {
+		const target = rows({}, { [USER]: [0n, SEND] });
+		expect(inheritedForMember(scope(target), member([]), SEND)).toMatchObject({
+			value: 'allow',
+			source: { kind: 'everyone', layer: 'server' }
+		});
+	});
+});
+
+describe('opinions', () => {
+	it('lists every step that says something, in the order the server applies them', () => {
+		const category = rows({ 1: [0n, SEND] });
+		const target = rows({ 2: [SEND, 0n] }, { [USER]: [0n, SEND] });
+		const steps = opinions(scope(target, category), holding(2), SEND).map(
+			(o) => `${o.source.kind}${'layer' in o.source ? `:${o.source.layer}` : ''}=${o.value}`
+		);
+		expect(steps).toEqual([
+			'everyone:server=allow',
+			'everyone:category=deny',
+			'role:target=allow',
+			'member:target=deny'
+		]);
+	});
+
+	it('decides with the last one', () => {
+		const target = rows({}, { [USER]: [0n, SEND] });
+		expect(decide(scope(target), holding(2), SEND)).toMatchObject({
+			value: 'deny',
+			source: { kind: 'member', layer: 'target' }
+		});
+	});
+});
+
+describe('decide against scopeMask', () => {
+	function generator(seed: number) {
+		let state = seed;
+		const next = () => {
+			state = (state + 0x6d2b79f5) | 0;
+			let t = Math.imul(state ^ (state >>> 15), 1 | state);
+			t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		};
+		const int = (max: number) => Math.floor(next() * max);
+		const chance = (p: number) => next() < p;
+		const bits = (p: number) =>
+			Object.values(Permission).reduce((mask, bit) => (chance(p) ? mask | bit : mask), 0n);
+		return { int, chance, bits };
+	}
+
+	const BIT_LIST = Object.values(Permission).filter((bit) => (CHANNEL_BITS & bit) !== 0n);
+
+	function randomScope(random: ReturnType<typeof generator>): { scope: Scope; who: Who } {
+		const count = 1 + random.int(5);
+		const roles: Role[] = [
+			role({
+				id: 1,
+				name: '@everyone',
+				is_default: true,
+				position: 0,
+				allow: random.bits(0.4),
+				deny: random.chance(0.3) ? random.bits(0.2) : 0n
+			})
+		];
+		for (let id = 2; id <= count + 1; id++) {
+			roles.push(
+				role({
+					id,
+					position: 1 + random.int(4),
+					parent_id: random.chance(0.5) ? 2 + random.int(count) : null,
+					allow: random.chance(0.6) ? random.bits(0.25) : 0n,
+					deny: random.chance(0.4) ? random.bits(0.2) : 0n
+				})
+			);
+		}
+		const randomRows = (): Overwrites => {
+			const roleRows: Pairs = {};
+			for (const r of roles) {
+				if (random.chance(0.5)) roleRows[r.id] = [random.bits(0.3), random.bits(0.3)];
+			}
+			const memberRows: Pairs = random.chance(0.5)
+				? { [USER]: [random.bits(0.3), random.bits(0.3)] }
+				: {};
+			return rows(roleRows, memberRows);
+		};
+		const roleIds = roles
+			.slice(1)
+			.filter(() => random.chance(0.5))
+			.map((r) => r.id);
+		const userId = random.chance(0.8) ? USER : null;
+		return {
+			scope: {
+				roles,
+				ownerId: random.chance(0.1) ? USER : 100,
+				target: randomRows(),
+				category: random.chance(0.5) ? { name: 'Staff', rows: randomRows() } : null
+			},
+			who: { userId, roleIds }
+		};
+	}
+
+	it('says the same as the mask for every channel bit', () => {
+		const random = generator(20240611);
+		for (let i = 0; i < 400; i++) {
+			const { scope: s, who } = randomScope(random);
+			const mask = scopeMask(s, who);
+			for (const bit of BIT_LIST) {
+				if (bit !== VIEW && !(mask & VIEW)) continue;
+				const decided = decide(s, who, bit);
+				expect(decided.value === 'allow', `scope ${i}, bit ${bit}`).toBe((mask & bit) !== 0n);
+			}
+		}
 	});
 });

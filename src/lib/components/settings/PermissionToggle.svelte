@@ -5,8 +5,8 @@
 		label: string;
 		description: string;
 		value: PermissionState;
-		/** What an inherited value resolves to, e.g. "Allowed, from Mod". */
-		inherited: string;
+		/** What the bit falls back to without this setting, and where that comes from. */
+		inherited?: { value: 'allow' | 'deny'; text: string };
 		/** A change is on its way to the server. */
 		pending?: boolean;
 		disabled?: boolean;
@@ -35,6 +35,13 @@
 		{ value: 'deny', label: 'Deny' }
 	];
 
+	const inheritedLine = $derived.by(() => {
+		if (!inherited) return null;
+		if (value === 'inherit') return inherited.text;
+		if (value === inherited.value) return `Same as inherited: ${inherited.text}`;
+		return `Overrides: ${inherited.text}`;
+	});
+
 	const active: Record<PermissionState, string> = {
 		inherit: 'bg-accent text-foreground',
 		allow: 'bg-primary text-primary-foreground',
@@ -47,12 +54,12 @@
 >
 	<div class="flex min-w-0 flex-col gap-1">
 		<span class="text-sm font-medium">{label}</span>
-		<span class="text-xs text-muted-foreground">{description}</span>
-		{#if value === 'inherit'}
-			<span class="text-xs text-text-subtle">{inherited}</span>
+		<span class="text-xs break-words text-muted-foreground">{description}</span>
+		{#if inheritedLine}
+			<span class="text-xs break-words text-text-subtle">{inheritedLine}</span>
 		{/if}
 		{#if note}
-			<span class="text-xs text-muted-foreground">{note}</span>
+			<span class="text-xs break-words text-muted-foreground">{note}</span>
 		{/if}
 	</div>
 	<div

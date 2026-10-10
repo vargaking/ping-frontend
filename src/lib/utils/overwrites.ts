@@ -6,20 +6,42 @@ import type {
 	Overwrites,
 	RoleOverwrite
 } from '$lib/types/overwrite.types';
-import { resolveRole, type PermissionState } from './roles';
+import type { Decided } from './channelResolution';
+import type { PermissionState } from './roles';
 
 /** The bits an overwrite can change, in the order the editor shows them. */
-export const CHANNEL_PERMISSIONS: PermissionInfo[] = [
-	{ bit: Permission.VIEW_CHANNEL, label: 'View channel', description: 'See it and read it.' },
-	{ bit: Permission.SEND_MESSAGES, label: 'Send messages', description: 'Write in it.' },
+export const CHANNEL_PERMISSIONS: (PermissionInfo & { short: string })[] = [
+	{
+		bit: Permission.VIEW_CHANNEL,
+		label: 'View channel',
+		short: 'View',
+		description: 'See it and read it.'
+	},
+	{
+		bit: Permission.SEND_MESSAGES,
+		label: 'Send messages',
+		short: 'Send',
+		description: 'Write in it.'
+	},
 	{
 		bit: Permission.MANAGE_MESSAGES,
 		label: 'Manage messages',
+		short: 'Manage messages',
 		description: "Delete other people's messages and pin or lock posts."
 	},
-	{ bit: Permission.CONNECT, label: 'Connect', description: 'Join it when it is a voice channel.' },
-	{ bit: Permission.SPEAK, label: 'Speak', description: 'Talk in it.' },
-	{ bit: Permission.STREAM, label: 'Stream', description: 'Share video and screen in it.' }
+	{
+		bit: Permission.CONNECT,
+		label: 'Connect',
+		short: 'Connect',
+		description: 'Join it when it is a voice channel.'
+	},
+	{ bit: Permission.SPEAK, label: 'Speak', short: 'Speak', description: 'Talk in it.' },
+	{
+		bit: Permission.STREAM,
+		label: 'Stream',
+		short: 'Stream',
+		description: 'Share video and screen in it.'
+	}
 ];
 
 export type Bits = { allow: bigint; deny: bigint };
@@ -79,51 +101,88 @@ export function withState(bits: Bits, bit: bigint, state: PermissionState): Bits
 	return { allow, deny };
 }
 
-const word = (state: 'allow' | 'deny') => (state === 'allow' ? 'Allowed' : 'Denied');
+const word = (value: 'allow' | 'deny') => (value === 'allow' ? 'Allowed' : 'Denied');
 
-function chain(role: Role, roles: Role[]): Role[] {
-	const byId = new Map(roles.map((r) => [r.id, r]));
-	const out: Role[] = [];
-	const seen = new Set<number>();
-	let current: Role | undefined = role;
-	while (current && !seen.has(current.id)) {
-		seen.add(current.id);
-		out.push(current);
-		current = current.parent_id != null ? byId.get(current.parent_id) : undefined;
+export type Place = { noun: 'channel' | 'category'; categoryName: string | null };
+
+const theCategory = (place: Place) =>
+	place.categoryName ? `the category ${place.categoryName}` : 'the category';
+
+/** Where a role row's bit falls back to, in words. */
+export function roleInheritedText(
+	role: Role,
+	inherited: Decided & { roleSilent: boolean },
+	place: Place
+): string {
+	const { source } = inherited;
+	const value = word(inherited.value);
+	if (role.is_default) {
+		if (source.kind === 'everyone' && source.layer === 'category') {
+			return `${value}, from ${theCategory(place)}`;
+		}
+		if (source.kind === 'everyone' && source.layer === 'target') {
+			return `${value}, from @everyone on this ${place.noun}`;
+		}
+		if (source.kind === 'everyone') return `${value}, from @everyone's server permissions`;
+		return `Not set anywhere: ${value}.`;
 	}
-	return out;
+	if (source.kind === 'role') {
+		const named = source.via ?? source.role;
+		if (source.layer === 'server') return `${value}, from ${named.name}'s server permissions`;
+		if (source.layer === 'category') {
+			return source.via
+				? `${value}, from ${source.via.name} in ${theCategory(place)}`
+				: `${value}, from ${theCategory(place)}`;
+		}
+		return `${value}, from ${named.name} on this ${place.noun}`;
+	}
+	if (inherited.roleSilent) {
+		return `Not set for this role. Lower roles and @everyone decide: currently ${value}.`;
+	}
+	if (source.kind === 'everyone' && source.layer === 'category') {
+		return `${value}, from @everyone in ${theCategory(place)}`;
+	}
+	if (source.kind === 'everyone' && source.layer === 'target') {
+		return `${value}, from @everyone on this ${place.noun}`;
+	}
+	return `${value}, from @everyone's server permissions`;
 }
 
-/**
- * What an "inherit" toggle on a role row resolves to: a parent role's row on
- * the same target, then the category's rows (for a channel in one), then
- * the role itself on the server.
- */
-export function inheritedForRole(
-	role: Role,
-	bit: bigint,
-	roles: Role[],
-	here: Overwrites | null,
-	category: Overwrites | null
-): string {
-	for (const ancestor of chain(role, roles).slice(1)) {
-		const state = bitState(rowBits(here, { kind: 'roles', id: ancestor.id }), bit);
-		if (state !== 'inherit') return `${word(state)}, from ${ancestor.name} here`;
-	}
-	if (category) {
-		for (const ancestor of chain(role, roles)) {
-			const state = bitState(rowBits(category, { kind: 'roles', id: ancestor.id }), bit);
-			if (state !== 'inherit') return `${word(state)} by the category`;
+/** Where a member row's bit falls back to, in words. */
+export function memberInheritedText(inherited: Decided, place: Place): string {
+	const { source } = inherited;
+	const value = word(inherited.value);
+	switch (source.kind) {
+		case 'owner':
+			return `${value}: they own the server`;
+		case 'none':
+			return `${value}: none of their roles allow it`;
+		case 'member':
+			return `${value}, from their own setting in ${theCategory(place)}`;
+		case 'everyone':
+			if (source.layer === 'server') return `${value}, from @everyone`;
+			if (source.layer === 'category') return `${value}, from @everyone in ${theCategory(place)}`;
+			return `${value}, from @everyone on this ${place.noun}`;
+		case 'role': {
+			const where =
+				source.layer === 'server'
+					? ''
+					: source.layer === 'category'
+						? ` in ${theCategory(place)}`
+						: ` on this ${place.noun}`;
+			const via = source.via ? ` (inherited from ${source.via.name})` : '';
+			return `${value}, from ${source.role.name}${where}${via}`;
 		}
 	}
-	const resolved = resolveRole(role.id, roles);
-	if (resolved.deny & bit) return 'Denied by the role';
-	if (resolved.allow & bit) return 'Allowed by the role';
-	return 'Not set by the role';
 }
 
-export function inheritedForMember(inCategory: boolean): string {
-	return inCategory ? 'From their roles and the category' : 'From their roles';
+/** What a closed row shows: "View: Allow · Send: Deny", or that nothing is set. */
+export function rowSummary(bits: Bits): string {
+	const set = CHANNEL_PERMISSIONS.flatMap(({ bit, short }) => {
+		const state = bitState(bits, bit);
+		return state === 'inherit' ? [] : [`${short}: ${state === 'allow' ? 'Allow' : 'Deny'}`];
+	});
+	return set.length > 0 ? set.join(' · ') : 'Nothing set';
 }
 
 const SHOWN_NAMES = 6;

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { overwritesState } from '$lib/states/overwritesState.svelte';
@@ -11,16 +12,20 @@
 		CHANNEL_PERMISSIONS,
 		NO_BITS,
 		bitState,
-		inheritedForMember,
-		inheritedForRole,
+		memberInheritedText,
+		roleInheritedText,
 		rowBits,
+		rowSummary,
 		visibilityLine,
 		withRow,
 		withState,
-		type Bits
+		type Bits,
+		type Place
 	} from '$lib/utils/overwrites';
 	import {
 		canView,
+		inheritedForMember,
+		inheritedForRole,
 		isPrivate,
 		privateRow,
 		scopeMask,
@@ -32,7 +37,7 @@
 	import PermissionToggle from './PermissionToggle.svelte';
 	import SettingsSwitch from './SettingsSwitch.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import { Trash2 } from 'lucide-svelte';
+	import { ChevronRight, Trash2 } from 'lucide-svelte';
 
 	const VIEW = Permission.VIEW_CHANNEL;
 
@@ -60,8 +65,11 @@
 	let loadError = $state(false);
 	let hereSeq = 0;
 	let parentSeq = 0;
-	// Subjects added in the editor that don't have a row yet.
-	let added = $state<OverwriteSubject[]>([]);
+	// Open state is only ever changed by the user (header click, key press, adding a row).
+	const openRows = new SvelteSet<string>();
+	// Rows the user added or changed in this tab stay listed even when the server empties them.
+	const shown = new SvelteSet<string>();
+	let everyoneOpened = false;
 	let addRole = $state('');
 	let addMember = $state('');
 
@@ -102,6 +110,11 @@
 				}
 			: null
 	);
+
+	const place = $derived<Place>({
+		noun,
+		categoryName: parentId != null ? categoryName || null : null
+	});
 
 	const privateOn = $derived(scope ? isPrivate(scope) : false);
 	const privatePending = $derived(
@@ -144,42 +157,59 @@
 	});
 
 	type Entry = {
+		key: string;
 		subject: OverwriteSubject;
 		label: string;
+		kindLabel: string;
 		role?: Role;
+		member?: MemberInfo;
 		locked: boolean;
 		lockedNote: string;
 	};
+
+	const rowKey = (subject: OverwriteSubject) => `${subject.kind}:${subject.id}`;
+
+	function subjectOfKey(key: string): OverwriteSubject {
+		const [kind, id] = key.split(':');
+		return { kind: kind as OverwriteSubject['kind'], id: Number(id) };
+	}
 
 	const entries = $derived.by<Entry[]>(() => {
 		const subjects: OverwriteSubject[] = [
 			...(rows?.roles ?? []).map((r) => ({ kind: 'roles' as const, id: r.role_id })),
 			...(rows?.members ?? []).map((m) => ({ kind: 'members' as const, id: m.user_id })),
-			...added,
+			...[...shown].map(subjectOfKey),
 			...(everyoneSubject ? [everyoneSubject] : [])
 		];
 		const seen = new Set<string>();
 		const out: Entry[] = [];
 		for (const subject of subjects) {
-			const key = `${subject.kind}:${subject.id}`;
+			const key = rowKey(subject);
 			if (seen.has(key)) continue;
 			seen.add(key);
 			if (subject.kind === 'roles') {
 				const role = roles.find((r) => r.id === subject.id);
 				if (!role) continue;
+				const parentRole = roles.find((r) => r.id === role.parent_id);
 				out.push({
+					key,
 					subject,
 					label: role.name,
+					kindLabel: parentRole ? `inherits from ${parentRole.name}` : 'Role',
 					role,
 					locked: !canTouchRole(role, rank, isOwner),
 					lockedNote: "This is at or above your highest role, so you can't change it."
 				});
 			} else {
 				const member = members.find((m) => m.id === subject.id);
+				if (!member) continue;
 				out.push({
+					key,
 					subject,
-					label: member?.username ?? `User ${subject.id}`,
-					locked: memberLocked(subject.id, member?.roleIds ?? []),
+					label: member.username,
+					kindLabel: 'Member',
+					member,
+					locked: memberLocked(member.id, member.roleIds),
 					lockedNote: "Their highest role is at or above yours, so you can't change this."
 				});
 			}
@@ -210,6 +240,13 @@
 		)
 	);
 
+	// The @everyone row starts open because it is the setting the Private switch mirrors.
+	function openEveryoneOnce() {
+		if (everyoneOpened || !everyoneSubject) return;
+		everyoneOpened = true;
+		openRows.add(rowKey(everyoneSubject));
+	}
+
 	async function loadHere(t: OverwriteTarget) {
 		const seq = ++hereSeq;
 		hereReady = false;
@@ -220,6 +257,7 @@
 				serversState.roles[serverId] ? null : serversState.loadRoster(serverId)
 			]);
 			if (seq === hereSeq) hereReady = true;
+			openEveryoneOnce();
 		} catch (e) {
 			if (seq !== hereSeq) return;
 			console.warn('Failed to load permission overwrites', e);
@@ -264,6 +302,7 @@
 		const next = withState(rowBits(rows, entry.subject), bit, state);
 		if (entry.locked || lacksBits(bit)) return;
 		if (bit === VIEW && losesView(entry.subject, next)) return;
+		shown.add(entry.key);
 		void overwritesState.save(here, entry.subject, next, bit);
 	}
 
@@ -281,13 +320,15 @@
 
 	function remove(entry: Entry) {
 		if (entry.locked || removeNote(entry)) return;
-		added = added.filter((s) => !(s.kind === entry.subject.kind && s.id === entry.subject.id));
+		shown.delete(entry.key);
 		void overwritesState.save(here, entry.subject, NO_BITS, CHANNEL_BITS);
 	}
 
 	function add(kind: 'roles' | 'members', value: string) {
 		if (!value) return;
-		added = [...added, { kind, id: Number(value) }];
+		const key = rowKey({ kind, id: Number(value) });
+		shown.add(key);
+		openRows.add(key);
 		addRole = '';
 		addMember = '';
 	}
@@ -323,9 +364,23 @@
 		return { ...open, blocked, note: `${names} would take this ${noun} away from you.` };
 	}
 
-	function inherited(entry: Entry, bit: bigint): string {
-		if (entry.role) return inheritedForRole(entry.role, bit, roles, rows, parentRows);
-		return inheritedForMember(parentRows != null);
+	function inherited(entry: Entry, bit: bigint): { value: 'allow' | 'deny'; text: string } {
+		if (!scope) return { value: 'deny', text: '' };
+		if (entry.member) {
+			const decided = inheritedForMember(scope, entry.member, bit);
+			return { value: decided.value, text: memberInheritedText(decided, place) };
+		}
+		const role = entry.role!;
+		const decided = inheritedForRole(scope, role, bit);
+		return { value: decided.value, text: roleInheritedText(role, decided, place) };
+	}
+
+	function cannotSee(entry: Entry): boolean {
+		if (!scope) return false;
+		const who: Who = entry.member
+			? { userId: entry.member.id, roleIds: entry.member.roleIds }
+			: { userId: null, roleIds: entry.role?.is_default ? [] : [entry.subject.id] };
+		return !canView(scope, who);
 	}
 
 	const selectClass =
@@ -388,41 +443,44 @@
 				</select>
 			</div>
 
-			{#each entries as entry (`${entry.subject.kind}:${entry.subject.id}`)}
+			{#each entries as entry (entry.key)}
 				{@const bits = rowBits(scope.target, entry.subject)}
 				{@const blockedRemoval = removeNote(entry)}
 				<details
-					class="rounded-xl border border-input bg-card"
-					open={entry.role?.is_default === true ||
-						added.some((s) => s.kind === entry.subject.kind && s.id === entry.subject.id)}
+					class="group min-w-0 rounded-xl border border-input bg-card"
+					bind:open={
+						() => openRows.has(entry.key),
+						(open) => (open ? openRows.add(entry.key) : openRows.delete(entry.key))
+					}
 				>
 					<summary
-						class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-medium"
+						class="flex cursor-pointer list-none items-start gap-2 rounded-xl px-4 py-3 text-sm group-open:rounded-b-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden"
 					>
-						<span class="truncate">
-							{entry.label}
-							<span class="ml-1 text-xs font-normal text-muted-foreground">
-								{entry.subject.kind === 'roles' ? 'Role' : 'Member'}
+						<ChevronRight
+							size={16}
+							class="mt-0.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+							aria-hidden="true"
+						/>
+						<span
+							class="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-baseline md:justify-between md:gap-3"
+						>
+							<span class="min-w-0 font-medium break-words">
+								{entry.label}
+								<span class="text-xs font-normal text-muted-foreground">· {entry.kindLabel}</span>
+							</span>
+							<span class="min-w-0 text-xs break-words text-muted-foreground group-open:hidden">
+								{rowSummary(bits)}
 							</span>
 						</span>
-						{#if !entry.locked && !entry.role?.is_default}
-							<Button
-								variant="ghost"
-								size="sm"
-								aria-label="Remove {entry.label}"
-								disabled={blockedRemoval != null}
-								onclick={(e: MouseEvent) => {
-									e.preventDefault();
-									remove(entry);
-								}}
-							>
-								<Trash2 size={14} strokeWidth={1.75} />
-							</Button>
-						{/if}
 					</summary>
 					<div class="flex flex-col gap-4 border-t border-input px-4 py-4">
 						{#if entry.locked}
 							<p class="text-xs text-muted-foreground">{entry.lockedNote}</p>
+						{/if}
+						{#if cannotSee(entry)}
+							<p class="text-xs text-muted-foreground">
+								Can't see this {noun}, so the other permissions here have no effect.
+							</p>
 						{/if}
 						{#each CHANNEL_PERMISSIONS as permission (permission.bit)}
 							{@const available = availability(entry, bits, permission.bit)}
@@ -440,6 +498,20 @@
 						{/each}
 						{#if blockedRemoval}
 							<p class="text-xs text-muted-foreground">{blockedRemoval}</p>
+						{/if}
+						{#if !entry.locked && !entry.role?.is_default}
+							<div class="flex justify-end">
+								<Button
+									variant="ghost"
+									size="sm"
+									aria-label="Remove {entry.label}"
+									disabled={blockedRemoval != null}
+									onclick={() => remove(entry)}
+								>
+									<Trash2 size={14} strokeWidth={1.75} />
+									Remove
+								</Button>
+							</div>
 						{/if}
 					</div>
 				</details>
