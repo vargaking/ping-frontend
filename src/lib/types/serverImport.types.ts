@@ -23,6 +23,11 @@ export type ImportAuthor = {
 	user_id: number | null;
 };
 
+export type PrivateVisibility = 'only_me' | 'everyone';
+
+/** Source channel id to who can see the private channel it becomes. */
+export type PrivateSelection = Record<string, PrivateVisibility>;
+
 export type PlanChannel = {
 	source_id: string;
 	name: string;
@@ -34,6 +39,12 @@ export type PlanChannel = {
 	reason: string | null;
 	/** A create row whose name matches a channel already on the server. Absent on older servers. */
 	name_taken?: boolean;
+	/** Absent on plans made before private channels could be imported. */
+	private?: boolean;
+	/** What ticking a private channel would do; null means it can't be selected. */
+	private_action?: 'create' | 'existing' | null;
+	/** Set on a private channel the run created. */
+	visibility?: PrivateVisibility | null;
 	category: string | null;
 	messages: number;
 	existing_messages: number;
@@ -92,6 +103,8 @@ export type Import = {
 	plan: Plan | null;
 	/** The finished real run, from "done" on. */
 	result: Plan | null;
+	/** The private channels picked at the last start. Absent on older servers. */
+	private_channels?: PrivateSelection;
 	authors: ImportAuthor[];
 	created_at: string;
 	updated_at: string;
