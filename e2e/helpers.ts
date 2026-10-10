@@ -142,16 +142,16 @@ export async function sendMessageViaUi(page: Page, text: string) {
 	).toBeVisible();
 }
 
-/** Sends direct messages over a socket of its own, much faster than typing them. */
-export async function seedDirectMessages(
-	context: BrowserContext,
-	conversationId: number,
-	texts: string[]
-) {
+export type SeedThread =
+	| { conversationId: number }
+	| { serverId: number; channelId: number; postId?: number };
+
+/** Sends messages over a socket of its own, much faster than typing them. */
+export async function seedMessages(context: BrowserContext, thread: SeedThread, texts: string[]) {
 	const page = await context.newPage();
 	await page.goto('/robots.txt');
 	await page.evaluate(
-		({ conversationId, texts }) =>
+		({ thread, texts }) =>
 			new Promise<void>((resolve, reject) => {
 				const socket = new WebSocket(`wss://${location.host}/ws`);
 				const pending = new Set<string>();
@@ -170,19 +170,63 @@ export async function seedDirectMessages(
 					for (const text of texts) {
 						const id = crypto.randomUUID();
 						pending.add(id);
+						const timestamp = new Date().toISOString();
 						socket.send(
-							JSON.stringify({
-								type: 'direct_message',
-								id,
-								conversation_id: conversationId,
-								content: text,
-								timestamp: new Date().toISOString()
-							})
+							JSON.stringify(
+								'conversationId' in thread
+									? {
+											type: 'direct_message',
+											id,
+											conversation_id: thread.conversationId,
+											content: text,
+											timestamp
+										}
+									: {
+											type: 'message',
+											id,
+											server_id: thread.serverId,
+											channel_id: thread.channelId,
+											...(thread.postId != null && { post_id: thread.postId }),
+											content: text,
+											timestamp,
+											attachment_ids: []
+										}
+							)
 						);
 					}
 				};
 			}),
-		{ conversationId, texts }
+		{ thread, texts }
 	);
 	await page.close();
+}
+
+export function seedDirectMessages(
+	context: BrowserContext,
+	conversationId: number,
+	texts: string[]
+) {
+	return seedMessages(context, { conversationId }, texts);
+}
+
+/** Creates a forum channel and a post in it. */
+export async function createForumPost(context: BrowserContext, serverId: number, title: string) {
+	const channel = await json<{ id: number }>(
+		await context.request.post(`/channels/${serverId}/create`, {
+			data: { name: 'ideas', type: 'forum' }
+		})
+	);
+	const created = await json<{ post: { id: number } }>(
+		await context.request.post(`/channels/${channel.id}/posts`, {
+			data: {
+				title,
+				message: {
+					id: crypto.randomUUID(),
+					content: 'opening',
+					timestamp: new Date().toISOString()
+				}
+			}
+		})
+	);
+	return { channelId: channel.id, postId: created.post.id };
 }

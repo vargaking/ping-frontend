@@ -1,4 +1,5 @@
 import { phoneState } from '$lib/states/phoneState.svelte';
+import { hasOpenLayer } from './openLayer';
 
 /** A gesture never starts this close to a screen edge: iOS keeps the edge swipe for history. */
 export const EDGE_GUARD = 24;
@@ -50,8 +51,6 @@ export function settlesOpen(startOpen: boolean, dx: number, width: number, speed
 
 const OWN_TOUCH =
 	'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .ProseMirror, [role="slider"], aside[aria-label="Members"]';
-const OPEN_LAYER =
-	'[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-modal="true"], [data-popover-content]';
 
 function scrollsSideways(element: Element): boolean {
 	const { overflowX } = getComputedStyle(element);
@@ -60,7 +59,7 @@ function scrollsSideways(element: Element): boolean {
 
 /** Touches that belong to something else: fields, sideways scrollers, open layers, a text selection. */
 export function startsOnSomethingElse(target: EventTarget | null, root: Element): boolean {
-	if (document.querySelector(OPEN_LAYER)) return true;
+	if (hasOpenLayer()) return true;
 	if (!window.getSelection()?.isCollapsed) return true;
 	if (!(target instanceof Element)) return true;
 	if (target.closest(OWN_TOUCH)) return true;

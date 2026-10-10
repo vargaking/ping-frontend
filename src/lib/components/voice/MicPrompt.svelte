@@ -28,6 +28,7 @@
 			class="pointer-events-auto flex flex-col gap-3 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg"
 			role="region"
 			aria-label="Microphone"
+			data-escape-layer
 		>
 			<div class="flex items-start gap-3">
 				<Mic class="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
