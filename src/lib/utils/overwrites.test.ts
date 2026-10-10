@@ -6,11 +6,10 @@ import {
 	NO_BITS,
 	bitState,
 	inheritedForRole,
-	isPrivate,
-	privateSteps,
 	rowBits,
 	rowOf,
 	sameBits,
+	visibilityLine,
 	withRow,
 	withState
 } from './overwrites';
@@ -79,21 +78,46 @@ describe('inheritedForRole', () => {
 	});
 });
 
-describe('private switch', () => {
-	it('is on when @everyone is denied View', () => {
-		expect(isPrivate(rows([{ role_id: 1, allow: '0', deny: '1' }]), 1)).toBe(true);
-		expect(isPrivate(rows([{ role_id: 1, allow: '0', deny: '2' }]), 1)).toBe(false);
+describe('visibilityLine', () => {
+	it('says everyone can see it when it is not private', () => {
+		expect(visibilityLine('channel', false, [])).toBe(
+			'Everyone in the server can see this channel.'
+		);
+		expect(visibilityLine('category', false, ['Admin'])).toBe(
+			'Everyone in the server can see this category.'
+		);
 	});
 
-	it('allows the keeper before denying everyone, keeping their other bits', () => {
-		const current = rows([
-			{ role_id: 1, allow: '0', deny: String(SEND) },
-			{ role_id: 2, allow: '0', deny: String(VIEW) }
-		]);
-		expect(privateSteps(current, 1, { kind: 'roles', id: 2 })).toEqual([
-			{ subject: { kind: 'roles', id: 2 }, bits: { allow: VIEW, deny: 0n } },
-			{ subject: { kind: 'roles', id: 1 }, bits: { allow: 0n, deny: SEND | VIEW } }
-		]);
+	it('says only the owner can see it when nobody is allowed', () => {
+		expect(visibilityLine('channel', true, [])).toBe(
+			'Only the owner can see this. Allow View for a role or member below to let others in.'
+		);
+		expect(visibilityLine('category', true, [])).toBe(
+			'Only the owner can see this. Allow View for a role or member below to let others in.'
+		);
+	});
+
+	it('lists who can see it, then the owner', () => {
+		expect(visibilityLine('channel', true, ['Admin'])).toBe('Visible to Admin and the owner.');
+		expect(visibilityLine('channel', true, ['Admin', 'Core member'])).toBe(
+			'Visible to Admin, Core member and the owner.'
+		);
+		expect(visibilityLine('category', true, ['A', 'B', 'C'])).toBe(
+			'Visible to A, B, C and the owner.'
+		);
+	});
+
+	it('shortens a long list', () => {
+		const names = ['A', 'B', 'C', 'D', 'E', 'F'];
+		expect(visibilityLine('channel', true, names)).toBe(
+			'Visible to A, B, C, D, E, F and the owner.'
+		);
+		expect(visibilityLine('channel', true, [...names, 'G'])).toBe(
+			'Visible to A, B, C, D, E, F, 1 more and the owner.'
+		);
+		expect(visibilityLine('channel', true, [...names, 'G', 'H', 'I'])).toBe(
+			'Visible to A, B, C, D, E, F, 3 more and the owner.'
+		);
 	});
 });
 

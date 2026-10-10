@@ -67,6 +67,12 @@ function recordRequests(page: Page) {
 const tabReads = (requests: { method: string; path: string }[]) =>
 	requests.filter((r) => r.method === 'GET' && /\/(permissions|roles|members)\b/.test(r.path));
 
+function savedWrite(page: Page) {
+	return page.waitForResponse(
+		(r) => r.request().method() === 'PUT' && r.url().includes('/permissions/')
+	);
+}
+
 async function delayWrites(page: Page, ms: number) {
 	await page.route('**/permissions/**', async (route) => {
 		if (route.request().method() === 'PUT') await new Promise((resolve) => setTimeout(resolve, ms));
@@ -98,11 +104,21 @@ test('making a channel private takes it away from a member without a reload', as
 	await expect(memberSecretLink).toBeVisible({ timeout: 15_000 });
 
 	await owner.page.goto(channelPath(server.id, secret.id));
-	await owner.page.getByRole('button', { name: 'Channel settings' }).click();
-	await owner.page.getByRole('button', { name: 'Permissions' }).click();
-	await owner.page.getByLabel('Who keeps access').selectOption({ label: owner.user.username });
-	await owner.page.getByRole('switch', { name: 'Private' }).click();
-	await expect(owner.page.getByRole('switch', { name: 'Private' })).toBeChecked();
+	await openPermissions(owner.page);
+	const admin = await addRow(owner.page, 'Admin');
+	const allowed = savedWrite(owner.page);
+	await option(admin, 'View channel', 'Allow').click();
+	await allowed;
+
+	const privateSwitch = owner.page.getByRole('switch', { name: 'Private' });
+	await expect(privateSwitch).not.toBeChecked();
+	await privateSwitch.click();
+	await expect(privateSwitch).toBeChecked();
+	await expect(owner.page.getByText('Visible to Admin and the owner.')).toBeVisible();
+	await expect(
+		option(permissionRow(owner.page, '@everyone'), 'View channel', 'Deny'),
+		'the @everyone row should show the same setting as the switch'
+	).toHaveAttribute('aria-checked', 'true');
 
 	await expect(
 		member.page.getByText('You no longer have access to #secret'),
@@ -122,6 +138,130 @@ test('making a channel private takes it away from a member without a reload', as
 	await expect(member.page.getByRole('link', { name: 'general' })).toBeVisible();
 	await expect(member.page.getByRole('link', { name: 'secret' })).toHaveCount(0);
 	expect(general.id).not.toBe(secret.id);
+
+	await openPermissions(owner.page);
+	await privateSwitch.click();
+	await expect(privateSwitch).not.toBeChecked();
+	await expect(owner.page.getByText('Everyone in the server can see this channel.')).toBeVisible();
+	await expect(permissionRow(owner.page, 'Admin')).toBeVisible();
+	await expect(
+		member.page.getByRole('link', { name: 'secret' }),
+		'the channel should come back for the member'
+	).toBeVisible();
+});
+
+test('private with nobody allowed says only the owner can see it', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	const channel = await createChannel(owner.context, server.id, 'fresh');
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await openPermissions(owner.page);
+
+	await owner.page.getByRole('switch', { name: 'Private' }).click();
+
+	await expect(owner.page.getByRole('switch', { name: 'Private' })).toBeChecked();
+	await expect(
+		owner.page.getByText(
+			'Only the owner can see this. Allow View for a role or member below to let others in.'
+		)
+	).toBeVisible();
+});
+
+test('the switch and the @everyone row are the same setting', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	const channel = await createChannel(owner.context, server.id, 'fresh');
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await openPermissions(owner.page);
+	const row = permissionRow(owner.page, '@everyone');
+	const privateSwitch = owner.page.getByRole('switch', { name: 'Private' });
+	const requests = recordRequests(owner.page);
+	const writes = () => requests.filter((r) => r.method === 'PUT');
+
+	let saved = savedWrite(owner.page);
+	await option(row, 'View channel', 'Deny').click();
+	await expect(privateSwitch).toBeChecked();
+	await saved;
+	expect(writes().map((r) => r.body)).toEqual([JSON.stringify({ allow: '0', deny: VIEW })]);
+
+	saved = savedWrite(owner.page);
+	await option(row, 'View channel', 'Inherit').click();
+	await expect(privateSwitch).not.toBeChecked();
+	await saved;
+	expect(writes()).toHaveLength(2);
+	expect(writes()[1].body).toBe(JSON.stringify({ allow: '0', deny: '0' }));
+});
+
+test('a manager who would lose access is told before anything is sent', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const manager = await newUser(browser, 'manager');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	const channel = await createChannel(owner.context, server.id, 'plans');
+	await joinInvite(manager.context, (await createInvite(owner.context, server.id)).id);
+	const managers = await createRole(owner.context, server.id, 'Managers', {
+		allow: MANAGER_PERMISSIONS
+	});
+	await setMemberRoles(owner.context, server.id, manager.user.id, [managers.id]);
+
+	await manager.page.goto(channelPath(server.id, channel.id));
+	await openPermissions(manager.page);
+	const requests = recordRequests(manager.page);
+
+	const privateSwitch = manager.page.getByRole('switch', { name: 'Private' });
+	await expect(privateSwitch).toBeDisabled();
+	await expect(
+		manager.page.getByText(/^Turning this on would take this channel away from you\./)
+	).toBeVisible();
+	const row = permissionRow(manager.page, '@everyone');
+	await expect(row.getByText('Deny would take this channel away from you.')).toBeVisible();
+	await expect(option(row, 'View channel', 'Deny')).toBeDisabled();
+	await expect(option(row, 'View channel', 'Allow')).toBeEnabled();
+	await expect(option(row, 'Send messages', 'Deny')).toBeEnabled();
+	await manager.page.waitForTimeout(500);
+
+	expect(requests.filter((r) => r.method !== 'GET')).toEqual([]);
+});
+
+test('category settings: private on and off through one write each', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const member = await newUser(browser, 'member');
+	const server = await createServer(owner.context, uniqueName('Guild'));
+	const staff = await createCategory(owner.context, server.id, 'Staff');
+	const channel = await createChannel(owner.context, server.id, 'plans', staff.id);
+	const everyone = await everyoneRoleId(owner.context, server.id);
+	await joinInvite(member.context, (await createInvite(owner.context, server.id)).id);
+
+	await member.page.goto(channelPath(server.id, channel.id));
+	const memberLink = member.page
+		.getByRole('complementary', { name: 'Channels' })
+		.getByRole('link', { name: 'plans' });
+	await expect(memberLink).toBeVisible({ timeout: 15_000 });
+
+	await owner.page.goto(channelPath(server.id, channel.id));
+	await owner.page.getByRole('button', { name: 'Staff', exact: true }).click({ button: 'right' });
+	await owner.page.getByRole('menuitem', { name: 'Category settings' }).click();
+	await owner.page.getByRole('button', { name: 'Permissions' }).click();
+	await expect(owner.page.getByLabel('Add a role')).toBeVisible();
+	const privateSwitch = owner.page.getByRole('switch', { name: 'Private' });
+	const requests = recordRequests(owner.page);
+	const writes = () => requests.filter((r) => r.method === 'PUT');
+	const path = `/channel-groups/${staff.id}/permissions/roles/${everyone}`;
+
+	await privateSwitch.click();
+	await expect(privateSwitch).toBeChecked();
+	await expect(
+		owner.page.getByText(
+			'Only the owner can see this. Allow View for a role or member below to let others in.'
+		)
+	).toBeVisible();
+	await expect(memberLink, 'the channel inside should leave the sidebar').toHaveCount(0);
+	expect(writes().map((r) => `${r.method} ${r.path}`)).toEqual([`PUT ${path}`]);
+
+	await privateSwitch.click();
+	await expect(privateSwitch).not.toBeChecked();
+	await expect(owner.page.getByText('Everyone in the server can see this category.')).toBeVisible();
+	await expect(memberLink, 'the channel should come back').toBeVisible();
+	expect(writes().map((r) => `${r.method} ${r.path}`)).toEqual([`PUT ${path}`, `PUT ${path}`]);
 });
 
 test('a member who may not send sees a notice instead of the composer', async ({ browser }) => {
@@ -148,6 +288,7 @@ test('a member who may not send sees a notice instead of the composer', async ({
 
 test('one click sends one request and nothing else', async ({ browser }) => {
 	const { owner, server, channel, mods } = await setupChannel(browser);
+	const everyone = await everyoneRoleId(owner.context, server.id);
 	await owner.page.goto(channelPath(server.id, channel.id));
 	await openPermissions(owner.page);
 	const row = await addRow(owner.page, 'Mods');
@@ -165,6 +306,18 @@ test('one click sends one request and nothing else', async ({ browser }) => {
 	await expect(option(row, 'Send messages', 'Allow')).toHaveAttribute('aria-checked', 'true');
 	expect(requests.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`)).toEqual([
 		`PUT /channels/${channel.id}/permissions/roles/${mods.id}`
+	]);
+	expect(tabReads(requests)).toEqual([]);
+
+	const privateSaved = savedWrite(owner.page);
+	await owner.page.getByRole('switch', { name: 'Private' }).click();
+	await privateSaved;
+	await owner.page.waitForTimeout(1500);
+
+	await expect(owner.page.getByRole('switch', { name: 'Private' })).toBeChecked();
+	expect(requests.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`)).toEqual([
+		`PUT /channels/${channel.id}/permissions/roles/${mods.id}`,
+		`PUT /channels/${channel.id}/permissions/roles/${everyone}`
 	]);
 	expect(tabReads(requests)).toEqual([]);
 });
@@ -278,7 +431,8 @@ test("another manager's change shows up live", async ({ browser }) => {
 
 	await owner.page.goto(channelPath(server.id, channel.id));
 	await openPermissions(owner.page);
-	const row = await addRow(owner.page, '@everyone');
+	const row = permissionRow(owner.page, '@everyone');
+	await expect(row).toHaveJSProperty('open', true);
 	await expect(option(row, 'Send messages', 'Inherit')).toHaveAttribute('aria-checked', 'true');
 	const requests = recordRequests(owner.page);
 

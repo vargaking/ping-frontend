@@ -10,6 +10,10 @@
 		/** A change is on its way to the server. */
 		pending?: boolean;
 		disabled?: boolean;
+		/** Options that can't be picked, e.g. because they would lock the user out. */
+		blocked?: PermissionState[];
+		/** Why the toggle or an option is unavailable. */
+		note?: string;
 		onchange: (value: PermissionState) => void;
 	};
 
@@ -20,6 +24,8 @@
 		inherited,
 		pending = false,
 		disabled = false,
+		blocked = [],
+		note,
 		onchange
 	}: Props = $props();
 
@@ -45,6 +51,9 @@
 		{#if value === 'inherit'}
 			<span class="text-xs text-text-subtle">{inherited}</span>
 		{/if}
+		{#if note}
+			<span class="text-xs text-muted-foreground">{note}</span>
+		{/if}
 	</div>
 	<div
 		role="radiogroup"
@@ -59,12 +68,16 @@
 				type="button"
 				role="radio"
 				aria-checked={value === option.value}
-				{disabled}
+				disabled={disabled || blocked.includes(option.value)}
 				onclick={() => onchange(option.value)}
 				class="h-8 px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed max-md:flex-1 pointer-coarse:h-10 {value ===
 				option.value
 					? active[option.value] + (pending ? ' animate-pulse' : '')
-					: 'text-muted-foreground hover:bg-card hover:text-foreground'}"
+					: 'text-muted-foreground hover:bg-card hover:text-foreground'} {blocked.includes(
+					option.value
+				) && !disabled
+					? 'opacity-50'
+					: ''}"
 			>
 				{option.label}
 			</button>

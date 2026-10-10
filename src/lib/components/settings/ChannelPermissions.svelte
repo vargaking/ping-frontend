@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { overwritesState } from '$lib/states/overwritesState.svelte';
-	import { CHANNEL_BITS } from '$lib/permissions';
+	import { CHANNEL_BITS, Permission } from '$lib/permissions';
 	import type { OverwriteSubject, OverwriteTarget } from '$lib/types/overwrite.types';
 	import type { Role } from '$lib/types/server.types';
 	import { canTouchRole, rankOf, sortRoles, type PermissionState } from '$lib/utils/roles';
@@ -14,15 +13,28 @@
 		bitState,
 		inheritedForMember,
 		inheritedForRole,
-		isPrivate,
-		privateSteps,
 		rowBits,
-		withState
+		visibilityLine,
+		withRow,
+		withState,
+		type Bits
 	} from '$lib/utils/overwrites';
+	import {
+		canView,
+		isPrivate,
+		privateRow,
+		scopeMask,
+		visibleTo,
+		type MemberInfo,
+		type Scope,
+		type Who
+	} from '$lib/utils/channelResolution';
 	import PermissionToggle from './PermissionToggle.svelte';
 	import SettingsSwitch from './SettingsSwitch.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { Trash2 } from 'lucide-svelte';
+
+	const VIEW = Permission.VIEW_CHANNEL;
 
 	let {
 		serverId,
@@ -50,26 +62,24 @@
 	let parentSeq = 0;
 	// Subjects added in the editor that don't have a row yet.
 	let added = $state<OverwriteSubject[]>([]);
-	let keeper = $state('');
 	let addRole = $state('');
 	let addMember = $state('');
 
 	const roles = $derived(serversState.roles[serverId] ?? []);
 	const everyone = $derived(roles.find((r) => r.is_default));
+	const everyoneSubject = $derived<OverwriteSubject | null>(
+		everyone ? { kind: 'roles', id: everyone.id } : null
+	);
 	const ownerId = $derived(serversState.servers[serverId]?.owner_id ?? null);
 	const isOwner = $derived(serversState.isOwner(serverId));
 	const rank = $derived(serversState.rankIn(serverId));
-	const privateOn = $derived(isPrivate(rows, everyone?.id));
-	const privatePending = $derived(
-		everyone != null &&
-			(overwritesState.pendingBits(here, { kind: 'roles', id: everyone.id }) &
-				CHANNEL_PERMISSIONS[0].bit) !==
-				0n
-	);
-	const nounTarget = $derived(targetKind === 'channel' ? 'channel' : 'category');
+	const me = $derived(usersState.loggedInUser?.id ?? null);
+	const actor = $derived<Who>({
+		userId: me,
+		roleIds: me != null ? (serversState.memberRoles[serverId]?.[me] ?? []) : []
+	});
+	const noun = $derived(targetKind === 'channel' ? 'channel' : 'category');
 	const ready = $derived(hereReady && parentReady && serversState.roles[serverId] != null);
-
-	type MemberInfo = { id: number; username: string; roleIds: number[] };
 
 	const members = $derived<MemberInfo[]>(
 		(serversState.servers[serverId]?.members ?? []).map((user) => ({
@@ -79,13 +89,74 @@
 		}))
 	);
 
-	type Entry = { subject: OverwriteSubject; label: string; role?: Role; locked: boolean };
+	const categoryName = $derived(
+		parentId != null ? (serversState.channelGroups[serverId]?.[parentId]?.name ?? '') : ''
+	);
+	const scope = $derived<Scope | null>(
+		rows && (!parent || parentRows)
+			? {
+					roles,
+					ownerId,
+					target: rows,
+					category: parent && parentRows ? { name: categoryName, rows: parentRows } : null
+				}
+			: null
+	);
+
+	const privateOn = $derived(scope ? isPrivate(scope) : false);
+	const privatePending = $derived(
+		everyoneSubject != null && (overwritesState.pendingBits(here, everyoneSubject) & VIEW) !== 0n
+	);
+	const statusLine = $derived.by(() => {
+		if (!scope) return '';
+		const visible = privateOn ? visibleTo(scope, members) : null;
+		const names = visible
+			? [...visible.roles.map((r) => r.name), ...visible.members.map((m) => m.username)]
+			: [];
+		return visibilityLine(noun, privateOn, names);
+	});
+	const privateHint = $derived.by(() => {
+		if (!scope || !privateOn || !everyoneSubject) return null;
+		if (bitState(rowBits(scope.target, everyoneSubject), VIEW) === 'deny') return null;
+		if (!isPrivate({ ...scope, category: null })) {
+			return `Private because the category ${categoryName} is private.`;
+		}
+		return "Private because @everyone can't view channels in this server.";
+	});
+
+	const actorMask = $derived(scope ? scopeMask(scope, actor) : 0n);
+
+	function losesView(subject: OverwriteSubject, next: Bits): boolean {
+		if (isOwner || !scope) return false;
+		return !canView({ ...scope, target: withRow(scope.target, subject, next) }, actor);
+	}
+
+	function lacksBits(changed: bigint): boolean {
+		return !isOwner && (changed & ~actorMask) !== 0n;
+	}
+
+	const everyoneLocked = $derived(everyone != null && !canTouchRole(everyone, rank, isOwner));
+	const switchNote = $derived.by(() => {
+		if (!scope || !everyone || !everyoneSubject) return null;
+		if (everyoneLocked) return "You can't change @everyone, so you can't change this.";
+		if (privateOn || !losesView(everyoneSubject, privateRow(scope, everyone.id, true))) return null;
+		return `Turning this on would take this ${noun} away from you. Allow View for one of your roles or for yourself below first.`;
+	});
+
+	type Entry = {
+		subject: OverwriteSubject;
+		label: string;
+		role?: Role;
+		locked: boolean;
+		lockedNote: string;
+	};
 
 	const entries = $derived.by<Entry[]>(() => {
 		const subjects: OverwriteSubject[] = [
 			...(rows?.roles ?? []).map((r) => ({ kind: 'roles' as const, id: r.role_id })),
 			...(rows?.members ?? []).map((m) => ({ kind: 'members' as const, id: m.user_id })),
-			...added
+			...added,
+			...(everyoneSubject ? [everyoneSubject] : [])
 		];
 		const seen = new Set<string>();
 		const out: Entry[] = [];
@@ -96,14 +167,20 @@
 			if (subject.kind === 'roles') {
 				const role = roles.find((r) => r.id === subject.id);
 				if (!role) continue;
-				out.push({ subject, label: role.name, role, locked: !canTouchRole(role, rank, isOwner) });
+				out.push({
+					subject,
+					label: role.name,
+					role,
+					locked: !canTouchRole(role, rank, isOwner),
+					lockedNote: "This is at or above your highest role, so you can't change it."
+				});
 			} else {
 				const member = members.find((m) => m.id === subject.id);
-				const theirRank = rankOf(roles, member?.roleIds ?? []);
 				out.push({
 					subject,
 					label: member?.username ?? `User ${subject.id}`,
-					locked: !isOwner && (subject.id === ownerId || (theirRank > 0 && theirRank >= rank))
+					locked: memberLocked(subject.id, member?.roleIds ?? []),
+					lockedNote: "Their highest role is at or above yours, so you can't change this."
 				});
 			}
 		}
@@ -111,22 +188,27 @@
 		return out.sort((a, b) => order(a) - order(b));
 	});
 
+	function memberLocked(userId: number, roleIds: number[]): boolean {
+		if (isOwner) return false;
+		const theirRank = rankOf(roles, roleIds);
+		return userId === ownerId || (theirRank > 0 && theirRank >= rank);
+	}
+
 	const roleChoices = $derived(
 		sortRoles(roles).filter(
-			(r) => !entries.some((e) => e.subject.kind === 'roles' && e.subject.id === r.id)
+			(r) =>
+				canTouchRole(r, rank, isOwner) &&
+				!entries.some((e) => e.subject.kind === 'roles' && e.subject.id === r.id)
 		)
 	);
 	const memberChoices = $derived(
 		members.filter(
-			(m) => !entries.some((e) => e.subject.kind === 'members' && e.subject.id === m.id)
+			(m) =>
+				m.id !== ownerId &&
+				!memberLocked(m.id, m.roleIds) &&
+				!entries.some((e) => e.subject.kind === 'members' && e.subject.id === m.id)
 		)
 	);
-	const keeperChoices = $derived([
-		...sortRoles(roles)
-			.filter((r) => !r.is_default && canTouchRole(r, rank, isOwner))
-			.map((r) => ({ value: `roles:${r.id}`, label: r.name })),
-		...members.map((m) => ({ value: `members:${m.id}`, label: m.username }))
-	]);
 
 	async function loadHere(t: OverwriteTarget) {
 		const seq = ++hereSeq;
@@ -178,20 +260,29 @@
 		void loadParent(parent);
 	}
 
-	function parseSubject(value: string): OverwriteSubject | null {
-		const [kind, id] = value.split(':');
-		if ((kind !== 'roles' && kind !== 'members') || !id) return null;
-		return { kind, id: Number(id) };
+	function change(entry: Entry, bit: bigint, state: PermissionState) {
+		const next = withState(rowBits(rows, entry.subject), bit, state);
+		if (entry.locked || lacksBits(bit)) return;
+		if (bit === VIEW && losesView(entry.subject, next)) return;
+		void overwritesState.save(here, entry.subject, next, bit);
 	}
 
-	function change(subject: OverwriteSubject, bit: bigint, state: PermissionState) {
-		const next = withState(rowBits(rows, subject), bit, state);
-		void overwritesState.save(here, subject, next, bit);
+	function removeNote(entry: Entry): string | null {
+		if (entry.locked) return null;
+		const bits = rowBits(rows, entry.subject);
+		if (losesView(entry.subject, NO_BITS)) {
+			return `Removing this would take this ${noun} away from you.`;
+		}
+		if (lacksBits(bits.allow | bits.deny)) {
+			return "It sets permissions you don't have, so you can't remove it.";
+		}
+		return null;
 	}
 
-	function remove(subject: OverwriteSubject) {
-		added = added.filter((s) => !(s.kind === subject.kind && s.id === subject.id));
-		void overwritesState.save(here, subject, NO_BITS, CHANNEL_BITS);
+	function remove(entry: Entry) {
+		if (entry.locked || removeNote(entry)) return;
+		added = added.filter((s) => !(s.kind === entry.subject.kind && s.id === entry.subject.id));
+		void overwritesState.save(here, entry.subject, NO_BITS, CHANNEL_BITS);
 	}
 
 	function add(kind: 'roles' | 'members', value: string) {
@@ -201,25 +292,35 @@
 		addMember = '';
 	}
 
-	async function togglePrivate() {
-		if (!everyone) return;
-		const view = CHANNEL_PERMISSIONS[0].bit;
-		const everyoneSubject: OverwriteSubject = { kind: 'roles', id: everyone.id };
-		if (privateOn) {
-			const bits = withState(rowBits(rows, everyoneSubject), view, 'inherit');
-			void overwritesState.save(here, everyoneSubject, bits, view);
-			return;
+	function togglePrivate() {
+		if (!scope || !everyone || !everyoneSubject || switchNote) return;
+		const next = privateRow(scope, everyone.id, !privateOn);
+		void overwritesState.save(here, everyoneSubject, next, VIEW);
+	}
+
+	const stateLabel: Record<PermissionState, string> = {
+		inherit: 'Inherit',
+		allow: 'Allow',
+		deny: 'Deny'
+	};
+
+	function availability(entry: Entry, bits: Bits, bit: bigint) {
+		const open = { disabled: false, blocked: [] as PermissionState[], note: undefined };
+		if (entry.locked) return { ...open, disabled: true };
+		if (lacksBits(bit)) {
+			return {
+				...open,
+				disabled: true,
+				note: "You don't have this permission here, so you can't change it."
+			};
 		}
-		const subject = parseSubject(keeper);
-		if (!subject) {
-			toast.error(`Pick who keeps access to this ${nounTarget} first.`);
-			return;
-		}
-		keeper = '';
-		const [keep] = privateSteps(rows, everyone.id, subject);
-		if (!(await overwritesState.save(here, keep.subject, keep.bits, view))) return;
-		const [, hide] = privateSteps(rows, everyone.id, subject);
-		void overwritesState.save(here, hide.subject, hide.bits, view);
+		if (bit !== VIEW) return open;
+		const blocked = (['inherit', 'deny'] as const).filter((state) =>
+			losesView(entry.subject, withState(bits, VIEW, state))
+		);
+		if (blocked.length === 0) return open;
+		const names = blocked.map((state) => stateLabel[state]).join(' or ');
+		return { ...open, blocked, note: `${names} would take this ${noun} away from you.` };
 	}
 
 	function inherited(entry: Entry, bit: bigint): string {
@@ -236,7 +337,7 @@
 		<p class="text-sm text-destructive">
 			Couldn't load the permissions. <button class="underline" onclick={retry}>Try again</button>
 		</p>
-	{:else if !ready || rows === null}
+	{:else if !ready || !scope}
 		<p class="text-sm text-muted-foreground">Loading…</p>
 	{:else}
 		<section class="flex flex-col gap-3">
@@ -247,22 +348,17 @@
 					: 'Only the roles and members you allow can see the channels in this category.'}
 				checked={privateOn}
 				pending={privatePending}
-				disabled={!everyone}
+				disabled={!everyone || switchNote != null}
 				onclick={togglePrivate}
-			/>
-			{#if !privateOn}
-				<div class="flex max-w-md flex-col gap-1.5">
-					<label for="private-keeper" class="text-[13px] font-medium text-text-label">
-						Who keeps access
-					</label>
-					<select id="private-keeper" bind:value={keeper} class={selectClass}>
-						<option value="">Pick a role or member</option>
-						{#each keeperChoices as choice (choice.value)}
-							<option value={choice.value}>{choice.label}</option>
-						{/each}
-					</select>
-				</div>
-			{/if}
+			>
+				<span class="text-xs text-text-subtle" aria-live="polite">{statusLine}</span>
+				{#if privateHint}
+					<span class="text-xs text-text-subtle">{privateHint}</span>
+				{/if}
+				{#if switchNote}
+					<span class="text-xs text-muted-foreground">{switchNote}</span>
+				{/if}
+			</SettingsSwitch>
 		</section>
 
 		<section class="flex flex-col gap-3">
@@ -292,17 +388,13 @@
 				</select>
 			</div>
 
-			{#if entries.length === 0}
-				<p class="text-sm text-muted-foreground">
-					Nothing is set for this {nounTarget}. Everyone has their server permissions here.
-				</p>
-			{/if}
-
 			{#each entries as entry (`${entry.subject.kind}:${entry.subject.id}`)}
-				{@const bits = rowBits(rows, entry.subject)}
+				{@const bits = rowBits(scope.target, entry.subject)}
+				{@const blockedRemoval = removeNote(entry)}
 				<details
 					class="rounded-xl border border-input bg-card"
-					open={added.some((s) => s.kind === entry.subject.kind && s.id === entry.subject.id)}
+					open={entry.role?.is_default === true ||
+						added.some((s) => s.kind === entry.subject.kind && s.id === entry.subject.id)}
 				>
 					<summary
 						class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-medium"
@@ -313,14 +405,15 @@
 								{entry.subject.kind === 'roles' ? 'Role' : 'Member'}
 							</span>
 						</span>
-						{#if !entry.locked}
+						{#if !entry.locked && !entry.role?.is_default}
 							<Button
 								variant="ghost"
 								size="sm"
 								aria-label="Remove {entry.label}"
+								disabled={blockedRemoval != null}
 								onclick={(e: MouseEvent) => {
 									e.preventDefault();
-									remove(entry.subject);
+									remove(entry);
 								}}
 							>
 								<Trash2 size={14} strokeWidth={1.75} />
@@ -329,21 +422,25 @@
 					</summary>
 					<div class="flex flex-col gap-4 border-t border-input px-4 py-4">
 						{#if entry.locked}
-							<p class="text-xs text-muted-foreground">
-								This is at or above your highest role, so you can't change it.
-							</p>
+							<p class="text-xs text-muted-foreground">{entry.lockedNote}</p>
 						{/if}
 						{#each CHANNEL_PERMISSIONS as permission (permission.bit)}
+							{@const available = availability(entry, bits, permission.bit)}
 							<PermissionToggle
 								label={permission.label}
 								description={permission.description}
 								value={bitState(bits, permission.bit)}
 								inherited={inherited(entry, permission.bit)}
 								pending={(overwritesState.pendingBits(here, entry.subject) & permission.bit) !== 0n}
-								disabled={entry.locked}
-								onchange={(state) => change(entry.subject, permission.bit, state)}
+								disabled={available.disabled}
+								blocked={available.blocked}
+								note={available.note}
+								onchange={(state) => change(entry, permission.bit, state)}
 							/>
 						{/each}
+						{#if blockedRemoval}
+							<p class="text-xs text-muted-foreground">{blockedRemoval}</p>
+						{/if}
 					</div>
 				</details>
 			{/each}

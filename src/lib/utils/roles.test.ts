@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ALL_PERMISSIONS, Permission } from '$lib/permissions';
 import type { Role } from '$lib/types/server.types';
 import {
+	applyLayer,
 	applyPositions,
 	assignedRoles,
 	canAssignRole,
@@ -130,6 +131,26 @@ describe('memberMask', () => {
 
 	it('limits the mask to known bits', () => {
 		expect(memberMask([everyone((1n << 40n) | SEND)], [])).toBe(SEND);
+	});
+});
+
+describe('applyLayer', () => {
+	it('lets the default role deny bits the mask already holds', () => {
+		const roles = [role({ id: 1, allow: SEND, deny: KICK, is_default: true })];
+		expect(applyLayer(KICK | MANAGE, roles, [])).toBe(MANAGE | SEND);
+	});
+
+	it('lets a higher role allow back what the default role denied', () => {
+		const roles = [
+			role({ id: 1, deny: SEND, is_default: true }),
+			role({ id: 2, position: 1, allow: SEND })
+		];
+		expect(applyLayer(SEND, roles, [])).toBe(0n);
+		expect(applyLayer(SEND, roles, [2])).toBe(SEND);
+	});
+
+	it('leaves the mask alone when no role says anything', () => {
+		expect(applyLayer(KICK, [everyone(0n), role({ id: 2, position: 1 })], [2])).toBe(KICK);
 	});
 });
 

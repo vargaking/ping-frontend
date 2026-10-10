@@ -126,26 +126,26 @@ export function inheritedForMember(inCategory: boolean): string {
 	return inCategory ? 'From their roles and the category' : 'From their roles';
 }
 
-/** Whether @everyone's row on the target denies View. */
-export function isPrivate(rows: Overwrites | null, everyoneId: number | undefined): boolean {
-	if (everyoneId == null) return false;
-	return (
-		bitState(rowBits(rows, { kind: 'roles', id: everyoneId }), Permission.VIEW_CHANNEL) === 'deny'
-	);
+const SHOWN_NAMES = 6;
+
+function joinNames(names: string[]): string {
+	if (names.length < 2) return names.join('');
+	return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
-/**
- * The writes that make a target private: the picked role or member is
- * allowed View first, so nobody is locked out between the two requests.
- */
-export function privateSteps(
-	rows: Overwrites | null,
-	everyoneId: number,
-	keeper: OverwriteSubject
-): { subject: OverwriteSubject; bits: Bits }[] {
-	const everyone: OverwriteSubject = { kind: 'roles', id: everyoneId };
-	return [
-		{ subject: keeper, bits: withState(rowBits(rows, keeper), Permission.VIEW_CHANNEL, 'allow') },
-		{ subject: everyone, bits: withState(rowBits(rows, everyone), Permission.VIEW_CHANNEL, 'deny') }
-	];
+/** The line under the Private switch: who can see the channel or category. */
+export function visibilityLine(
+	noun: 'channel' | 'category',
+	isPrivate: boolean,
+	names: string[]
+): string {
+	if (!isPrivate) return `Everyone in the server can see this ${noun}.`;
+	if (names.length === 0) {
+		return 'Only the owner can see this. Allow View for a role or member below to let others in.';
+	}
+	const listed =
+		names.length > SHOWN_NAMES
+			? [...names.slice(0, SHOWN_NAMES), `${names.length - SHOWN_NAMES} more`]
+			: names;
+	return `Visible to ${joinNames([...listed, 'the owner'])}.`;
 }
