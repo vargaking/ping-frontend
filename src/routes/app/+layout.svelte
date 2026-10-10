@@ -12,11 +12,13 @@
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
 	import InstallPrompt from '$lib/components/notifications/InstallPrompt.svelte';
+	import UpdateNotice from '$lib/components/notifications/UpdateNotice.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { notificationsState } from '$lib/states/notificationsState.svelte';
 	import { historySyncState } from '$lib/states/historySyncState.svelte';
 	import { resyncState } from '$lib/states/resyncState.svelte';
+	import { updateState } from '$lib/states/updateState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
 	import { closeReadNotifications, readThreadTags } from '$lib/utils/notificationSweep';
@@ -56,6 +58,8 @@
 	const title = $derived(
 		badgeTotal > 0 ? `(${badgeTotal > 99 ? '99+' : badgeTotal}) zeta` : 'zeta'
 	);
+
+	onMount(() => updateState.start());
 
 	onMount(() => {
 		notificationsState.refreshPermission();
@@ -266,6 +270,7 @@
 
 {#if phoneState.touch && shellViewportState.showInfo}<LayoutInfo />{/if}
 <Overlay />
+<UpdateNotice />
 <InstallPrompt />
 <PushPrompt />
 <MicPrompt />

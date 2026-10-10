@@ -49,6 +49,7 @@ import { markRepliesDeleted, refreshReplyQuotes, replyRefFor } from '$lib/utils/
 import { replyState } from './replyState.svelte';
 import { Outbox } from './outboxState.svelte';
 import { HIDDEN_RESYNC_MS, resyncState } from './resyncState.svelte';
+import { updateState } from './updateState.svelte';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -108,6 +109,7 @@ class SocketState {
 					return;
 				}
 				this.checkAfterResume();
+				void updateState.check();
 				// Frames sent while the page was frozen can be lost even if the socket survived.
 				const hiddenFor = this.hiddenAt == null ? 0 : Date.now() - this.hiddenAt;
 				this.hiddenAt = null;
@@ -116,6 +118,7 @@ class SocketState {
 			window.addEventListener('pageshow', (event) => {
 				if (!event.persisted) return;
 				this.checkAfterResume();
+				void updateState.check();
 				void resyncState.request('resume');
 			});
 			window.addEventListener('online', () => {
@@ -151,6 +154,7 @@ class SocketState {
 			if (this.hasConnected) {
 				forumState.markStale();
 				void resyncState.request('reconnect');
+				void updateState.check();
 			}
 			this.hasConnected = true;
 

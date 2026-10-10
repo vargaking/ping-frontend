@@ -2,10 +2,11 @@
 	import { SquarePlus } from '@lucide/svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import { installState } from '$lib/states/installState.svelte';
+	import { updateState } from '$lib/states/updateState.svelte';
 </script>
 
 <div class="pointer-events-none fixed inset-x-3 top-(--notice-top) z-40" aria-live="polite">
-	{#if installState.visible}
+	{#if installState.visible && !updateState.noticeVisible}
 		<div
 			class="pointer-events-auto flex flex-col gap-3 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg"
 			role="region"

@@ -51,6 +51,10 @@
 		onSubmit(withoutTrailingEmptyParagraphs(editor.getJSON()));
 	}
 
+	export function getJSON(): JSONContent | null {
+		return editor ? withoutTrailingEmptyParagraphs(editor.getJSON()) : null;
+	}
+
 	export function clear() {
 		editor?.commands.clearContent();
 	}

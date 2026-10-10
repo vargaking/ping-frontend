@@ -11,6 +11,7 @@
 	import { messagesState, threadKey } from '$lib/states/messagesState.svelte';
 	import { messageEditState } from '$lib/states/messageEditState.svelte';
 	import { replyState } from '$lib/states/replyState.svelte';
+	import { composerDraftState } from '$lib/states/composerDraftState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import {
 		MAX_ATTACHMENTS_PER_MESSAGE,
@@ -88,6 +89,19 @@
 	);
 
 	const targetKey = $derived(target ? threadKey(target) : null);
+
+	const restoredDraft = untrack(() =>
+		target && !onSend ? composerDraftState.takeRestored(threadKey(target)) : undefined
+	);
+
+	$effect(() => {
+		if (onSend) return;
+		return composerDraftState.register({
+			threadKey: () => targetKey,
+			content: () => (isEmpty ? null : (editor?.getJSON() ?? null)),
+			hasAttachments: () => pending.length > 0
+		});
+	});
 
 	const replyTarget = $derived(targetKey ? replyState.target[targetKey] : undefined);
 	const replyAuthor = $derived(
@@ -448,6 +462,7 @@
 			<MessageEditor
 				bind:this={editor}
 				bind:isEmpty
+				content={restoredDraft}
 				{placeholder}
 				allowEmpty={doneAttachments.length > 0}
 				onSubmit={handleSubmit}
