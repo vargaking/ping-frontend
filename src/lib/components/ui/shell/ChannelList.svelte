@@ -65,8 +65,9 @@
 	const activeChannelId = $derived(page.params.channelId ? parseInt(page.params.channelId) : null);
 
 	const layout = $derived(serversState.selectedServerLayout);
-	const hasChannels = $derived(
-		layout.ungrouped.length > 0 || layout.groups.some((g) => g.channels.length > 0)
+	const listIsEmpty = $derived(
+		layout.ungrouped.length === 0 &&
+			!layout.groups.some((g) => canManageChannels || g.channels.length > 0)
 	);
 
 	function visibleChannels(group: ChannelGroup, channels: Channel[]) {
@@ -400,12 +401,15 @@
 						{#each shown as channel (channel.id)}
 							{@render channelItem(channel)}
 						{/each}
+						{#if channels.length === 0 && !collapsed}
+							<p class="py-1 pr-2 pl-6 text-xs text-text-subtle">No channels in this category.</p>
+						{/if}
 					</div>
 				</section>
 			{/if}
 		{/each}
 
-		{#if !hasChannels}
+		{#if listIsEmpty}
 			<p class="px-2 py-1 text-xs text-text-subtle">No channels yet.</p>
 		{/if}
 
