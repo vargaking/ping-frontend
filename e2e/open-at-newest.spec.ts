@@ -3,6 +3,7 @@ import { newUser, openConversation, seedDirectMessages } from './helpers';
 
 const MESSAGE_COUNT = 120;
 const OLDER_PAGE_DELAY_MS = 1000;
+const HISTORY_SYNC_PAGE_LIMIT = '100';
 
 const label = (n: number) => `msg ${String(n).padStart(3, '0')}`;
 
@@ -21,13 +22,15 @@ async function seededConversation(browser: Browser) {
 	return { a, b, conversation };
 }
 
-/** Delays and records the requests for older history, leaving the newest page alone. */
+/** Delays and records the message list's requests for older history, leaving the newest page
+ *  and the background history sync alone. */
 async function delayOlderPages(page: Page, conversationId: number) {
 	const requests: string[] = [];
 	await page.route(
 		(url) =>
 			url.pathname === `/conversations/${conversationId}/messages` &&
-			url.searchParams.has('before'),
+			url.searchParams.has('before') &&
+			url.searchParams.get('limit') !== HISTORY_SYNC_PAGE_LIMIT,
 		async (route) => {
 			requests.push(route.request().url());
 			await new Promise((resolve) => setTimeout(resolve, OLDER_PAGE_DELAY_MS));

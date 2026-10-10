@@ -14,6 +14,7 @@
 	import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
+	import { historyStatusLabel } from '$lib/states/historySyncState.svelte';
 
 	const chip: Record<ConnectionStatus, { label: string; dot: string; text: string }> = {
 		connected: { label: 'Connected', dot: 'bg-online', text: 'text-online' },
@@ -35,6 +36,8 @@
 			voice.status === 'connected' ? qualityLabel[voice.quality] : chip[voice.status].label;
 		return `Voice · ${word}`;
 	}
+
+	const historyLabel = $derived(historyStatusLabel());
 </script>
 
 {#snippet row(
@@ -124,6 +127,12 @@
 				checked={shellViewportState.showInfo}
 				onclick={() => shellViewportState.toggleInfo()}
 			/>
+		</div>
+	{/if}
+
+	{#if historyLabel}
+		<div class="mt-2 border-t border-border px-4 pt-3 pb-1 text-[11px] text-text-subtle">
+			{historyLabel}
 		</div>
 	{/if}
 </div>

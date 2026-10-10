@@ -1,4 +1,7 @@
-import type { MessageTarget, MessageType, Reaction, ReplyRef } from '$lib/types/messages.types';
+import type { MessageType, Reaction, ReplyRef } from '$lib/types/messages.types';
+import { channelThreadKey, directThreadKey, postThreadKey } from '$lib/utils/threadKeys';
+
+export { channelThreadKey, directThreadKey, postThreadKey, threadKey } from '$lib/utils/threadKeys';
 
 /** Idempotent: adding an existing reaction or removing a missing one returns the input unchanged. */
 export function reactionsWith(
@@ -25,26 +28,6 @@ type ThreadMessages = {
 	messages: MessageType[];
 	hasMore: boolean;
 };
-
-/** Key for a message thread. Channels keep their bare id; DMs and posts are
- *  prefixed to avoid clashes with channel ids. */
-export function channelThreadKey(channelId: number): string {
-	return String(channelId);
-}
-
-/** A forum post's replies are their own thread, apart from the forum channel's id. */
-export function postThreadKey(postId: number): string {
-	return `post:${postId}`;
-}
-
-export function directThreadKey(conversationId: number): string {
-	return `dm:${conversationId}`;
-}
-
-export function threadKey(target: MessageTarget): string {
-	if (target.kind === 'direct') return directThreadKey(target.conversationId);
-	return target.postId != null ? postThreadKey(target.postId) : channelThreadKey(target.channelId);
-}
 
 export function messageThreadKey(message: MessageType): string {
 	if (message.conversation_id != null) return directThreadKey(message.conversation_id);

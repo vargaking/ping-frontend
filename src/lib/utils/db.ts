@@ -1,14 +1,18 @@
 import type { User } from '$lib/types/auth.types';
 import type { Channel } from '$lib/types/channel.types';
-import type { MessageType } from '$lib/types/messages.types';
+import type { StoredMessage, StoredPost, ThreadSync } from '$lib/types/localHistory.types';
 import type { Server } from '$lib/types/server.types';
-import Dexie, { type EntityTable } from 'dexie';
+import { messageWords } from '$lib/utils/searchText';
+import { timestampMs } from '$lib/utils/messageContent';
+import Dexie, { type DBCore, type EntityTable } from 'dexie';
 
-type AppDb = Dexie & {
+export type AppDb = Dexie & {
 	servers: EntityTable<Server>;
 	channels: EntityTable<Channel>;
-	messages: EntityTable<MessageType, 'id'>;
+	messages: EntityTable<StoredMessage, 'id'>;
 	users: EntityTable<User>;
+	posts: EntityTable<StoredPost, 'id'>;
+	threadSync: EntityTable<ThreadSync, 'key'>;
 };
 
 /**
@@ -85,8 +89,10 @@ function createMemoryDb(): AppDb {
 	return {
 		servers: new MemoryTable<Server>('id' as keyof Server),
 		channels: new MemoryTable<Channel>('id'),
-		messages: new MemoryTable<MessageType>('id'),
-		users: new MemoryTable<User>('id')
+		messages: new MemoryTable<StoredMessage>('id'),
+		users: new MemoryTable<User>('id'),
+		posts: new MemoryTable<StoredPost>('id'),
+		threadSync: new MemoryTable<ThreadSync>('key')
 	} as unknown as AppDb;
 }
 
@@ -98,37 +104,104 @@ function indexedDBAvailable(): boolean {
 	}
 }
 
-function createDb(): AppDb {
+function withDerivedFields(message: StoredMessage): StoredMessage {
+	return { ...message, ts: timestampMs(message.timestamp), words: messageWords(message) };
+}
+
+/** Every write to `messages` (add, put, and the update/modify calls built on put) gets
+ *  fresh `ts` and `words`, so no call site has to know about them. */
+function deriveMessageFields(down: DBCore): DBCore {
+	return {
+		...down,
+		table(name) {
+			const table = down.table(name);
+			if (name !== 'messages') return table;
+			return {
+				...table,
+				mutate(req) {
+					if (req.type === 'add' || req.type === 'put') {
+						return table.mutate({ ...req, values: req.values.map(withDerivedFields) });
+					}
+					return table.mutate(req);
+				}
+			};
+		}
+	};
+}
+
+export function createDexieDb(name = 'PingDatabase'): AppDb {
+	const dexieDb = new Dexie(name) as AppDb;
+	dexieDb.version(1).stores({
+		servers: '++id, name, server_profile, server_settings',
+		channels: '++id, server_id, name, channel_settings',
+		messages: 'id, server_id, channel_id, user_id, content, timestamp',
+		users: '++id, username, public_key, profile'
+	});
+	// v2 indexes conversation_id so DM messages can be read back per
+	// conversation. Channel messages keep their server/channel indexes.
+	dexieDb.version(2).stores({
+		messages: 'id, server_id, channel_id, conversation_id, user_id, content, timestamp'
+	});
+	// v3 indexes post_id so a forum post's messages can be read back per post.
+	dexieDb.version(3).stores({
+		messages: 'id, server_id, channel_id, conversation_id, post_id, user_id, content, timestamp'
+	});
+	// v4 keeps a searchable copy of all readable history: messages gain `ts` and `words`
+	// (see deriveMessageFields), forum posts get their own table, and threadSync records
+	// how far each thread has been downloaded.
+	dexieDb
+		.version(4)
+		.stores({
+			messages:
+				'id, server_id, channel_id, conversation_id, post_id, user_id, ts, *words, [server_id+ts], [channel_id+ts], [conversation_id+ts], [post_id+ts]',
+			posts: 'id, channel_id, server_id, *words',
+			threadSync: 'key, serverId, channelId'
+		})
+		.upgrade((tx) =>
+			tx
+				.table<StoredMessage>('messages')
+				.toCollection()
+				.modify((message) => {
+					message.ts = timestampMs(message.timestamp);
+					message.words = messageWords(message);
+				})
+		);
+	dexieDb.use({ stack: 'dbcore', name: 'deriveMessageFields', create: deriveMessageFields });
+	return dexieDb;
+}
+
+function createDb(): { db: AppDb; persistent: boolean } {
 	if (indexedDBAvailable()) {
 		try {
-			const dexieDb = new Dexie('PingDatabase') as AppDb;
-			dexieDb.version(1).stores({
-				servers: '++id, name, server_profile, server_settings',
-				channels: '++id, server_id, name, channel_settings',
-				messages: 'id, server_id, channel_id, user_id, content, timestamp',
-				users: '++id, username, public_key, profile'
-			});
-			// v2 indexes conversation_id so DM messages can be read back per
-			// conversation. Channel messages keep their server/channel indexes.
-			dexieDb.version(2).stores({
-				messages: 'id, server_id, channel_id, conversation_id, user_id, content, timestamp'
-			});
-			// v3 indexes post_id so a forum post's messages can be read back per post.
-			dexieDb.version(3).stores({
-				messages: 'id, server_id, channel_id, conversation_id, post_id, user_id, content, timestamp'
-			});
-			return dexieDb;
+			return { db: createDexieDb(), persistent: true };
 		} catch (e) {
 			console.warn('IndexedDB unavailable — falling back to in-memory store.', e);
-			return createMemoryDb();
+			return { db: createMemoryDb(), persistent: false };
 		}
 	}
 
 	console.warn('IndexedDB unavailable — falling back to in-memory store.');
-	return createMemoryDb();
+	return { db: createMemoryDb(), persistent: false };
 }
 
-const db = createDb();
+const created = createDb();
+const db = created.db;
+
+/** False when the in-memory fallback is in use, where nothing is kept across reloads. */
+export const localHistoryAvailable: boolean = created.persistent;
+
+let ready: Promise<boolean> | null = null;
+
+/** Whether the local history database can really be used; settles once and is cached. */
+export function localHistoryReady(): Promise<boolean> {
+	ready ??= localHistoryAvailable
+		? db.open().then(
+				() => true,
+				() => false
+			)
+		: Promise.resolve(false);
+	return ready;
+}
 
 /** Wipe every locally cached table. Used when tearing down a session (logout,
  *  or a 401 that means the session is gone) so no data leaks to the next user. */
@@ -137,7 +210,9 @@ export async function clearLocalCache(): Promise<void> {
 		db.servers.clear(),
 		db.channels.clear(),
 		db.messages.clear(),
-		db.users.clear()
+		db.users.clear(),
+		db.posts.clear(),
+		db.threadSync.clear()
 	]);
 }
 

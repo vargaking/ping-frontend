@@ -36,6 +36,10 @@
 		onNotFound?: () => void;
 		/** False when something else marks the thread read (a forum post is read with its channel). */
 		trackRead?: boolean;
+		/** A message to scroll to once the thread has loaded, e.g. from a search result. */
+		jumpTo?: string | null;
+		/** Called when the jump for `jumpTo` is over, whether or not the message was found. */
+		onJumped?: () => void;
 	};
 
 	let {
@@ -46,12 +50,18 @@
 		emptyDescription,
 		errorDescription,
 		onNotFound,
-		trackRead = true
+		trackRead = true,
+		jumpTo = null,
+		onJumped
 	}: Props = $props();
 
 	let messageWrapper = $state<HTMLDivElement>();
 	let topSentinel = $state<HTMLDivElement>();
 	let loadState = $state<'loading' | 'error' | 'ready'>('loading');
+	// The thread whose newest page is on screen; loadState alone stays 'ready' across a switch.
+	let loadedKey = $state<string | null>(null);
+	// The jump (thread and message) already carried out, so each value jumps once.
+	let jumpDone: string | null = null;
 
 	// Cursor for the next older page, and a guard so overlapping scrolls don't
 	// fire two history loads at once.
@@ -205,7 +215,8 @@
 	function applyPage(key: string, messages: MessageType[], hasMore: boolean) {
 		messagesState.set(key, messages, hasMore);
 		autoScrollAnchorId = messagesState.messages(key).at(-1)?.id ?? null;
-		stickToBottom = true;
+		const jumping = jumpTo != null && jumpDone !== `${key}:${jumpTo}`;
+		stickToBottom = !jumping;
 
 		// Pin the unread divider to the message right after the boundary, once. If
 		// the boundary is older than this page, anchor on the first loaded message.
@@ -218,6 +229,7 @@
 			unreadAnchorId = null;
 		}
 
+		loadedKey = key;
 		loadState = 'ready';
 		opening = true;
 		if (openingTimer) clearTimeout(openingTimer);
@@ -436,32 +448,84 @@
 	}
 
 	const MAX_JUMP_PAGES = 10;
+	const MAX_SEARCH_JUMP_PAGES = 20;
 	const HIGHLIGHT_MS = 1500;
+
+	type JumpOptions = {
+		maxPages?: number;
+		behavior?: ScrollBehavior;
+		/** Runs when the message isn't found after loading `maxPages` older pages. */
+		onMissing?: () => void;
+	};
 
 	function isLoaded(id: string) {
 		return messagesState.messages(threadKey).some((m) => m.id === id);
 	}
 
-	async function jumpToMessage(id: string) {
+	async function jumpToMessage(
+		id: string,
+		{
+			maxPages = MAX_JUMP_PAGES,
+			behavior = 'smooth',
+			onMissing = () => toast.error("Couldn't find the original message")
+		}: JumpOptions = {}
+	) {
 		const key = threadKey;
-		for (let pages = 0; !isLoaded(id) && pages < MAX_JUMP_PAGES; pages++) {
+		for (let pages = 0; !isLoaded(id) && pages < maxPages; pages++) {
 			if (!messagesState.hasMore(key) || !nextCursor) break;
+			const cursor = nextCursor;
 			await fetchOlder();
 			if (key !== threadKey) return;
+			if (nextCursor === cursor) break; // the page failed to load
 		}
 
 		if (!isLoaded(id)) {
-			toast.error("Couldn't find the original message");
+			onMissing();
 			return;
 		}
 
 		await tick();
 		const row = messageWrapper?.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
 		if (!row) return;
-		row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		row.scrollIntoView({ block: 'center', behavior });
 		row.classList.add('bg-accent');
 		setTimeout(() => row.classList.remove('bg-accent'), HIGHLIGHT_MS);
 	}
+
+	function reportMissingHit(id: string) {
+		if (fromCache) {
+			toast("Couldn't open that message while offline.");
+		} else if (messagesState.hasMore(threadKey)) {
+			toast('That message is too far back to open here yet.');
+		} else {
+			// The whole thread is loaded and the message isn't in it.
+			toast('That message no longer exists.');
+			db.messages.delete(id).catch((e) => console.warn('Failed to drop deleted message', e));
+		}
+	}
+
+	async function jumpToSearchHit(id: string) {
+		const key = threadKey;
+		await jumpToMessage(id, {
+			maxPages: MAX_SEARCH_JUMP_PAGES,
+			behavior: 'instant',
+			onMissing: () => reportMissingHit(id)
+		});
+		if (key === threadKey) onJumped?.();
+	}
+
+	$effect(() => {
+		const id = jumpTo;
+		if (!id) {
+			jumpDone = null;
+			return;
+		}
+		if (loadState !== 'ready' || loadedKey !== threadKey) return;
+		const done = `${threadKey}:${id}`;
+		if (jumpDone === done) return;
+		jumpDone = done;
+		untrack(() => jumpToSearchHit(id));
+	});
 
 	// Reload only when the thread itself changes. loadMessages reads message
 	// state, so without untrack this effect would re-fire on every send, receive
