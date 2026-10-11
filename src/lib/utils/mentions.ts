@@ -51,3 +51,11 @@ export function mentionSuggestions(candidates: User[], query: string): User[] {
 		.filter((user) => user.username.toLowerCase().startsWith(prefix))
 		.slice(0, MAX_SUGGESTIONS);
 }
+
+/** Where the highlighted user is in the list; the first row when they are gone or none was picked. */
+export function selectionIndex(users: User[], selectedId: number | null): number {
+	return Math.max(
+		0,
+		users.findIndex((user) => user.id === selectedId)
+	);
+}

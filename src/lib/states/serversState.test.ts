@@ -192,6 +192,43 @@ describe('loadRoster', () => {
 		expect(state.memberRoles[7]).toEqual({ 1: [4, 5] });
 	});
 
+	it.each([
+		['joins', [1], (state: ServersState) => state.addMember(7, user(2, 'bo')), [1], [1, 2]],
+		['leaves', [1, 2], (state: ServersState) => state.removeMember(7, 2), [1, 2], [1]]
+	])(
+		'keeps the change when a member %s while the roster loads',
+		async (_name, before, event, fetched, expected) => {
+			const state = withServer(before.map((id) => user(id, `u${id}`)));
+			getMembers.mockImplementation(async () => {
+				const response = fetched.map((id) => member(user(id, `u${id}`)));
+				event(state);
+				return response;
+			});
+
+			await state.loadRoster(7);
+
+			expect(state.servers[7].members?.map((m) => m.id)).toEqual(expected);
+		}
+	);
+
+	it('ignores a roster that arrives after a newer one', async () => {
+		const state = withServer([]);
+		const pending: ((members: ServerMember[]) => void)[] = [];
+		getMembers.mockImplementation(
+			() => new Promise<ServerMember[]>((resolve) => pending.push(resolve))
+		);
+
+		const older = state.loadRoster(7);
+		const newer = state.loadRoster(7);
+		pending[1]([member(user(1, 'ann'), [4]), member(user(2, 'bo'))]);
+		await newer;
+		pending[0]([member(user(1, 'ann'), [5])]);
+		await older;
+
+		expect(state.servers[7].members?.map((m) => m.id)).toEqual([1, 2]);
+		expect(state.memberRoles[7]).toEqual({ 1: [4], 2: [] });
+	});
+
 	it('does not bring back a server that was removed while loading', async () => {
 		const state = withServer([]);
 		getMembers.mockImplementation(async () => {

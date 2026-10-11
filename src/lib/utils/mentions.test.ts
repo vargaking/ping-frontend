@@ -1,10 +1,15 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { usersState } from '$lib/states/usersState.svelte';
 import type { User } from '$lib/types/auth.types';
 import type { Channel } from '$lib/types/channel.types';
-import { mentionCandidates, mentionSuggestions } from './mentions';
+import {
+	mentionCandidates,
+	mentionSuggestions,
+	refreshMentionCandidates,
+	selectionIndex
+} from './mentions';
 
 const user = (id: number, username: string): User => ({
 	id,
@@ -102,5 +107,37 @@ describe('mentionSuggestions', () => {
 		const many = Array.from({ length: 8 }, (_, i) => user(i + 10, `u${i}`));
 
 		expect(mentionSuggestions(many, 'u')).toHaveLength(5);
+	});
+});
+
+describe('refreshMentionCandidates', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it.each([
+		['a private channel', { serverId: 7, channelId: 11 }, [11, 10_000]],
+		['a public channel', { serverId: 7, channelId: 10 }, null],
+		['a conversation', { conversationId: 5 }, null],
+		['an unknown channel', { serverId: 7, channelId: 99 }, null]
+	])('refetches viewers for %s: %j', (_name, target, loadArgs) => {
+		const load = vi.spyOn(serversState, 'loadChannelViewers').mockResolvedValue(undefined);
+
+		refreshMentionCandidates(target);
+
+		if (loadArgs) expect(load).toHaveBeenCalledWith(...loadArgs);
+		else expect(load).not.toHaveBeenCalled();
+	});
+});
+
+describe('selectionIndex', () => {
+	it.each([
+		['the picked user', [ann, bo, cy], 2, 1],
+		['the picked user after the list reordered', [cy, ann, bo], 2, 2],
+		['a picked user who is gone', [ann, cy], 2, 0],
+		['nobody picked', [ann, bo], null, 0],
+		['an empty list', [], 2, 0]
+	])('finds %s', (_name, users, selectedId, expected) => {
+		expect(selectionIndex(users, selectedId)).toBe(expected);
 	});
 });

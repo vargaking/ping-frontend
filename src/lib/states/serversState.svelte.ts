@@ -100,6 +100,13 @@ export class ServersState {
 	/** Bumped whenever a layout is applied, so a failed save can tell if something newer landed. */
 	private layoutVersion = 0;
 
+	/** Per server: roster loads started, and the newest one applied, so an older response never overwrites a newer one. */
+	private rosterLoadsStarted: Record<number, number> = {};
+	private rosterLoadsApplied: Record<number, number> = {};
+
+	/** Per server: join and leave events seen, so a roster fetched before one doesn't undo it. */
+	private memberEvents: Record<number, number> = {};
+
 	readonly selectedPermissions: bigint | undefined = $derived(
 		this.selectedServer?.id != null ? this.permissions[this.selectedServer.id] : undefined
 	);
@@ -218,14 +225,22 @@ export class ServersState {
 	 *  fetched members also replace the server's member list and refresh their profiles,
 	 *  which catches joins, leaves and renames missed while the socket was down. */
 	async loadRoster(serverId: number): Promise<ServerMember[]> {
+		const loadId = (this.rosterLoadsStarted[serverId] =
+			(this.rosterLoadsStarted[serverId] ?? 0) + 1);
+		const eventsBefore = this.memberEvents[serverId] ?? 0;
 		const [members, roles] = await Promise.all([
 			getServerMembers(serverId),
 			getServerRoles(serverId)
 		]);
+		if (loadId < (this.rosterLoadsApplied[serverId] ?? 0)) return members;
+		this.rosterLoadsApplied[serverId] = loadId;
+
 		this.setRoles(serverId, roles);
 		this.memberRoles[serverId] = Object.fromEntries(members.map((m) => [m.user.id, m.role_ids]));
 		members.forEach((m) => usersState.applyUser(m.user));
-		this.patchServer(serverId, { members: members.map((m) => m.user) });
+		if ((this.memberEvents[serverId] ?? 0) === eventsBefore) {
+			this.patchServer(serverId, { members: members.map((m) => m.user) });
+		}
 		return members;
 	}
 
@@ -457,6 +472,7 @@ export class ServersState {
 
 	/** Patch in a member who joined over the socket (member_joined). */
 	addMember(serverId: number, member: User) {
+		this.memberEvents[serverId] = (this.memberEvents[serverId] ?? 0) + 1;
 		const server = this.servers[serverId];
 		if (!server) return;
 		if (server.members?.some((m) => m.id === member.id)) return;
@@ -466,6 +482,7 @@ export class ServersState {
 
 	/** Drop a member who left or was kicked (member_left). */
 	removeMember(serverId: number, userId: number) {
+		this.memberEvents[serverId] = (this.memberEvents[serverId] ?? 0) + 1;
 		const server = this.servers[serverId];
 		if (!server?.members?.some((m) => m.id === userId)) return;
 

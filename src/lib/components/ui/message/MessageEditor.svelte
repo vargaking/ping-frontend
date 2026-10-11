@@ -175,6 +175,9 @@
 											get items() {
 												return items;
 											},
+											get query() {
+												return propsState.query;
+											},
 											get command() {
 												return propsState.command;
 											}
