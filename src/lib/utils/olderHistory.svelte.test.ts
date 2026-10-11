@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+	NEAR_BOTTOM_PX,
 	NEAR_TOP_PX,
+	NewerHistory,
 	OlderHistory,
 	SKELETON_DELAY_MS,
+	wantsNewer,
 	wantsOlder,
 	type ScrollPosition
 } from './olderHistory.svelte';
@@ -452,5 +455,53 @@ describe('leaving the thread', () => {
 
 		expect(older.slow).toBe(false);
 		expect(keptViews).toEqual([]);
+	});
+});
+
+describe('wantsNewer', () => {
+	const fromBottom = (distance: number) => ({
+		scrollHeight: 5000,
+		clientHeight: VIEW,
+		scrollTop: 5000 - VIEW - distance
+	});
+
+	it.each([
+		['at the bottom', fromBottom(0), true],
+		['at the threshold', fromBottom(NEAR_BOTTOM_PX), true],
+		['past the threshold', fromBottom(NEAR_BOTTOM_PX + 1), false],
+		['at the top of a long list', { scrollHeight: 5000, clientHeight: VIEW, scrollTop: 0 }, false],
+		[
+			'in a list that does not overflow',
+			{ scrollHeight: 500, clientHeight: VIEW, scrollTop: 0 },
+			true
+		]
+	])('is decided %s', (_name, position, expected) => {
+		expect(wantsNewer(position)).toBe(expected);
+	});
+});
+
+describe('NewerHistory', () => {
+	it('loads only when the user is near the bottom', async () => {
+		const position = { scrollHeight: 5000, clientHeight: VIEW, scrollTop: 0 };
+		const fetched = vi.fn(async () => ({ messages: 10 }));
+		const newer = new NewerHistory<Page>({
+			metrics: () => position,
+			available: () => true,
+			fetch: fetched,
+			apply: (page) => {
+				position.scrollHeight += PAGE_HEIGHT;
+				return page.messages;
+			},
+			async keepView(change) {
+				change();
+			}
+		});
+
+		await newer.request();
+		expect(fetched).not.toHaveBeenCalled();
+
+		position.scrollTop = position.scrollHeight - VIEW - NEAR_BOTTOM_PX;
+		await newer.request();
+		expect(fetched).toHaveBeenCalledTimes(1);
 	});
 });

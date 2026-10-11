@@ -58,6 +58,11 @@ export function countNewBelow(
 	return below.filter((m) => m.user_id !== meId && !m.status).length;
 }
 
+/** Messages held back from a detached list that someone else sent. */
+export function countHeldBack(held: { user_id: number }[], meId: number | null): number {
+	return held.filter((m) => m.user_id !== meId).length;
+}
+
 type EscapeKey = Pick<
 	KeyboardEvent,
 	| 'key'

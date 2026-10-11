@@ -62,7 +62,7 @@
 			<MessageList
 				threadKey={channelThreadKey(channelId)}
 				{target}
-				fetchPage={(before) => getChannelMessages(channelId, before)}
+				fetchPage={(query) => getChannelMessages(channelId, query)}
 				readCache={() =>
 					db.messages.where({ server_id: serverId, channel_id: channelId }).sortBy('timestamp')}
 				emptyDescription="Be the first to say something in this channel."

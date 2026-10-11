@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MessageType } from '$lib/types/messages.types';
 import {
+	countHeldBack,
 	countNewBelow,
 	escapeJumpsToLatest,
 	isAtBottom,
@@ -160,5 +161,15 @@ describe('escapeJumpsToLatest', () => {
 		['Escape in use elsewhere', { escapeTaken: true }]
 	])('ignores %s', (_, change) => {
 		expect(escapeJumpsToLatest(escape, { ...free, ...change })).toBe(false);
+	});
+});
+
+describe('countHeldBack', () => {
+	it('counts messages from others and leaves out our own', () => {
+		const held = [{ user_id: 2 }, { user_id: 1 }, { user_id: 3 }];
+
+		expect(countHeldBack(held, 1)).toBe(2);
+		expect(countHeldBack([], 1)).toBe(0);
+		expect(countHeldBack(held, null)).toBe(3);
 	});
 });

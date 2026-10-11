@@ -1,4 +1,5 @@
 import type { MessageType, Reaction, ReplyRef } from '$lib/types/messages.types';
+import { appendNewerPage, withUnsentTail } from '$lib/utils/historyWindow';
 import { timestampMs } from '$lib/utils/messageContent';
 import { replaceWithNewestPage } from '$lib/utils/mergeNewestPage';
 import { channelThreadKey, directThreadKey, postThreadKey } from '$lib/utils/threadKeys';
@@ -31,6 +32,8 @@ type ThreadMessages = {
 	hasMore: boolean;
 	/** The loaded messages stop short of the newest ones, with a gap in between. */
 	newerExists?: boolean;
+	/** Server messages left out while `newerExists`, for the count on the jump button. */
+	heldBack?: Pick<MessageType, 'id' | 'user_id'>[];
 	/** Set while the newest page is being fetched over the gap. */
 	newestLoad?: {
 		/** Server messages that arrived meanwhile. */
@@ -90,6 +93,10 @@ class MessagesState {
 		return this.threads[key]?.newerExists ?? false;
 	}
 
+	heldBack(key: string): Pick<MessageType, 'id' | 'user_id'>[] {
+		return this.threads[key]?.heldBack ?? [];
+	}
+
 	/** The loaded window isn't the newest page: live messages wait until it is. */
 	markNewerExists(key: string) {
 		const thread = this.threads[key];
@@ -123,6 +130,37 @@ class MessagesState {
 		this.threads[key] = { messages: replaceWithNewestPage(current, messages, known), hasMore };
 	}
 
+	/** Replace a thread's list with a window of history that stops short of the newest messages. */
+	setWindow(key: string, page: MessageType[], hasMore: boolean) {
+		this.threads[key] = {
+			messages: withUnsentTail(page, this.messages(key)),
+			hasMore,
+			newerExists: true,
+			heldBack: []
+		};
+	}
+
+	/**
+	 * Add a page that continues the window towards the present (oldest first). Once nothing newer
+	 * remains the thread is live again. Returns how many messages it added.
+	 */
+	appendNewer(key: string, newer: MessageType[], hasNewer: boolean): number {
+		const thread = this.threads[key];
+		if (!thread?.newerExists) return 0;
+		const before = thread.messages.length;
+		thread.messages = appendNewerPage(
+			thread.messages,
+			newer,
+			hasNewer ? [] : (thread.newestLoad?.arrived ?? [])
+		);
+		thread.newestLoad = undefined;
+		if (!hasNewer) {
+			thread.newerExists = false;
+			thread.heldBack = undefined;
+		}
+		return thread.messages.length - before;
+	}
+
 	/** Swap in an already merged list as is. */
 	replace(key: string, messages: MessageType[], hasMore: boolean) {
 		this.threads[key] = { messages, hasMore };
@@ -152,6 +190,10 @@ class MessagesState {
 			const { newestLoad } = thread;
 			if (newestLoad && !newestLoad.arrived.some((m) => m.id === message.id)) {
 				newestLoad.arrived.push(message);
+			}
+			thread.heldBack ??= [];
+			if (!thread.heldBack.some((m) => m.id === message.id)) {
+				thread.heldBack.push({ id: message.id, user_id: message.user_id });
 			}
 			return;
 		}
@@ -197,6 +239,7 @@ class MessagesState {
 
 	removeMessage(id: string) {
 		for (const thread of Object.values(this.threads)) {
+			if (thread.heldBack) thread.heldBack = thread.heldBack.filter((m) => m.id !== id);
 			for (const list of listsOf(thread)) {
 				const i = list.findIndex((m) => m.id === id);
 				if (i !== -1) {

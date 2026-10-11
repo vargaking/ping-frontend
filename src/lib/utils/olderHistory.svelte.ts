@@ -1,5 +1,7 @@
 /** Within this distance of the top the list asks for older messages. */
 export const NEAR_TOP_PX = 150;
+/** Within this distance of the bottom the list asks for newer messages. */
+export const NEAR_BOTTOM_PX = 150;
 /** A fetch that takes longer than this shows placeholder rows. */
 export const SKELETON_DELAY_MS = 200;
 /** Ignore sub-pixel rounding when deciding whether the list overflows. */
@@ -11,6 +13,12 @@ export type ScrollPosition = Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'c
 export function wantsOlder(m: ScrollPosition): boolean {
 	const overflows = m.scrollHeight - m.clientHeight > OVERFLOW_SLACK_PX;
 	return !overflows || m.scrollTop <= NEAR_TOP_PX;
+}
+
+/** Near the bottom, or too short to scroll at all, so the user can't reach newer messages by scrolling. */
+export function wantsNewer(m: ScrollPosition): boolean {
+	const overflows = m.scrollHeight - m.clientHeight > OVERFLOW_SLACK_PX;
+	return !overflows || m.scrollHeight - m.scrollTop - m.clientHeight <= NEAR_BOTTOM_PX;
 }
 
 export type OlderResult = { ok: true; added: number } | { ok: false };
@@ -42,8 +50,8 @@ export class OlderHistory<Page> {
 	#run: Promise<OlderResult> | null = null;
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#generation = 0;
-	/** Set by a failure at the top; scrolling alone retries only after the user leaves the top. */
-	#failedAtTop = false;
+	/** Set by a failure at the edge being loaded; scrolling alone retries only after the user leaves it. */
+	#failedAtEdge = false;
 
 	constructor(host: OlderHistoryHost<Page>, delayMs = SKELETON_DELAY_MS) {
 		this.#host = host;
@@ -61,14 +69,18 @@ export class OlderHistory<Page> {
 		const position = this.#host.metrics();
 		if (!force) {
 			if (!position) return;
-			if (!wantsOlder(position)) {
-				this.#failedAtTop = false;
+			if (!this.wants(position)) {
+				this.#failedAtEdge = false;
 				return;
 			}
-			if (this.#failedAtTop) return;
+			if (this.#failedAtEdge) return;
 		}
 		const result = await this.load();
 		if (result.ok && result.added > 0) await this.request();
+	}
+
+	protected wants(position: ScrollPosition): boolean {
+		return wantsOlder(position);
 	}
 
 	/** Fetches the next older page whatever the position; calls during a fetch share it. */
@@ -92,7 +104,7 @@ export class OlderHistory<Page> {
 		this.#run = null;
 		this.#finish();
 		this.failed = false;
-		this.#failedAtTop = false;
+		this.#failedAtEdge = false;
 	}
 
 	async #fetchPage(): Promise<OlderResult> {
@@ -110,7 +122,7 @@ export class OlderHistory<Page> {
 			if (generation !== this.#generation) return { ok: true, added: 0 };
 			console.error('Failed to load older messages', e);
 			const position = this.#host.metrics();
-			this.#failedAtTop = position != null && wantsOlder(position);
+			this.#failedAtEdge = position != null && this.wants(position);
 			await this.#host.keepView(
 				() => {
 					this.#finish();
@@ -136,5 +148,12 @@ export class OlderHistory<Page> {
 		this.#timer = null;
 		this.loading = false;
 		this.slow = false;
+	}
+}
+
+/** Loads newer pages of a detached thread when the user is at its bottom. */
+export class NewerHistory<Page> extends OlderHistory<Page> {
+	protected override wants(position: ScrollPosition): boolean {
+		return wantsNewer(position);
 	}
 }

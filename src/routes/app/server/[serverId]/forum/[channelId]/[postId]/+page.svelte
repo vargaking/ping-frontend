@@ -205,7 +205,7 @@
 					threadKey={postThreadKey(postId)}
 					{target}
 					trackRead={false}
-					fetchPage={(before) => getChannelMessages(channelId, before, 50, postId)}
+					fetchPage={(query) => getChannelMessages(channelId, query, 50, postId)}
 					readCache={() => db.messages.where({ post_id: postId }).sortBy('timestamp')}
 					emptyDescription="Nothing here yet."
 					errorDescription="There was a problem reading this post."

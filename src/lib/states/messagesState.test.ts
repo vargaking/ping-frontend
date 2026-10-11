@@ -125,3 +125,87 @@ describe('loading the newest page past a gap', () => {
 		expect(ids()).toEqual(['x']);
 	});
 });
+
+describe('a window of history', () => {
+	const window = () => {
+		messagesState.setWindow(KEY, [msg('w1'), msg('w2')], true);
+	};
+
+	it('replaces the list, keeps our unsent messages and waits for the present', () => {
+		messagesState.addMessage(msg('mine', { status: 'pending' }));
+
+		window();
+
+		expect(ids()).toEqual(['w1', 'w2', 'mine']);
+		expect(messagesState.hasMore(KEY)).toBe(true);
+		expect(messagesState.newerExists(KEY)).toBe(true);
+		expect(messagesState.heldBack(KEY)).toEqual([]);
+	});
+
+	it('holds back live messages from others and lists them once', () => {
+		window();
+
+		messagesState.addMessage(msg('live', { user_id: 3 }));
+		messagesState.addMessage(msg('live', { user_id: 3 }));
+
+		expect(ids()).toEqual(['w1', 'w2']);
+		expect(messagesState.heldBack(KEY)).toEqual([{ id: 'live', user_id: 3 }]);
+	});
+
+	it('drops a held-back message that was deleted', () => {
+		window();
+		messagesState.addMessage(msg('live'));
+
+		messagesState.removeMessage('live');
+
+		expect(messagesState.heldBack(KEY)).toEqual([]);
+	});
+
+	it('has nothing held back for unknown threads', () => {
+		expect(messagesState.heldBack('nothing')).toEqual([]);
+	});
+
+	it('applies edits, reactions and deletes to its messages', () => {
+		window();
+
+		messagesState.updateMessage('w1', { edited_at: '2026-10-08T12:05:00Z' });
+		messagesState.applyReaction('w2', '👍', 5, true);
+		messagesState.removeMessage('w1');
+
+		expect(ids()).toEqual(['w2']);
+		expect(messagesState.messages(KEY)[0].reactions).toEqual([{ emoji: '👍', user_ids: [5] }]);
+	});
+
+	it('stays detached while newer pages arrive, and goes live with the last one', () => {
+		window();
+		messagesState.addMessage(msg('live'));
+
+		expect(messagesState.appendNewer(KEY, [msg('n1'), msg('n2')], true)).toBe(2);
+		expect(ids()).toEqual(['w1', 'w2', 'n1', 'n2']);
+		expect(messagesState.newerExists(KEY)).toBe(true);
+		expect(messagesState.heldBack(KEY)).toHaveLength(1);
+
+		expect(messagesState.appendNewer(KEY, [msg('n3'), msg('live')], false)).toBe(2);
+		expect(ids()).toEqual(['w1', 'w2', 'n1', 'n2', 'n3', 'live']);
+		expect(messagesState.newerExists(KEY)).toBe(false);
+		expect(messagesState.heldBack(KEY)).toEqual([]);
+
+		messagesState.addMessage(msg('after'));
+		expect(ids().at(-1)).toBe('after');
+	});
+
+	it('keeps what arrived while the last newer page loaded', () => {
+		window();
+		messagesState.beginNewestLoad(KEY);
+		messagesState.addMessage(msg('during'));
+
+		messagesState.appendNewer(KEY, [msg('n1')], false);
+
+		expect(ids()).toEqual(['w1', 'w2', 'n1', 'during']);
+	});
+
+	it('adds nothing to a thread that is already live', () => {
+		expect(messagesState.appendNewer(KEY, [msg('n1')], false)).toBe(0);
+		expect(ids()).toEqual(['a', 'b']);
+	});
+});

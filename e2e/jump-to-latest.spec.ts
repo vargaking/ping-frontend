@@ -319,3 +319,37 @@ test('a message arriving while the newest page loads is kept', async ({ browser 
 		'the channel is not left unread'
 	).toHaveAccessibleName(server.name);
 });
+
+test('a window holds live messages back until it reaches the present', async ({ browser }) => {
+	const { a, b, server, channel, thread } = await channelWithHistory(browser);
+	const response = await a.context.request.get(`/channels/${channel.id}/messages`, {
+		params: { limit: 100 }
+	});
+	const { messages } = await response.json();
+	const first = messages.at(-1);
+	expect(JSON.stringify(first.content)).toContain(label(1));
+
+	await a.page.goto(`${channelPath(server.id, channel.id)}?m=${first.id}`);
+	await expect(row(a.page, label(1))).toBeInViewport({ timeout: 20_000 });
+	await expect(row(a.page, label(HISTORY)), 'only a window around the message').toHaveCount(0);
+	await expect(jumpButton(a.page)).toHaveAccessibleName('Jump to latest');
+
+	await seedMessages(b.context, thread, ['live 1']);
+	await expect(jumpButton(a.page)).toHaveAccessibleName('Jump to latest, 1 new message');
+	await expect(row(a.page, 'live 1'), 'live messages stay out of the window').toHaveCount(0);
+	await expect(
+		serverLink(a.page, server.name),
+		'reading old messages does not mark the channel read'
+	).toHaveAccessibleName(`${server.name}, unread messages`);
+
+	await expect(async () => {
+		await scroller(a.page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+		await expect(row(a.page, label(HISTORY))).toBeAttached({ timeout: 1000 });
+		await expect(row(a.page, 'live 1')).toBeAttached({ timeout: 1000 });
+		await expect(jumpButton(a.page)).toHaveCount(0, { timeout: 1000 });
+	}).toPass();
+	await expect(
+		serverLink(a.page, server.name),
+		'reaching the present marks the channel read'
+	).toHaveAccessibleName(server.name);
+});
