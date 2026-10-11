@@ -12,6 +12,7 @@ import {
 import path from 'node:path';
 import { assetPath } from './assets';
 import { appUrl } from './config';
+import { nameLauncherWindow, registerLauncher } from './launcher';
 import { getLaunchAtLogin, setLaunchAtLogin } from './login';
 import { pickSource } from './picker';
 import { listSources, toScreenSource } from './sources';
@@ -21,6 +22,8 @@ import { applyUnread, parseUnread } from './unread';
 const startUrl = appUrl(process.argv, process.env);
 const appOrigin = startUrl.origin;
 const startHidden = process.argv.includes('--hidden');
+
+nameLauncherWindow();
 
 const ALLOWED_PERMISSIONS = new Set([
 	'media',
@@ -307,6 +310,7 @@ if (!app.requestSingleInstanceLock()) {
 	void app.whenReady().then(() => {
 		if (process.platform === 'win32') app.setAppUserModelId('app.zetchat.desktop');
 		if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+		registerLauncher();
 
 		registerIpc();
 		registerSession();

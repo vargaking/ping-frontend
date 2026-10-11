@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { quoteExecArg } from './launcherEntry';
 
 const ARGS = ['--hidden'];
 
@@ -10,7 +11,7 @@ function autostartFile(): string {
 }
 
 /** The running binary of an AppImage lives in a temp mount, so autostart must point at the .AppImage file. */
-function appImagePath(): string | null {
+export function appImagePath(): string | null {
 	return process.platform === 'linux' ? process.env.APPIMAGE || null : null;
 }
 
@@ -33,7 +34,7 @@ function setLinuxLaunchAtLogin(appImage: string, enabled: boolean): boolean {
 					'[Desktop Entry]',
 					'Type=Application',
 					'Name=Zet',
-					`Exec="${appImage}" ${ARGS.join(' ')}`,
+					`Exec=${quoteExecArg(appImage)} ${ARGS.join(' ')}`,
 					'X-GNOME-Autostart-enabled=true',
 					''
 				].join('\n')
