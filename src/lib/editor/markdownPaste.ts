@@ -2,13 +2,17 @@ import { Extension } from '@tiptap/core';
 import { Fragment, Slice } from '@tiptap/pm/model';
 import { Plugin, type EditorState } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
-import { markdownToBlocks } from './markdownBlocks';
+import { blockRules, fencedCode, markdownToBlocks, type BlockRule } from './markdownBlocks';
 
 /** The blocks of a pasted text, or null when the editor's own paste should handle it. */
-export function markdownPasteSlice(state: EditorState, text: string): Slice | null {
+export function markdownPasteSlice(
+	state: EditorState,
+	text: string,
+	rules: BlockRule[] = blockRules
+): Slice | null {
 	if (state.selection.$from.parent.type.spec.code) return null;
 
-	const blocks = markdownToBlocks(text);
+	const blocks = markdownToBlocks(text, rules);
 	if (!blocks) return null;
 
 	const fragment = Fragment.fromArray(blocks.map((block) => state.schema.nodeFromJSON(block)));
@@ -40,9 +44,14 @@ export function handleMarkdownPaste(
 	}
 
 	const clipboard = event.clipboardData;
-	if (!clipboard || clipboard.getData('text/html').includes('data-pm-slice')) return false;
+	if (!clipboard || clipboard.getData('vscode-editor-data')) return false;
 
-	const pasted = markdownPasteSlice(view.state, clipboard.getData('text/plain'));
+	const html = clipboard.getData('text/html');
+	if (html.includes('data-pm-slice')) return false;
+
+	// Rich text keeps its own formatting, so only a fenced block is read out of its plain text.
+	const rules = html.trim() ? [fencedCode] : blockRules;
+	const pasted = markdownPasteSlice(view.state, clipboard.getData('text/plain'), rules);
 	if (!pasted) return false;
 
 	view.dispatch(

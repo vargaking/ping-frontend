@@ -32,7 +32,7 @@ const plainSlice = (text: string) =>
 
 function paste(
 	state: EditorState,
-	clipboard: { plain: string; html?: string },
+	clipboard: { plain: string; html?: string; vscode?: string },
 	view: { shiftKey?: boolean; lastKeyCode?: number } = {}
 ) {
 	let sent: Transaction | null = null;
@@ -44,7 +44,13 @@ function paste(
 	const event = {
 		clipboardData: {
 			getData: (type: string) =>
-				type === 'text/plain' ? clipboard.plain : type === 'text/html' ? (clipboard.html ?? '') : ''
+				type === 'text/plain'
+					? clipboard.plain
+					: type === 'text/html'
+						? (clipboard.html ?? '')
+						: type === 'vscode-editor-data'
+							? (clipboard.vscode ?? '')
+							: ''
 		}
 	} as unknown as ClipboardEvent;
 	const handled = handleMarkdownPaste(fake, event, plainSlice(clipboard.plain));
@@ -102,6 +108,39 @@ describe('markdown paste', () => {
 		expect(paste(stateWith(emptyParagraph), { plain: '# Title', html: copied }).handled).toBe(
 			false
 		);
+	});
+
+	it('leaves a paste from VS Code to the code block handler', () => {
+		const python = '# comment\nprint(1)\n- not a list';
+		const result = paste(stateWith(emptyParagraph), {
+			plain: python,
+			vscode: '{"mode":"python"}'
+		});
+		expect(result.handled).toBe(false);
+		expect(result.tr).toBeNull();
+	});
+
+	describe('rich text', () => {
+		const html = '<h1>Title</h1><ul><li>one</li></ul>';
+
+		it('keeps its own formatting instead of reading headings and lists', () => {
+			const result = paste(stateWith(emptyParagraph), { plain: '# Title\n- one', html });
+			expect(result.handled).toBe(false);
+		});
+
+		it('still reads a fenced block from the plain text', () => {
+			const { handled, doc } = paste(stateWith(emptyParagraph), {
+				plain: '```js\nlet a = 1;\n```',
+				html: '<pre>```js\nlet a = 1;\n```</pre>'
+			});
+			expect(handled).toBe(true);
+			expect(types(doc).slice(0, 1)).toEqual(['codeBlock']);
+		});
+
+		it('treats blank html as plain text', () => {
+			const { doc } = paste(stateWith(emptyParagraph), { plain: '# Title', html: ' ' });
+			expect(types(doc)).toEqual(['heading']);
+		});
 	});
 
 	describe('Ctrl+Shift+V', () => {

@@ -84,4 +84,43 @@ describe('linkLabel', () => {
 		expect(linkLabel('www.example.com', 'https://example.com/')).toBe('www.example.com');
 		expect(linkLabel('HTTP://Example.COM', 'https://example.com/')).toBe('HTTP://Example.COM');
 	});
+
+	it.each([
+		['zero width space', 'paypal.com\u200b'],
+		['soft hyphen', 'pay\u00adpal.com'],
+		['leading zero width space', '\u200bhttps://paypal.com'],
+		['word joiner', 'paypal\u2060.com'],
+		['byte order mark', '\ufeffpaypal.com'],
+		['zero width joiner', 'pay\u200dpal.com'],
+		['trailing dot', 'paypal.com.'],
+		['trailing punctuation', 'paypal.com!?'],
+		['invisible character before a trailing dot', 'paypal.com\u200b.']
+	])('sees through %s', (_name, text) => {
+		expect(linkLabel(text, 'https://evil.com/')).toBe('https://evil.com/');
+	});
+
+	it('still keeps an own-host address with invisible characters', () => {
+		expect(linkLabel('paypal.com\u200b', 'https://paypal.com/')).toBe('paypal.com\u200b');
+	});
+
+	it.each(['Node.js', 'package.json', 'README.md', 'main.py', 'build.sh', 'main.rs', 'notes.txt'])(
+		'keeps the file or product name %s',
+		(text) => {
+			expect(linkLabel(text, 'https://github.com/a/b')).toBe(text);
+		}
+	);
+
+	it('rewrites known top level domains in any case or depth', () => {
+		const target = 'https://evil.test/';
+		expect(linkLabel('paypal.com', target)).toBe(target);
+		expect(linkLabel('www.paypal.com', target)).toBe(target);
+		expect(linkLabel('PAYPAL.COM', target)).toBe(target);
+		expect(linkLabel('pay.pal.co/login?x=1', target)).toBe(target);
+		expect(linkLabel('paypal.com:8080', target)).toBe(target);
+		expect(linkLabel('paypal.xn--p1ai', target)).toBe(target);
+	});
+
+	it('always treats an http(s) address as an address', () => {
+		expect(linkLabel('https://Node.js', 'https://evil.test/')).toBe('https://evil.test/');
+	});
 });

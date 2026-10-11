@@ -12,6 +12,29 @@ export const markdownLinkTyped = new RegExp(`${MARKDOWN_LINK}$`);
 /** Every `[text](url)` in pasted text. */
 export const markdownLinkPasted = new RegExp(MARKDOWN_LINK, 'g');
 
+const BACKTICK = '`';
+
+function backticks(text: string): number {
+	return text.split(BACKTICK).length - 1;
+}
+
+/**
+ * Whether `range` is code: marked as code, or in a backtick span that is open (still being
+ * typed) or, when `closed` is set, closed by a later backtick in the same textblock.
+ */
+function isCode(tr: Transaction, range: Range, closed: boolean): boolean {
+	const code = tr.doc.type.schema.marks.code;
+	if (code && tr.doc.rangeHasMark(range.from, range.to, code)) return true;
+
+	const $from = tr.doc.resolve(range.from);
+	const before = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc');
+	if (backticks(before) % 2 === 0) return false;
+	if (!closed) return true;
+
+	const $to = tr.doc.resolve(range.to);
+	return backticks($to.parent.textBetween($to.parentOffset, $to.parent.content.size)) > 0;
+}
+
 /** Replaces `[` + label + `](url)` in `range` with the label, marked as a link. */
 function linkLabel(
 	tr: Transaction,
@@ -36,6 +59,7 @@ export function markdownLinkInputRule(type: MarkType): InputRule {
 		find: markdownLinkTyped,
 		handler: ({ state, range, match }) => {
 			const { tr } = state;
+			if (isCode(tr, range, false)) return null;
 			if (!linkLabel(tr, type, range, match[1], match[2])) return null;
 			tr.removeStoredMark(type);
 		}
@@ -47,6 +71,7 @@ export function markdownLinkPasteRule(type: MarkType): PasteRule {
 		find: markdownLinkPasted,
 		handler: ({ state, range, match }) => {
 			// Returning null would drop every other link in the same paste.
+			if (isCode(state.tr, range, true)) return;
 			linkLabel(state.tr, type, range, match[1], match[2]);
 		}
 	});

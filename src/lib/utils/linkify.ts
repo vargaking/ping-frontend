@@ -70,12 +70,27 @@ export function firstLinkHref(text: string): string | null {
 }
 
 const URL_TEXT = /^https?:\/\/\S+$/i;
-const DOMAIN_TEXT = /^(?:[\p{L}\p{N}-]+\.)+(?:\p{L}{2,}|xn--[a-z0-9-]+)(?::\d+)?(?:[/?#]\S*)?$/iu;
+
+// File extensions such as js, json, md, ts and py are deliberately missing, so names like
+// Node.js or package.json are not read as addresses.
+const TLDS = [
+	'com,net,org,io,co,app,dev,gg,xyz,info,biz,me,tv,ai,us,uk,de,fr,nl,hu,eu,ru,cn,jp,br,in,au,ca',
+	'es,it,pl,ch,se,no,fi,cz,sk,at,be,dk,pt,gr,ro,tr,ua,kr,tw,hk,sg,nz,za,mx,ar,cl,online,site',
+	'store,shop,top,live,link,click,cc,ws,to,ly'
+].join(',');
+const DOMAIN_TEXT = new RegExp(
+	String.raw`^(?:[\p{L}\p{N}-]+\.)+(?:${TLDS.replaceAll(',', '|')}|xn--[a-z0-9-]+)(?::\d+)?(?:[/?#]\S*)?$`,
+	'iu'
+);
+
+const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+const LEADING_SPACE = /^\s+/;
+const TRAILING_JUNK = /[\s.,;:!?]+$/;
 
 function hostOf(address: string): string | null {
 	try {
 		const url = new URL(/^https?:\/\//i.test(address) ? address : `https://${address}`);
-		return url.hostname.replace(/^www\./, '');
+		return url.hostname.replace(/^www\./, '').replace(/\.$/, '');
 	} catch {
 		return null;
 	}
@@ -86,9 +101,30 @@ function hostOf(address: string): string | null {
  * points at the same host as the link; otherwise the real target is shown instead.
  */
 export function linkLabel(text: string, href: string): string {
-	const shown = text.trim();
+	const shown = text.replace(INVISIBLE, '').replace(LEADING_SPACE, '').replace(TRAILING_JUNK, '');
 	if (!URL_TEXT.test(shown) && !DOMAIN_TEXT.test(shown)) return text;
 
 	const shownHost = hostOf(shown);
 	return shownHost !== null && shownHost === hostOf(href) ? text : href;
+}
+
+type InlineNode = { type?: string; text?: string; marks?: { type: string; attrs?: unknown }[] };
+
+export type InlineRun<T extends InlineNode> = { nodes: T[]; text: string; href: string | null };
+
+/** Consecutive text nodes that link to the same address form one run, so the link is judged as a whole. */
+export function linkRuns<T extends InlineNode>(children: T[]): InlineRun<T>[] {
+	const runs: InlineRun<T>[] = [];
+	for (const node of children) {
+		const mark = node.type === 'text' ? node.marks?.find((m) => m.type === 'link') : undefined;
+		const href = mark ? safeHref((mark.attrs as { href?: unknown } | undefined)?.href) : null;
+		const last = runs[runs.length - 1];
+		if (href && last?.href === href) {
+			last.nodes.push(node);
+			last.text += node.text ?? '';
+		} else {
+			runs.push({ nodes: [node], text: node.text ?? '', href });
+		}
+	}
+	return runs;
 }

@@ -32,8 +32,7 @@ function typeClosingParen(before: string) {
 }
 
 /** Runs the paste rule over a pasted paragraph. */
-function pasteText(text: string) {
-	const state = stateFor(text);
+function pasteText(text: string, state = stateFor(text)) {
 	const rule = markdownLinkPasteRule(link);
 	const tr = state.tr;
 	if (!(rule.find instanceof RegExp)) throw new Error('expected a regex');
@@ -97,6 +96,18 @@ describe('markdown link as typed', () => {
 		expect(typeClosingParen('[ ](https://example.com')).toBeNull();
 	});
 
+	it('leaves a link typed inside an open backtick span as text', () => {
+		expect(typeClosingParen('use `[docs](https://example.com')).toBeNull();
+	});
+
+	it('links again once the backtick span is closed', () => {
+		const tr = typeClosingParen('`a` then [docs](https://example.com');
+		expect(runs(tr)).toEqual([
+			{ type: 'text', text: '`a` then ' },
+			linked('docs', 'https://example.com')
+		]);
+	});
+
 	it('does not leave the link on for the next character', () => {
 		const tr = typeClosingParen('[docs](https://example.com');
 		expect(tr?.storedMarks?.some((mark) => mark.type === link) ?? false).toBe(false);
@@ -130,6 +141,37 @@ describe('markdown link as pasted', () => {
 	it('leaves an image as text', () => {
 		expect(runs(pasteText('![x](https://example.com/a.png)'))).toEqual([
 			{ type: 'text', text: '![x](https://example.com/a.png)' }
+		]);
+	});
+
+	it('leaves a link inside a backtick pair as text', () => {
+		const text = 'Write `[text](https://example.com)` to link';
+		expect(runs(pasteText(text))).toEqual([{ type: 'text', text }]);
+	});
+
+	it('still links outside the backtick pair', () => {
+		expect(runs(pasteText('`a` [one](https://a.example) `b`'))).toEqual([
+			{ type: 'text', text: '`a` ' },
+			linked('one', 'https://a.example'),
+			{ type: 'text', text: ' `b`' }
+		]);
+	});
+
+	it('leaves a link inside pasted code formatting as text', () => {
+		const doc = schema.nodeFromJSON({
+			type: 'doc',
+			content: [
+				{
+					type: 'paragraph',
+					content: [
+						{ type: 'text', text: '[text](https://example.com)', marks: [{ type: 'code' }] }
+					]
+				}
+			]
+		});
+		const state = EditorState.create({ schema, doc });
+		expect(runs(pasteText('[text](https://example.com)', state))).toEqual([
+			{ type: 'text', text: '[text](https://example.com)', marks: [{ type: 'code' }] }
 		]);
 	});
 });

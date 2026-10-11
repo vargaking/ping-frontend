@@ -53,4 +53,69 @@ describe('link rendering', () => {
 		expect(body).not.toContain('<a');
 		expect(body).toContain('click');
 	});
+
+	it('shows the target when one masked address is split over several nodes', () => {
+		const target = linkMark('https://evil.example');
+		const body = html({
+			type: 'paragraph',
+			content: [text('paypal', target), text('.com', target, { type: 'underline' })]
+		});
+		expect(body).toContain('href="https://evil.example/"');
+		expect(body).toContain('>https://evil.example/</a>');
+		expect(body).not.toContain('paypal');
+		expect(body.match(/<a /g)).toHaveLength(1);
+	});
+
+	it('shows the target for a split address in a heading', () => {
+		const target = linkMark('https://evil.example');
+		const body = html({
+			type: 'heading',
+			attrs: { level: 2 },
+			content: [text('https://pay', target), text('pal.com', target, { type: 'bold' })]
+		});
+		expect(body).toContain('>https://evil.example/</a>');
+		expect(body).not.toContain('paypal');
+	});
+
+	it('keeps a split address that points at its own host', () => {
+		const target = linkMark('https://paypal.com/login');
+		const body = html({
+			type: 'paragraph',
+			content: [text('paypal', target), text('.com', target)]
+		});
+		expect(body).toContain('>paypal</a>');
+		expect(body).toContain('>.com</a>');
+	});
+
+	it('does not judge the parts of an own-host split address on their own', () => {
+		const target = linkMark('https://example.com/');
+		const body = html({
+			type: 'paragraph',
+			content: [text('https://example', target), text('.com', target)]
+		});
+		expect(body).toContain('>https://example</a>');
+		expect(body).toContain('>.com</a>');
+	});
+
+	it('judges different links separately', () => {
+		const body = html({
+			type: 'paragraph',
+			content: [
+				text('paypal', linkMark('https://a.example')),
+				text('.com', linkMark('https://b.example'))
+			]
+		});
+		expect(body).toContain('>paypal</a>');
+		expect(body).toContain('>.com</a>');
+	});
+
+	it('keeps a file name as the link text', () => {
+		const body = html(text('package.json', linkMark('https://github.com/a/b/package.json')));
+		expect(body).toContain('>package.json</a>');
+	});
+
+	it('sees through invisible characters in the text', () => {
+		const body = html(text('paypal.com\u200b', linkMark('https://evil.test')));
+		expect(body).toContain('>https://evil.test/</a>');
+	});
 });

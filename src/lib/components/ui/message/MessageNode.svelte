@@ -2,9 +2,10 @@
 	import type { JSONContent } from '@tiptap/core';
 	import MessageNode from './MessageNode.svelte';
 	import CodeBlock from './CodeBlock.svelte';
-	import { linkLabel, linkify, safeHref } from '$lib/utils/linkify';
+	import { linkLabel, linkRuns, linkify, safeHref } from '$lib/utils/linkify';
 
-	let { node }: { node: JSONContent | string } = $props();
+	// A run of link nodes is judged as a whole by its parent, so its parts are not judged again.
+	let { node, guarded = true }: { node: JSONContent | string; guarded?: boolean } = $props();
 
 	const linkClass =
 		'text-primary underline decoration-primary/40 underline-offset-2 [overflow-wrap:anywhere] hover:decoration-primary';
@@ -12,6 +13,18 @@
 
 {#snippet anchor(href: string, label: string)}
 	<a {href} target="_blank" rel="noopener noreferrer nofollow" class={linkClass}>{label}</a>
+{/snippet}
+
+{#snippet inline(children: JSONContent[])}
+	{#each linkRuns(children) as run, i (i)}
+		{#if run.href && linkLabel(run.text, run.href) !== run.text}
+			{@render anchor(run.href, run.href)}
+		{:else}
+			{#each run.nodes as child, j (j)}
+				<MessageNode node={child} guarded={run.href === null} />
+			{/each}
+		{/if}
+	{/each}
 {/snippet}
 
 {#snippet linked(text: string)}
@@ -52,7 +65,7 @@
 					>{@render renderMarks(
 						marksRemaining,
 						currentIndex + 1,
-						linkLabel(text, href),
+						guarded ? linkLabel(text, href) : text,
 						autolink
 					)}</a
 				>
@@ -76,9 +89,7 @@
 {:else if node.type === 'paragraph'}
 	<p class="min-h-[1.5em] leading-relaxed">
 		{#if node.content}
-			{#each node.content as child}
-				<MessageNode node={child} />
-			{/each}
+			{@render inline(node.content)}
 		{:else}
 			<br />
 		{/if}
@@ -133,9 +144,7 @@
 				? 'mt-3 mb-2 text-xl'
 				: 'mt-2 mb-1 text-lg'}"
 	>
-		{#each node.content || [] as child}
-			<MessageNode node={child} />
-		{/each}
+		{@render inline(node.content || [])}
 	</svelte:element>
 {:else if node.type === 'hardBreak'}
 	<br />
