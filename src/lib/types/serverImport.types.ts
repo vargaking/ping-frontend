@@ -32,6 +32,8 @@ export type PlanChannel = {
 	target_name: string | null;
 	/** Why a channel is skipped. */
 	reason: string | null;
+	/** A create row whose name matches a channel already on the server. Absent on older servers. */
+	name_taken?: boolean;
 	category: string | null;
 	messages: number;
 	existing_messages: number;

@@ -483,7 +483,7 @@
 							{/if}
 						</div>
 						<p
-							class="truncate text-xs {channel.action === 'skipped'
+							class="text-xs break-words {channel.action === 'skipped'
 								? 'text-text-subtle'
 								: 'text-muted-foreground'}"
 						>
