@@ -91,6 +91,21 @@ async function drag(page: Page, from: [number, number], to: [number, number]) {
 	await cdp.detach();
 }
 
+/** The mouse events of a click, without a touch before them. */
+async function mouseClick(page: Page, at: [number, number]) {
+	const cdp = await page.context().newCDPSession(page);
+	for (const type of ['mousePressed', 'mouseReleased'] as const) {
+		await cdp.send('Input.dispatchMouseEvent', {
+			type,
+			x: at[0],
+			y: at[1],
+			button: 'left',
+			clickCount: 1
+		});
+	}
+	await cdp.detach();
+}
+
 test('on a phone a sideways swipe moves between the navigation and the channel', async ({
 	context,
 	page
@@ -165,6 +180,14 @@ test('on a phone swiping a message left past the threshold replies to it', async
 	await expect(composer).toBeFocused();
 	await expect(message).toHaveCSS('translate', 'none');
 	await expect(page.getByRole('navigation', { name: 'Servers' })).not.toBeInViewport();
+
+	// iOS may still send a click's mouse events after the swipe, aimed at where it started.
+	const moved = (await message.boundingBox())!;
+	const movedY = moved.y + moved.height / 2;
+	await drag(page, [startX, movedY], [startX - 100, movedY]);
+	await mouseClick(page, [startX, movedY]);
+	await page.waitForTimeout(100);
+	await expect(composer).toBeFocused();
 });
 
 test('on a phone a long reply quote is cut off instead of widening the list', async ({
