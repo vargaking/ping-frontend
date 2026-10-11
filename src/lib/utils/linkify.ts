@@ -34,6 +34,8 @@ export function safeHref(raw: unknown): string | null {
 	}
 	if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
 	if (!url.hostname.includes('.') && url.hostname !== 'localhost') return null;
+	url.username = '';
+	url.password = '';
 	return url.href;
 }
 
@@ -69,31 +71,58 @@ export function firstLinkHref(text: string): string | null {
 	return first?.kind === 'link' ? first.href : null;
 }
 
-const URL_TEXT = /^https?:\/\/\S+$/i;
+const URL_TEXT = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
+const SCHEME_PREFIX = /^(?:(https?):\/*|([a-z][a-z0-9+.-]*):\/{1,2})(?=[^\s/])/i;
 
-// File extensions such as js, json, md, ts and py are deliberately missing, so names like
-// Node.js or package.json are not read as addresses.
-const TLDS = [
-	'com,net,org,io,co,app,dev,gg,xyz,info,biz,me,tv,ai,us,uk,de,fr,nl,hu,eu,ru,cn,jp,br,in,au,ca',
-	'es,it,pl,ch,se,no,fi,cz,sk,at,be,dk,pt,gr,ro,tr,ua,kr,tw,hk,sg,nz,za,mx,ar,cl,online,site',
-	'store,shop,top,live,link,click,cc,ws,to,ly'
-].join(',');
-const DOMAIN_TEXT = new RegExp(
-	String.raw`^(?:[\p{L}\p{N}-]+\.)+(?:${TLDS.replaceAll(',', '|')}|xn--[a-z0-9-]+)(?::\d+)?(?:[/?#]\S*)?$`,
-	'iu'
+// Common file extensions that are not commonly abused as domains, so names like Node.js or
+// package.json are not read as addresses.
+const FILE_EXTENSIONS = new Set(
+	'js ts json md py sh rs txt yml yaml toml lock css html svelte jsx tsx cjs mjs ini cfg log csv'.split(
+		' '
+	)
 );
+const DOMAIN_TEXT = /^(?:[\p{L}\p{N}_-]+\.)+(\p{L}{2,}|xn--[a-z0-9-]+)((?::\d+)?(?:[/?#]\S*)?)$/iu;
 
-const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
-const LEADING_SPACE = /^\s+/;
-const TRAILING_JUNK = /[\s.,;:!?]+$/;
+const DOT_LOOKALIKES = /[\u2024\u3002\uff0e\uff61]/g;
+const HIDDEN = /[\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}\u2800]/gu;
+const EDGE =
+	/^[\p{P}\p{S}\p{Z}\p{M}\p{Cf}\p{Cc}\u2800]+|[\p{P}\p{S}\p{Z}\p{M}\p{Cf}\p{Cc}\u2800]+$/gu;
+
+/** Link text as a reader would see it, without wrapping punctuation, blanks or lookalike dots. */
+function plainText(text: string): string {
+	return text
+		.normalize('NFKC')
+		.replace(DOT_LOOKALIKES, '.')
+		.replace(HIDDEN, '')
+		.replaceAll('\\', '/')
+		.replace(EDGE, '')
+		.replace(SCHEME_PREFIX, (_, web, other) => `${web ?? other}://`);
+}
+
+function looksLikeAddress(shown: string): boolean {
+	if (URL_TEXT.test(shown)) return true;
+	const match = DOMAIN_TEXT.exec(shown);
+	if (!match) return false;
+	const bare = match[2] === '';
+	return !(bare && FILE_EXTENSIONS.has(match[1].toLowerCase()));
+}
 
 function hostOf(address: string): string | null {
 	try {
-		const url = new URL(/^https?:\/\//i.test(address) ? address : `https://${address}`);
+		const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(address) ? address : `https://${address}`);
 		return url.hostname.replace(/^www\./, '').replace(/\.$/, '');
 	} catch {
 		return null;
 	}
+}
+
+/** Whether `text` reads as an address whose host is not the host of every one of `hrefs`. */
+export function isMasked(text: string, hrefs: string[]): boolean {
+	const shown = plainText(text);
+	if (!looksLikeAddress(shown)) return false;
+
+	const shownHost = hostOf(shown);
+	return shownHost === null || hrefs.some((href) => hostOf(href) !== shownHost);
 }
 
 /**
@@ -101,30 +130,68 @@ function hostOf(address: string): string | null {
  * points at the same host as the link; otherwise the real target is shown instead.
  */
 export function linkLabel(text: string, href: string): string {
-	const shown = text.replace(INVISIBLE, '').replace(LEADING_SPACE, '').replace(TRAILING_JUNK, '');
-	if (!URL_TEXT.test(shown) && !DOMAIN_TEXT.test(shown)) return text;
-
-	const shownHost = hostOf(shown);
-	return shownHost !== null && shownHost === hostOf(href) ? text : href;
+	return isMasked(text, [href]) ? href : text;
 }
 
-type InlineNode = { type?: string; text?: string; marks?: { type: string; attrs?: unknown }[] };
+type Mark = { type: string; attrs?: unknown };
+type InlineNode = { type?: string; text?: string; marks?: Mark[] };
 
-export type InlineRun<T extends InlineNode> = { nodes: T[]; text: string; href: string | null };
+/** A text node can carry several link marks; only the first one counts. */
+export function effectiveMarks<M extends { type: string }>(marks: M[] | undefined): M[] {
+	if (!Array.isArray(marks)) return [];
+	const first = marks.findIndex((mark) => mark?.type === 'link');
+	return marks.filter((mark, i) => mark?.type !== 'link' || i === first);
+}
 
-/** Consecutive text nodes that link to the same address form one run, so the link is judged as a whole. */
+export type InlineRun<T extends InlineNode> = {
+	nodes: T[];
+	text: string;
+	/** The safe target of each node in `nodes`; empty for a run that is not a link. */
+	hrefs: string[];
+};
+
+function textOf(node: InlineNode): string {
+	return typeof node?.text === 'string' ? node.text : '';
+}
+
+/** Consecutive linked text nodes form one run, so the link text is judged as a whole. */
 export function linkRuns<T extends InlineNode>(children: T[]): InlineRun<T>[] {
 	const runs: InlineRun<T>[] = [];
 	for (const node of children) {
-		const mark = node.type === 'text' ? node.marks?.find((m) => m.type === 'link') : undefined;
+		const mark =
+			node?.type === 'text' ? effectiveMarks(node.marks).find((m) => m.type === 'link') : undefined;
 		const href = mark ? safeHref((mark.attrs as { href?: unknown } | undefined)?.href) : null;
 		const last = runs[runs.length - 1];
-		if (href && last?.href === href) {
+		if (!href) {
+			runs.push({ nodes: [node], text: textOf(node), hrefs: [] });
+		} else if (last && last.hrefs.length > 0) {
 			last.nodes.push(node);
-			last.text += node.text ?? '';
+			last.hrefs.push(href);
+			last.text += textOf(node);
 		} else {
-			runs.push({ nodes: [node], text: node.text ?? '', href });
+			runs.push({ nodes: [node], text: textOf(node), hrefs: [href] });
 		}
 	}
 	return runs;
+}
+
+/**
+ * The real targets to show in place of a masked run, one per stretch of the same link, or null
+ * when the run can be shown as written. Each stretch is judged on its own as well as the whole run.
+ */
+export function maskedTargets<T extends InlineNode>(run: InlineRun<T>): string[] | null {
+	if (run.hrefs.length === 0) return null;
+
+	const stretches: { href: string; text: string }[] = [];
+	run.nodes.forEach((node, i) => {
+		const last = stretches[stretches.length - 1];
+		if (last?.href === run.hrefs[i]) last.text += textOf(node);
+		else stretches.push({ href: run.hrefs[i], text: textOf(node) });
+	});
+
+	const targets = stretches.map((stretch) => stretch.href);
+	const masked =
+		isMasked(run.text, targets) ||
+		stretches.some((stretch) => isMasked(stretch.text, [stretch.href]));
+	return masked ? targets : null;
 }

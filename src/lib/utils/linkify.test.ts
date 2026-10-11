@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstLinkHref, linkLabel, linkify, safeHref } from './linkify';
+import { effectiveMarks, firstLinkHref, linkLabel, linkify, safeHref } from './linkify';
 
 describe('safeHref', () => {
 	it('normalises http and https addresses', () => {
@@ -20,6 +20,11 @@ describe('safeHref', () => {
 		'not a url'
 	])('rejects %j', (raw) => {
 		expect(safeHref(raw)).toBeNull();
+	});
+
+	it('drops credentials from the address', () => {
+		expect(safeHref('https://paypal.com@evil.test/x')).toBe('https://evil.test/x');
+		expect(safeHref('https://user:pass@example.com/')).toBe('https://example.com/');
 	});
 
 	it('rejects anything that is not a string', () => {
@@ -110,7 +115,7 @@ describe('linkLabel', () => {
 		}
 	);
 
-	it('rewrites known top level domains in any case or depth', () => {
+	it('rewrites top level domains in any case or depth', () => {
 		const target = 'https://evil.test/';
 		expect(linkLabel('paypal.com', target)).toBe(target);
 		expect(linkLabel('www.paypal.com', target)).toBe(target);
@@ -120,7 +125,99 @@ describe('linkLabel', () => {
 		expect(linkLabel('paypal.xn--p1ai', target)).toBe(target);
 	});
 
+	it.each([
+		['Greek omicron in the TLD', 'paypal.c\u03bfm'],
+		['one dot leader', 'paypal\u2024com'],
+		['fullwidth full stop', 'paypal\uff0ecom'],
+		['ideographic full stop', 'paypal\u3002com'],
+		['halfwidth ideographic full stop', 'paypal\uff61com'],
+		['fullwidth letters', '\uff50aypal.com']
+	])('sees through %s', (_name, text) => {
+		expect(linkLabel(text, 'https://evil.com/')).toBe('https://evil.com/');
+	});
+
+	it.each([
+		'irs.gov',
+		'discord.gift',
+		'steam.community',
+		'harvard.edu',
+		'my.bank',
+		'a.zip',
+		'x.mov',
+		'x.cloud'
+	])('treats %s as an address', (text) => {
+		expect(linkLabel(text, 'https://evil.com/')).toBe('https://evil.com/');
+	});
+
+	it.each([
+		'package.json',
+		'README.md',
+		'Node.js',
+		'app.css',
+		'index.html',
+		'App.svelte',
+		'data.csv',
+		'config.yaml',
+		'yarn.lock'
+	])('keeps the file name %s', (text) => {
+		expect(linkLabel(text, 'https://evil.com/')).toBe(text);
+	});
+
+	it('treats a file extension followed by a path as an address', () => {
+		expect(linkLabel('paypal.sh/login', 'https://evil.com/')).toBe('https://evil.com/');
+	});
+
+	it.each([
+		['round brackets', '(paypal.com)'],
+		['one closing bracket', 'paypal.com)'],
+		['quotes', '"paypal.com"'],
+		['angle brackets', '<paypal.com>'],
+		['ellipsis', 'paypal.com\u2026'],
+		['middle dot', 'paypal.com\u00b7'],
+		['leading braille blank', '\u2800paypal.com'],
+		['trailing braille blank', 'paypal.com\u2800'],
+		['braille blank inside', 'pay\u2800pal.com'],
+		['trailing combining mark', 'paypal.com\u0332'],
+		['combining mark inside', 'paypal.co\u0332m'],
+		['protocol relative form', '//paypal.com'],
+		['single slash scheme', 'http:/paypal.com'],
+		['scheme without slashes', 'https:paypal.com'],
+		['backslash path', 'paypal.com\\login'],
+		['backslashes after scheme', 'http:\\\\paypal.com'],
+		['another scheme', 'ftp://paypal.com'],
+		['emoji prefix', '\u{1f512} paypal.com']
+	])('sees through %s', (_name, text) => {
+		expect(linkLabel(text, 'https://evil.com/')).toBe('https://evil.com/');
+	});
+
+	it('keeps wrapped text that points at its own host', () => {
+		expect(linkLabel('(paypal.com)', 'https://paypal.com/')).toBe('(paypal.com)');
+		expect(linkLabel('//paypal.com', 'https://paypal.com/')).toBe('//paypal.com');
+	});
+
+	it('does not read a userinfo-prefixed target as the shown host', () => {
+		const href = safeHref('https://paypal.com@evil.com') as string;
+		expect(linkLabel('paypal.com', href)).toBe('https://evil.com/');
+	});
+
 	it('always treats an http(s) address as an address', () => {
 		expect(linkLabel('https://Node.js', 'https://evil.test/')).toBe('https://evil.test/');
+	});
+});
+
+describe('effectiveMarks', () => {
+	it('keeps only the first link mark', () => {
+		const marks = [
+			{ type: 'bold' },
+			{ type: 'link', attrs: { href: 'https://a.example' } },
+			{ type: 'link', attrs: { href: 'https://b.example' } },
+			{ type: 'italic' }
+		];
+		expect(effectiveMarks(marks)).toEqual([marks[0], marks[1], marks[3]]);
+	});
+
+	it('returns nothing for missing or malformed marks', () => {
+		expect(effectiveMarks(undefined)).toEqual([]);
+		expect(effectiveMarks('bold' as never)).toEqual([]);
 	});
 });
