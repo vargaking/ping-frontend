@@ -414,6 +414,9 @@
 					hasMore: pageData.has_more,
 					hasNewer: pageData.has_newer ?? false
 				});
+				if (jump == null && !pageData.has_newer) {
+					dropGoneFromCache(key, ascending, pageData.has_more, requested);
+				}
 			}
 		} catch (e) {
 			if (token !== loadToken) return;

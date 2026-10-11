@@ -73,7 +73,7 @@ export type PageRange = {
 /** Deletes the thread's cached messages that the newest page proves gone; returns their ids. */
 export async function pruneToPage(thread: CachedThread, range: PageRange): Promise<string[]> {
 	const { page, complete, requested, keep } = range;
-	if (page.length === 0) return [];
+	if (page.length === 0 || !(await localHistoryReady())) return [];
 
 	const { index, key } = indexOf(thread);
 	const lower = timestampMs(page[0].timestamp);
@@ -93,7 +93,9 @@ export async function pruneToPage(thread: CachedThread, range: PageRange): Promi
 					!inPage.has(m.id) &&
 					m.status == null &&
 					!onScreen.has(m.id) &&
-					((m.ts != null && m.ts <= upper) || requested.has(m.id))
+					// The page is ordered by server time and ts is the sender's clock, so a partial page
+					// only proves gone what was on screen when it was requested.
+					(complete ? (m.ts != null && m.ts <= upper) || requested.has(m.id) : requested.has(m.id))
 			)
 			.map((m) => m.id);
 		await db.messages.bulkDelete(gone);

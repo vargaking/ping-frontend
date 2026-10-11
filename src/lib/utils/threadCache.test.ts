@@ -128,7 +128,9 @@ describe('pruneToPage', () => {
 			await seed(range(1, 10), fields);
 			await seed(range(101, 110), elsewhere);
 
-			const gone = await prune(thread, [4, 5, 6, 8, 9, 10]);
+			const gone = await prune(thread, [4, 5, 6, 8, 9, 10], {
+				requested: new Set(idsOf(range(1, 10)))
+			});
 
 			expect(gone).toEqual(['m7']);
 			expect(await stored()).toEqual(
@@ -147,11 +149,23 @@ describe('pruneToPage', () => {
 		expect(gone.sort()).toEqual(sorted([1, 2, 3, 7]));
 	});
 
+	it('keeps a row of a partial page that was not on screen when it was requested', async () => {
+		await seed(range(1, 10), { channel_id: 10 });
+
+		const gone = await prune({ kind: 'channel', channelId: 10 }, [4, 5, 6, 8, 9, 10], {
+			requested: new Set(idsOf([4, 5, 6, 8, 9, 10]))
+		});
+
+		expect(gone).toEqual([]);
+	});
+
 	it('leaves a forum post alone when pruning its channel', async () => {
 		await seed(range(1, 5), { channel_id: 10 });
 		await seed(range(6, 8), { channel_id: 10, post_id: 5 });
 
-		const gone = await prune({ kind: 'channel', channelId: 10 }, [1, 3, 4, 5]);
+		const gone = await prune({ kind: 'channel', channelId: 10 }, [1, 3, 4, 5], {
+			requested: new Set(idsOf(range(1, 8)))
+		});
 
 		expect(gone).toEqual(['m2']);
 		expect(await stored()).toEqual(sorted([1, 3, 4, 5, 6, 7, 8]));
@@ -162,6 +176,7 @@ describe('pruneToPage', () => {
 		await db.messages.update('m5', { status: 'pending' });
 
 		const gone = await prune({ kind: 'channel', channelId: 10 }, [4, 9, 10], {
+			requested: new Set(idsOf(range(1, 10))),
 			keep: new Set(['m7'])
 		});
 
