@@ -74,13 +74,12 @@
 	<div class="flex items-center justify-self-end">
 		<Tooltip.Provider>
 			<Tooltip.Root delayDuration={300} disabled={phoneState.touch}>
-				<Tooltip.Trigger>
+				<Tooltip.Trigger onclick={() => overlayState.open(WhatsNewPanel)}>
 					{#snippet child({ props })}
 						<button
 							{...props}
 							type="button"
 							aria-label="What's new"
-							onclick={() => overlayState.open(WhatsNewPanel)}
 							class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 						>
 							<Sparkles size={18} strokeWidth={1.75} />
