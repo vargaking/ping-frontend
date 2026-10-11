@@ -161,6 +161,66 @@ describe('a window of history', () => {
 		expect(messagesState.heldBack(KEY)).toEqual([]);
 	});
 
+	it.each([
+		['stays counted', ['elsewhere'], ['live-1', 'live-2']],
+		['is dropped once the new window shows it', ['live-1'], ['live-2']]
+	])('a message held back %s when another window opens', (_name, shown, expected) => {
+		window();
+		messagesState.addMessage(msg('live-1', { user_id: 3 }));
+		messagesState.addMessage(msg('live-2', { user_id: 4 }));
+
+		messagesState.setWindow(KEY, [msg('x'), ...shown.map((id) => msg(id))], true);
+
+		expect(messagesState.heldBack(KEY).map((m) => m.id)).toEqual(expected);
+	});
+
+	it('counts the unseen messages of a live thread that the window leaves out', () => {
+		messagesState.setWindow(KEY, [msg('x'), msg('u1')], true, [
+			msg('u1', { user_id: 3 }),
+			msg('u2', { user_id: 4 })
+		]);
+
+		expect(messagesState.heldBack(KEY)).toEqual([{ id: 'u2', user_id: 4 }]);
+	});
+
+	describe('continuing from the server edge', () => {
+		it.each([
+			['a window', () => window(), 'w2'],
+			['a live thread that went stale', () => messagesState.markNewerExists(KEY), 'b']
+		])('starts at the newest server message of %s, not at our own', (_name, detach, edge) => {
+			messagesState.addMessage(msg('mine', { status: 'pending' }));
+			detach();
+			messagesState.addMessage(msg('mine2', { status: 'pending' }));
+
+			messagesState.updateMessage('mine', { status: undefined });
+			messagesState.updateMessage('mine2', { status: undefined });
+
+			expect(messagesState.newerAnchor(KEY)).toBe(edge);
+		});
+
+		it('has no anchor while the thread is live', () => {
+			expect(messagesState.newerAnchor(KEY)).toBeNull();
+		});
+
+		it('moves with each newer page and keeps an acked message of ours in order once its page arrives', () => {
+			window();
+			messagesState.addMessage(msg('mine', { status: 'pending' }));
+			messagesState.updateMessage('mine', { status: undefined });
+
+			messagesState.appendNewer(KEY, [msg('n1')], true);
+			expect(ids()).toEqual(['w1', 'w2', 'n1', 'mine']);
+			expect(messagesState.newerAnchor(KEY)).toBe('n1');
+
+			messagesState.appendNewer(KEY, [msg('mine'), msg('n2')], true);
+			expect(ids()).toEqual(['w1', 'w2', 'n1', 'mine', 'n2']);
+			expect(messagesState.newerAnchor(KEY)).toBe('n2');
+
+			messagesState.appendNewer(KEY, [msg('n3')], false);
+			expect(ids()).toEqual(['w1', 'w2', 'n1', 'mine', 'n2', 'n3']);
+			expect(messagesState.newerAnchor(KEY)).toBeNull();
+		});
+	});
+
 	it('has nothing held back for unknown threads', () => {
 		expect(messagesState.heldBack('nothing')).toEqual([]);
 	});

@@ -33,6 +33,7 @@
 		isFarFromBottom,
 		jumpBehavior,
 		jumpLabel,
+		messagesBelow,
 		showJumpButton,
 		type SeenMarker
 	} from '$lib/utils/jumpToLatest';
@@ -44,9 +45,9 @@
 		OlderHistory
 	} from '$lib/utils/olderHistory.svelte';
 	import {
+		fetchOpeningPage,
 		JUMP_FAILURE_TOAST,
 		jumpFailure,
-		newerAnchor,
 		type JumpFailure
 	} from '$lib/utils/historyWindow';
 
@@ -141,9 +142,13 @@
 		if (!el) return;
 		if (smoothJumping && !isAtBottom(el)) return;
 		stopSmoothJump();
-		farFromBottom = isFarFromBottom(el);
 		void older.request();
 		void newer.request();
+		measureScroll(el);
+	}
+
+	function measureScroll(el: HTMLElement) {
+		farFromBottom = isFarFromBottom(el);
 		if (el.clientHeight !== viewHeight) return;
 		stickToBottom = isAtBottom(el) && !messagesState.newerExists(threadKey);
 		if (stickToBottom && staleOlder && !resyncing) void resync();
@@ -273,14 +278,16 @@
 		hasNewer?: boolean;
 		/** The view is about to be moved to a message, not the bottom. */
 		focus?: boolean;
+		/** With `hasNewer`: messages of a live thread the user hadn't seen, now past the window. */
+		unseen?: MessageType[];
 	};
 
 	function applyPage(
 		key: string,
 		messages: MessageType[],
-		{ hasMore, hasNewer = false, focus = false }: PageOptions
+		{ hasMore, hasNewer = false, focus = false, unseen = [] }: PageOptions
 	) {
-		if (hasNewer) messagesState.setWindow(key, messages, hasMore);
+		if (hasNewer) messagesState.setWindow(key, messages, hasMore, unseen);
 		else messagesState.set(key, messages, hasMore);
 		autoScrollAnchorId = messagesState.messages(key).at(-1)?.id ?? null;
 		const target = pendingJump(key);
@@ -322,18 +329,6 @@
 		});
 	}
 
-	/** The page a thread opens with: a window around the jump target when there is one. */
-	async function fetchOpeningPage(target: string | null): Promise<MessagePage> {
-		if (!target) return fetchPage();
-		try {
-			return await fetchPage({ around: target });
-		} catch (e) {
-			// A target that is gone is reported by the jump; the thread itself still opens.
-			if (normalizeError(e).status !== 404) throw e;
-			return fetchPage();
-		}
-	}
-
 	async function loadMessages(key: string) {
 		const token = ++loadToken;
 		nextCursor = null;
@@ -356,7 +351,7 @@
 
 		try {
 			// The API is the source of truth for the newest page; Dexie is a cache.
-			const pageData = await fetchOpeningPage(pendingJump(key));
+			const pageData = await fetchOpeningPage(fetchPage, pendingJump(key));
 			if (token !== loadToken) return; // a newer switch superseded us
 
 			const ascending = [...pageData.messages].reverse();
@@ -439,6 +434,7 @@
 		await tick();
 		if (!el || destroyed) return;
 		el.scrollTop = prevTop;
+		measureScroll(el);
 	}
 
 	// Loads the messages after a window's newest one while the user is at its bottom.
@@ -450,15 +446,15 @@
 			!fromCache &&
 			!older.loading &&
 			loadedKey === threadKey &&
-			messagesState.newerExists(threadKey) &&
-			newerAnchor(messagesState.messages(threadKey)) != null,
+			messagesState.newerAnchor(threadKey) != null,
 		async fetch() {
 			const key = threadKey;
+			const token = loadToken;
 			messagesState.beginNewestLoad(key);
 			try {
-				return await fetchPage({ after: newerAnchor(messagesState.messages(key))! });
+				return await fetchPage({ after: messagesState.newerAnchor(key)! });
 			} catch (e) {
-				messagesState.endNewestLoad(key);
+				if (token === loadToken) messagesState.endNewestLoad(key);
 				throw e;
 			}
 		},
@@ -500,6 +496,7 @@
 
 	/** Catch up on what may have been missed while the socket was down or the page frozen. */
 	async function resyncThread() {
+		await pendingWindow?.catch(() => {});
 		const key = threadKey;
 		if (loadState !== 'ready' || fromCache) return loadMessages(key);
 		await older.idle();
@@ -601,24 +598,42 @@
 		return messagesState.messages(threadKey).some((m) => m.id === id);
 	}
 
-	/** Replaces the loaded messages with a window around `id`, which the API serves. */
+	// The window being fetched for a jump, so a resync waits for it instead of making it stale.
+	let pendingWindow: Promise<unknown> | null = null;
+	let windowRequest = 0;
+
 	async function openWindow(id: string): Promise<'shown' | 'stale' | JumpFailure> {
+		const run = loadWindow(id);
+		pendingWindow = run;
+		try {
+			return await run;
+		} finally {
+			if (pendingWindow === run) pendingWindow = null;
+		}
+	}
+
+	/** Replaces the loaded messages with a window around `id`, which the API serves. */
+	async function loadWindow(id: string): Promise<'shown' | 'stale' | JumpFailure> {
 		const key = threadKey;
-		const token = ++loadToken;
-		older.reset();
-		newer.reset();
-		messagesState.beginNewestLoad(key);
+		const token = loadToken;
+		const request = ++windowRequest;
+		const superseded = () =>
+			request !== windowRequest || token !== loadToken || key !== threadKey || destroyed;
 
 		let pageData: MessagePage;
 		try {
 			pageData = await fetchPage({ around: id });
 		} catch (e) {
-			if (token !== loadToken || key !== threadKey || destroyed) return 'stale';
-			messagesState.endNewestLoad(key);
-			return jumpFailure(e);
+			return superseded() ? 'stale' : jumpFailure(e);
 		}
-		if (token !== loadToken || key !== threadKey || destroyed) return 'stale';
+		if (superseded()) return 'stale';
 
+		loadToken++;
+		older.reset();
+		newer.reset();
+		const unseen = messagesState.newerExists(key)
+			? []
+			: messagesBelow(messagesState.messages(key), seenThrough);
 		const ascending = [...pageData.messages].reverse();
 		nextCursor = pageData.next_cursor;
 		fromCache = false;
@@ -626,7 +641,8 @@
 		applyPage(key, ascending, {
 			hasMore: pageData.has_more,
 			hasNewer: pageData.has_newer ?? false,
-			focus: true
+			focus: true,
+			unseen
 		});
 		db.messages.bulkPut(ascending).catch((e) => console.warn('Failed to cache messages', e));
 		return 'shown';

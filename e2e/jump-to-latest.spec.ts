@@ -342,12 +342,13 @@ test('a window holds live messages back until it reaches the present', async ({ 
 		'reading old messages does not mark the channel read'
 	).toHaveAccessibleName(`${server.name}, unread messages`);
 
+	// Each newer page keeps the view where it was, so the bottom is reached again on a later pass.
 	await expect(async () => {
 		await scroller(a.page).evaluate((el) => (el.scrollTop = el.scrollHeight));
 		await expect(row(a.page, label(HISTORY))).toBeAttached({ timeout: 1000 });
 		await expect(row(a.page, 'live 1')).toBeAttached({ timeout: 1000 });
 		await expect(jumpButton(a.page)).toHaveCount(0, { timeout: 1000 });
-	}).toPass();
+	}).toPass({ timeout: 30_000, intervals: [500, 1000] });
 	await expect(
 		serverLink(a.page, server.name),
 		'reaching the present marks the channel read'
