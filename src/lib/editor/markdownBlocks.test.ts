@@ -88,6 +88,115 @@ describe('markdownToBlocks', () => {
 	});
 });
 
+const heading = (level: number, text: string) => ({
+	type: 'heading',
+	attrs: { level },
+	content: [{ type: 'text', text }]
+});
+const item = (text: string, ...nested: object[]) => ({
+	type: 'listItem',
+	content: [paragraph(text), ...nested]
+});
+const bullets = (...items: object[]) => ({ type: 'bulletList', content: items });
+const numbers = (items: object[], start?: number) => ({
+	type: 'orderedList',
+	...(start ? { attrs: { start } } : {}),
+	content: items
+});
+
+describe('markdownToBlocks with markdown blocks', () => {
+	it('reads headings, lists and quotes from a pasted document', () => {
+		const text = '# Title\n\n- one\n- two\n\n1. first\n2. second\n\n> quoted';
+		expect(markdownToBlocks(text)).toEqual([
+			heading(1, 'Title'),
+			bullets(item('one'), item('two')),
+			numbers([item('first'), item('second')]),
+			{ type: 'blockquote', content: [paragraph('quoted')] }
+		]);
+	});
+
+	it('reads heading levels one to six and nothing deeper', () => {
+		expect(markdownToBlocks('###### six')).toEqual([heading(6, 'six')]);
+		expect(markdownToBlocks('####### seven')).toBeNull();
+	});
+
+	it('needs a space after the hash and some text', () => {
+		expect(markdownToBlocks('#hashtag')).toBeNull();
+		expect(markdownToBlocks('# ')).toBeNull();
+	});
+
+	it('reads * and + bullets, and keeps inline markup for the paste rules', () => {
+		expect(markdownToBlocks('* **bold** one\n+ two')).toEqual([
+			bullets(item('**bold** one'), item('two'))
+		]);
+	});
+
+	it('joins list items separated by blank lines', () => {
+		expect(markdownToBlocks('- a\n\n- b')).toEqual([bullets(item('a'), item('b'))]);
+	});
+
+	it('starts an ordered list at its first number', () => {
+		expect(markdownToBlocks('3. c\n4) d')).toEqual([numbers([item('c'), item('d')], 3)]);
+	});
+
+	it('splits a list when the kind changes', () => {
+		expect(markdownToBlocks('- a\n1. b')).toEqual([bullets(item('a')), numbers([item('b')])]);
+	});
+
+	it('nests indented items', () => {
+		expect(markdownToBlocks('- a\n  - b\n  - c\n- d')).toEqual([
+			bullets(item('a', bullets(item('b'), item('c'))), item('d'))
+		]);
+	});
+
+	it('ends a list at the first line that is not an item', () => {
+		expect(markdownToBlocks('- a\ntext\n- b')).toEqual([
+			bullets(item('a')),
+			paragraph('text'),
+			bullets(item('b'))
+		]);
+	});
+
+	it('keeps task list items as text', () => {
+		expect(markdownToBlocks('- [ ] todo\n- [x] done')).toBeNull();
+		expect(markdownToBlocks('- a\n- [ ] todo')).toEqual([
+			bullets(item('a')),
+			paragraph('- [ ] todo')
+		]);
+	});
+
+	it('reads each quoted line as a paragraph of one quote', () => {
+		expect(markdownToBlocks('> a\n>\n> b')).toEqual([
+			{ type: 'blockquote', content: [paragraph('a'), paragraph('b')] }
+		]);
+		expect(markdownToBlocks('>text')).toBeNull();
+	});
+
+	it('reads horizontal rules before bullets', () => {
+		const rule = { type: 'horizontalRule' };
+		expect(markdownToBlocks('a\n---\n***\n___\n- - -\nb')).toEqual([
+			paragraph('a'),
+			rule,
+			rule,
+			rule,
+			rule,
+			paragraph('b')
+		]);
+	});
+
+	it('leaves tables, images, html and plain text alone', () => {
+		expect(markdownToBlocks('| a | b |\n|---|---|\n| 1 | 2 |')).toBeNull();
+		expect(markdownToBlocks('![x](https://example.com/a.png)')).toBeNull();
+		expect(markdownToBlocks('<b>hi</b>\n<ul><li>x</li></ul>')).toBeNull();
+	});
+
+	it('keeps a fenced block whole when it holds markdown', () => {
+		expect(markdownToBlocks('```\n# not a heading\n- not a list\n```')).toEqual([
+			code('# not a heading\n- not a list')
+		]);
+	});
+});
+
 describe('fenceOpening', () => {
 	it('accepts a bare fence and a fence with a language', () => {
 		expect(fenceOpening('```')).toEqual({ language: null });
