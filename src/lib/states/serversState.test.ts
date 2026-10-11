@@ -5,15 +5,30 @@ vi.mock('$lib/requests/channels/getServerChannelSnapshot', () => ({
 	getServerChannelSnapshot: getSnapshot
 }));
 
+const getMembers = vi.hoisted(() => vi.fn());
+const getRoles = vi.hoisted(() => vi.fn());
+const getViewers = vi.hoisted(() => vi.fn());
+vi.mock('$lib/requests/servers/getServerMembers', () => ({ getServerMembers: getMembers }));
+vi.mock('$lib/requests/servers/getServerRoles', () => ({ getServerRoles: getRoles }));
+vi.mock('$lib/requests/channels/permissionOverwrites', () => ({ getChannelViewers: getViewers }));
+
 import { ServersState } from './serversState.svelte';
 import { unreadState } from './unreadState.svelte';
+import { usersState } from './usersState.svelte';
 import type { Channel, ChannelGroup } from '$lib/types/channel.types';
+import type { User } from '$lib/types/auth.types';
+import type { ServerMember } from '$lib/types/server.types';
 
 const snapshot = { groups: [], channels: [{ id: 1, name: 'general', type: 'text', position: 0 }] };
 
 beforeEach(() => {
 	getSnapshot.mockReset();
 	getSnapshot.mockResolvedValue(snapshot);
+	getMembers.mockReset();
+	getRoles.mockReset();
+	getRoles.mockResolvedValue([]);
+	getViewers.mockReset();
+	usersState.reset();
 });
 
 describe('loadServerChannels', () => {
@@ -123,5 +138,109 @@ describe('updateGroup', () => {
 		state.channelGroups = { 7: { 3: { ...group } } };
 		state.updateGroup(7, { ...group, private: true });
 		expect(state.channelGroups[7][3].private).toBe(true);
+	});
+});
+
+describe('loadRoster', () => {
+	const user = (id: number, username: string): User => ({
+		id,
+		username,
+		public_key: '',
+		profile: {}
+	});
+	const member = (u: User, role_ids: number[] = []): ServerMember => ({
+		user: u,
+		joined_at: '2026-01-01T00:00:00Z',
+		is_owner: false,
+		role_ids
+	});
+
+	function withServer(members: User[]) {
+		const state = new ServersState();
+		state.servers = { 7: { id: 7, name: 'ping', members } };
+		return state;
+	}
+
+	it.each([
+		['a member joined', [user(1, 'ann')], [user(1, 'ann'), user(2, 'bo')]],
+		['a member left', [user(1, 'ann'), user(2, 'bo')], [user(1, 'ann')]]
+	])('replaces the member list with the roster when %s', async (_name, before, after) => {
+		const state = withServer(before);
+		getMembers.mockResolvedValue(after.map((u) => member(u)));
+
+		await state.loadRoster(7);
+
+		expect(state.servers[7].members).toEqual(after);
+	});
+
+	it('refreshes the profiles of the members it fetched', async () => {
+		const state = withServer([user(1, 'ann')]);
+		usersState.users[1] = user(1, 'ann');
+		getMembers.mockResolvedValue([member(user(1, 'anna'))]);
+
+		await state.loadRoster(7);
+
+		expect(usersState.users[1].username).toBe('anna');
+	});
+
+	it('keeps role assignments for the sidebar', async () => {
+		const state = withServer([]);
+		getMembers.mockResolvedValue([member(user(1, 'ann'), [4, 5])]);
+
+		await state.loadRoster(7);
+
+		expect(state.memberRoles[7]).toEqual({ 1: [4, 5] });
+	});
+
+	it('does not bring back a server that was removed while loading', async () => {
+		const state = withServer([]);
+		getMembers.mockImplementation(async () => {
+			delete state.servers[7];
+			return [member(user(1, 'ann'))];
+		});
+
+		await state.loadRoster(7);
+
+		expect(state.servers[7]).toBeUndefined();
+	});
+});
+
+describe('loadChannelViewers', () => {
+	it('shares a load that is still running', async () => {
+		const state = new ServersState();
+		getViewers.mockResolvedValue([1, 2]);
+
+		await Promise.all([state.loadChannelViewers(3), state.loadChannelViewers(3)]);
+
+		expect(getViewers).toHaveBeenCalledTimes(1);
+		expect(state.channelViewers[3]).toEqual([1, 2]);
+	});
+
+	it.each([
+		['within the window', 5_000, 1],
+		['past the window', 15_000, 2]
+	])('loads again only when asked %s', async (_name, elapsedMs, calls) => {
+		vi.useFakeTimers();
+		try {
+			const state = new ServersState();
+			getViewers.mockResolvedValue([1]);
+			await state.loadChannelViewers(3, 10_000);
+			vi.advanceTimersByTime(elapsedMs);
+			await state.loadChannelViewers(3, 10_000);
+			expect(getViewers).toHaveBeenCalledTimes(calls);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('keeps the previous viewers when a load fails', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const state = new ServersState();
+		state.channelViewers = { 3: [1] };
+		getViewers.mockRejectedValue(new Error('offline'));
+
+		await state.loadChannelViewers(3);
+
+		expect(state.channelViewers[3]).toEqual([1]);
 	});
 });

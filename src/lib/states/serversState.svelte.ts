@@ -125,13 +125,26 @@ export class ServersState {
 		return has(own ?? this.permissions[serverId], perm);
 	}
 
-	/** Fetch who can view a channel. A failure leaves the list unfiltered. */
-	async loadChannelViewers(channelId: number) {
-		try {
-			this.channelViewers[channelId] = await getChannelViewers(channelId);
-		} catch (e) {
-			console.warn('Failed to load channel viewers', e);
-		}
+	private viewerLoads: Record<number, Promise<void>> = {};
+	private viewersLoadedAt: Record<number, number> = {};
+
+	/** Fetch who can view a channel, sharing a load that is still running and skipping one
+	 *  that finished less than `maxAgeMs` ago. A failure leaves the list as it was. */
+	loadChannelViewers(channelId: number, maxAgeMs = 0): Promise<void> {
+		const running = this.viewerLoads[channelId];
+		if (running) return running;
+		const loadedAt = this.viewersLoadedAt[channelId];
+		if (loadedAt != null && Date.now() - loadedAt < maxAgeMs) return Promise.resolve();
+
+		const load = getChannelViewers(channelId)
+			.then((ids) => {
+				this.channelViewers[channelId] = ids;
+				this.viewersLoadedAt[channelId] = Date.now();
+			})
+			.catch((e) => console.warn('Failed to load channel viewers', e))
+			.finally(() => delete this.viewerLoads[channelId]);
+		this.viewerLoads[channelId] = load;
+		return load;
 	}
 
 	/** Replace every server's mask and channel masks (permissions_init). */
@@ -176,6 +189,9 @@ export class ServersState {
 		this.channelGroups = {};
 		this.channelLoads = {};
 		this.channelsLoadedAt = {};
+		this.channelViewers = {};
+		this.viewerLoads = {};
+		this.viewersLoadedAt = {};
 		this.selectedServerId = null;
 		this.selectedChannelId = null;
 	}
@@ -198,7 +214,9 @@ export class ServersState {
 		this.notePermissions(server);
 	}
 
-	/** Load a server's members and roles, keeping role assignments for the sidebar. */
+	/** Load a server's members and roles, keeping role assignments for the sidebar. The
+	 *  fetched members also replace the server's member list and refresh their profiles,
+	 *  which catches joins, leaves and renames missed while the socket was down. */
 	async loadRoster(serverId: number): Promise<ServerMember[]> {
 		const [members, roles] = await Promise.all([
 			getServerMembers(serverId),
@@ -206,6 +224,8 @@ export class ServersState {
 		]);
 		this.setRoles(serverId, roles);
 		this.memberRoles[serverId] = Object.fromEntries(members.map((m) => [m.user.id, m.role_ids]));
+		members.forEach((m) => usersState.applyUser(m.user));
+		this.patchServer(serverId, { members: members.map((m) => m.user) });
 		return members;
 	}
 

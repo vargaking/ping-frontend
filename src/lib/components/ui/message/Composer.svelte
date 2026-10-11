@@ -22,7 +22,7 @@
 	} from '$lib/requests/attachments/uploadAttachment';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { LinkPreview } from '$lib/utils/linkPreview.svelte';
-	import { mentionCandidates } from '$lib/utils/mentions';
+	import { mentionCandidates, refreshMentionCandidates } from '$lib/utils/mentions';
 	import { isTypingKey } from '$lib/utils/typeToFocus';
 	import { hasOpenLayer, isEditable } from '$lib/utils/openLayer';
 	import { messagePlainText, messagePreviewText } from '$lib/utils/messageContent';
@@ -75,6 +75,12 @@
 	$effect(() => {
 		const channelId = privateChannelId;
 		if (channelId != null) untrack(() => serversState.loadChannelViewers(channelId));
+	});
+
+	const mentionTarget = () => ({
+		serverId: target?.kind === 'channel' ? target.serverId : null,
+		channelId: target?.kind === 'channel' ? target.channelId : null,
+		conversationId: target?.kind === 'direct' ? target.conversationId : null
 	});
 
 	const controllers: Record<string, AbortController> = {};
@@ -459,12 +465,8 @@
 				onChange={handleChange}
 				onArrowUp={editLastOwnMessage}
 				onCancel={replyTarget ? cancelReply : undefined}
-				mentionCandidates={() =>
-					mentionCandidates({
-						serverId: target?.kind === 'channel' ? target.serverId : null,
-						channelId: target?.kind === 'channel' ? target.channelId : null,
-						conversationId: target?.kind === 'direct' ? target.conversationId : null
-					})}
+				mentionCandidates={() => mentionCandidates(mentionTarget())}
+				onMentionStart={() => refreshMentionCandidates(mentionTarget())}
 				editorClass="prose prose-sm max-h-40 w-full max-w-none min-w-0 flex-1 self-center overflow-y-auto py-1.5 text-[15px] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"
 			/>
 
