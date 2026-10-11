@@ -7,6 +7,15 @@ import type { WhatsNewEntry } from '$lib/types/whatsNew.types';
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
 	{
+		id: '2026-10-11-2',
+		date: '2026-10-11',
+		title: 'Search filters, and smoother game streams',
+		bullets: [
+			'Narrow a search with from:name, has:image, has:video, has:file, has:link, before:, after: or during:, on their own or with words.',
+			'Screen sharing set to "Motion and games" keeps the frame rate up, also for viewers watching in a small tile.'
+		]
+	},
+	{
 		id: '2026-10-11',
 		date: '2026-10-11',
 		title: 'Profile cards, and old messages in context',
