@@ -1,25 +1,19 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { forumState } from '$lib/states/forumState.svelte';
-	import { createForumTag } from '$lib/requests/forum/createForumTag';
 	import { updateForumTag, type ForumTagUpdate } from '$lib/requests/forum/updateForumTag';
 	import { deleteForumTag } from '$lib/requests/forum/deleteForumTag';
 	import { reorderForumTags } from '$lib/requests/forum/reorderForumTags';
 	import { getErrorMessage } from '$lib/requests/errors';
-	import { TAG_NAME_MAX, TAGS_PER_CHANNEL_MAX, type ForumTag } from '$lib/types/forum.types';
-	import { TAG_COLORS } from '$lib/utils/forum';
+	import { TAG_NAME_MAX, type ForumTag } from '$lib/types/forum.types';
 	import Input from '$lib/components/ui/input/input.svelte';
-	import Button from '$lib/components/ui/button/button.svelte';
-	import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-svelte';
+	import ForumTagColors from '$lib/components/forum/ForumTagColors.svelte';
+	import NewTagForm from '$lib/components/forum/NewTagForm.svelte';
+	import { ArrowDown, ArrowUp, Trash2 } from 'lucide-svelte';
 
 	let { channelId }: { channelId: number } = $props();
 
 	const tags = $derived(forumState.tags(channelId));
-	const atLimit = $derived(tags.length >= TAGS_PER_CHANNEL_MAX);
-
-	let newName = $state('');
-	let newColor = $state<string | null>(TAG_COLORS[0]);
-	let adding = $state(false);
 
 	$effect(() => {
 		void forumState.loadTags(channelId);
@@ -32,23 +26,6 @@
 			toast.error(`${failure}: ${getErrorMessage(e)}`);
 			return undefined;
 		}
-	}
-
-	async function add() {
-		const name = newName.trim();
-		if (!name || adding || atLimit) return;
-		adding = true;
-		newName = '';
-		const tag = await run("Couldn't add the tag", () => createForumTag(channelId, name, newColor));
-		adding = false;
-		if (!tag) {
-			newName ||= name;
-			return;
-		}
-		forumState.applyTags(channelId, [
-			...forumState.tags(channelId).filter((t) => t.id !== tag.id),
-			tag
-		]);
 	}
 
 	async function change(tag: ForumTag, update: ForumTagUpdate) {
@@ -92,24 +69,6 @@
 	}
 </script>
 
-{#snippet colors(selected: string | null, pick: (color: string) => void, label: string)}
-	<div class="flex items-center gap-1" role="group" aria-label={label}>
-		{#each TAG_COLORS as color (color)}
-			<button
-				type="button"
-				aria-label={color}
-				aria-pressed={selected === color}
-				onclick={() => pick(color)}
-				style:background-color={color}
-				class="h-5 w-5 rounded-full ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-8 pointer-coarse:w-8 {selected ===
-				color
-					? 'ring-2 ring-foreground'
-					: ''}"
-			></button>
-		{/each}
-	</div>
-{/snippet}
-
 <div class="flex max-w-xl flex-col gap-6">
 	<p class="text-sm text-muted-foreground">
 		Tags sort the posts in this forum. Members can add up to 5 to a post, and filter by them.
@@ -127,7 +86,11 @@
 						onblur={(e) => rename(tag, e.currentTarget)}
 						onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 					/>
-					{@render colors(tag.color, (color) => change(tag, { color }), `Color of ${tag.name}`)}
+					<ForumTagColors
+						selected={tag.color}
+						pick={(color) => change(tag, { color })}
+						label="Color of {tag.name}"
+					/>
 					<div class="flex items-center">
 						<button
 							type="button"
@@ -163,30 +126,5 @@
 		<p class="text-sm text-text-subtle">No tags yet.</p>
 	{/if}
 
-	<form
-		class="flex flex-wrap items-center gap-2"
-		onsubmit={(e) => {
-			e.preventDefault();
-			add();
-		}}
-	>
-		<Input
-			aria-label="New tag name"
-			placeholder="New tag"
-			bind:value={newName}
-			maxlength={TAG_NAME_MAX}
-			disabled={atLimit}
-			class="h-9 min-w-[140px] flex-1"
-		/>
-		{@render colors(newColor, (color) => (newColor = color), 'New tag color')}
-		<Button type="submit" disabled={!newName.trim() || adding || atLimit}>
-			<Plus size={16} strokeWidth={1.75} />
-			Add
-		</Button>
-	</form>
-	{#if atLimit}
-		<p class="-mt-4 text-xs text-text-subtle">
-			A forum can have up to {TAGS_PER_CHANNEL_MAX} tags.
-		</p>
-	{/if}
+	<NewTagForm {channelId} />
 </div>
