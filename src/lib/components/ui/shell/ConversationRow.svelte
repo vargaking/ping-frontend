@@ -24,6 +24,8 @@
 		return last.user_id === meId ? `You: ${text}` : text;
 	});
 
+	const online = $derived(usersState.isOnline(other.id));
+
 	// Never shows as unread while it's the thread we're actively reading.
 	const unread = $derived(
 		(!active || phoneState.navCoversContent) && conversationsState.isUnread(conversation)
@@ -33,11 +35,19 @@
 <a
 	href={`/app/direct/${conversation.id}/`}
 	aria-current={active ? 'page' : undefined}
-	class="flex h-12 w-full items-center gap-2.5 rounded-lg px-2 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {active
+	class="group flex h-12 w-full items-center gap-2.5 rounded-lg px-2 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {active
 		? 'bg-accent'
 		: 'hover:bg-card'}"
 >
-	<Avatar user={other} size="sm" rounded="rounded-lg" className="shrink-0" />
+	<div class="relative shrink-0">
+		<Avatar user={other} size="sm" rounded="rounded-lg" />
+		<span
+			class="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-2 {active
+				? 'ring-accent'
+				: 'ring-sidebar group-hover:ring-card'} {online ? 'bg-online' : 'bg-offline'}"
+			aria-hidden="true"
+		></span>
+	</div>
 	<div class="flex min-w-0 flex-1 flex-col">
 		<span
 			class="truncate text-sm text-foreground {active
@@ -47,6 +57,7 @@
 					: ''}"
 		>
 			{other.username}
+			<span class="sr-only">, {online ? 'online' : 'offline'}</span>
 			{#if unread}<span class="sr-only">, unread</span>{/if}
 		</span>
 		{#if preview}
