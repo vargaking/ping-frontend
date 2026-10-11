@@ -230,6 +230,8 @@
 			'aria-description': channel.topic?.trim() || undefined,
 			// Captured, so the sheet case stops the click before the sidebar closes the navigation.
 			onclickcapture: (e: MouseEvent) => {
+				// A long-press that opened the context menu has its click swallowed already.
+				if (e.defaultPrevented) return;
 				// Opening the link in a new tab shouldn't join from this one.
 				if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
 				const serverId = serversState.selectedServerId;
