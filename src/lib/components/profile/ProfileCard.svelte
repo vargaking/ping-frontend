@@ -98,9 +98,11 @@
 	);
 
 	function message() {
-		if (userId == null) return;
+		// Closing clears the target this card's userId comes from.
+		const id = userId;
+		if (id == null) return;
 		onclose();
-		void openDirectMessage(userId);
+		void openDirectMessage(id);
 	}
 
 	function editProfile() {
