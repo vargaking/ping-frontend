@@ -26,7 +26,7 @@
 	<button
 		type="button"
 		onclick={() => onJump(reply.id)}
-		class="mb-0.5 flex max-w-[760px] min-w-0 items-center gap-1.5 rounded text-left text-xs text-text-subtle transition-colors hover:text-text-body focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		class="mb-0.5 flex max-w-[min(760px,100%)] min-w-0 items-center gap-1.5 rounded text-left text-xs text-text-subtle transition-colors hover:text-text-body focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 	>
 		<Reply size={16} strokeWidth={1.75} class="shrink-0" />
 		<span class="flex shrink-0 items-center gap-1">
