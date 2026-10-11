@@ -2,7 +2,9 @@ import { historyApi } from '$lib/requests/history';
 import { normalizeError } from '$lib/requests/errors';
 import { db, localHistoryAvailable, localHistoryReady } from '$lib/utils/db';
 import { forgetSyncedChannels, runHistorySync, type HistoryApi } from '$lib/utils/historySync';
+import { removeCursor } from '$lib/utils/messageChanges';
 import { serversState } from './serversState.svelte';
+import { usersState } from './usersState.svelte';
 
 const START_DELAY_MS = 3000;
 const RETRY_FIRST_MS = 30_000;
@@ -38,10 +40,13 @@ class HistorySyncState {
 	private pages = 0;
 	private listingFailed = false;
 	private stops = 0;
+	/** Remembered because the signed-in user is already gone by the time stop() runs. */
+	private userId: number | null = null;
 
 	/** Ask for a run. Requests made while one is waiting or running share a single run. */
 	request(): void {
 		if (!localHistoryAvailable || this.blocked) return;
+		this.userId = usersState.loggedInUser?.id ?? this.userId;
 		if (this.running) {
 			this.queued = true;
 			return;
@@ -90,6 +95,8 @@ class HistorySyncState {
 		this.clearTimers();
 		this.controller?.abort();
 		await this.running;
+		if (this.userId != null) removeCursor(this.userId);
+		this.userId = null;
 		this.retryDelay = RETRY_FIRST_MS;
 		this.lastStartedAt = null;
 		this.threads = 0;
@@ -108,6 +115,7 @@ class HistorySyncState {
 	private start() {
 		if (this.running || this.blocked) return;
 		this.clearTimers();
+		this.userId = usersState.loggedInUser?.id ?? this.userId;
 		this.lastStartedAt = Date.now();
 		const controller = new AbortController();
 		this.controller = controller;
@@ -140,6 +148,7 @@ class HistorySyncState {
 					serverIds: Object.keys(serversState.servers).map(Number),
 					preferServerId: serversState.selectedServerId,
 					signal: controller.signal,
+					userId: this.userId,
 					fullHistory: !saveData(),
 					onProgress: ({ threads, complete }) => {
 						this.threads = threads;
@@ -229,7 +238,9 @@ class HistorySyncState {
 				const page = await historyApi.page(thread, before, signal);
 				if (++this.pages % COUNT_EVERY_PAGES === 0) void this.refreshCount();
 				return page;
-			}
+			},
+			messageChanges: historyApi.messageChanges,
+			messagesByIds: historyApi.messagesByIds
 		};
 	}
 }

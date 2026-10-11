@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { historyApi } from '$lib/requests/history';
 import { db, localHistoryReady } from '$lib/utils/db';
 import {
 	forgetSyncedChannels,
@@ -8,6 +9,7 @@ import {
 import { historyStatusLabel, historySyncState } from './historySyncState.svelte';
 import type { Channel } from '$lib/types/channel.types';
 import { serversState } from './serversState.svelte';
+import { usersState } from './usersState.svelte';
 
 vi.mock('$lib/utils/db', () => ({
 	db: {
@@ -58,6 +60,7 @@ beforeEach(() => {
 	serversState.servers = { 1: { id: 1, name: 'one' }, 2: { id: 2, name: 'two' } };
 	serversState.selectedServerId = 2;
 	serversState.loaded = true;
+	usersState.loggedInUser = null;
 });
 
 afterEach(async () => {
@@ -437,5 +440,63 @@ describe('forgetChannels', () => {
 
 		expect(warn).toHaveBeenCalled();
 		expect(runMock).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('changes feed', () => {
+	let storage: Map<string, string>;
+
+	beforeEach(() => {
+		storage = new Map([
+			['historyChangesCursor:5', 'cursor-5'],
+			['historyChangesCursor:6', 'cursor-6']
+		]);
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => void storage.set(key, value),
+			removeItem: (key: string) => void storage.delete(key)
+		});
+	});
+
+	const signIn = (id: number) => (usersState.loggedInUser = { id } as never);
+
+	it('runs for the signed-in user with the feed requests of the history api', async () => {
+		signIn(5);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		const options = runMock.mock.calls[0][0] as HistorySyncOptions;
+		expect(options.userId).toBe(5);
+		expect(options.api.messageChanges).toBe(historyApi.messageChanges);
+		expect(options.api.messagesByIds).toBe(historyApi.messagesByIds);
+	});
+
+	it("removes the signed-out user's cursor on stop, even after the user is gone", async () => {
+		signIn(5);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		usersState.loggedInUser = null;
+
+		await historySyncState.stop();
+
+		expect([...storage.keys()]).toEqual(['historyChangesCursor:6']);
+	});
+
+	it('removes the cursor of a user whose run has not started yet', async () => {
+		signIn(5);
+		historySyncState.request();
+
+		await historySyncState.stop();
+
+		expect([...storage.keys()]).toEqual(['historyChangesCursor:6']);
+	});
+
+	it('keeps every cursor when no user was seen', async () => {
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		await historySyncState.stop();
+
+		expect(storage.size).toBe(2);
 	});
 });

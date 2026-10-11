@@ -3,6 +3,8 @@ import type { ForumPostPage } from '$lib/types/forum.types';
 import type { HistoryApi, SyncThread } from '$lib/utils/historySync';
 import { axiosClient } from './axiosClient';
 import type { MessagePage } from './channels/getChannelMessages';
+import { getMessageChanges } from './messages/getMessageChanges';
+import { getMessagesByIds } from './messages/getMessagesByIds';
 
 const PAGE_LIMIT = 100;
 
@@ -31,5 +33,7 @@ export const historyApi: Omit<HistoryApi, 'channels'> = {
 		const { url, params } = messagesRequest(thread, before);
 		const response = await axiosClient.get<MessagePage>(url, { params, signal });
 		return response.data;
-	}
+	},
+	messageChanges: (since, signal) => getMessageChanges(since, undefined, signal),
+	messagesByIds: (ids, signal) => getMessagesByIds(ids, signal)
 };
