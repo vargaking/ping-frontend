@@ -51,7 +51,7 @@
 		<MessageList
 			threadKey={directThreadKey(id)}
 			{target}
-			fetchPage={(before) => getConversationMessages(id, before)}
+			fetchPage={(query) => getConversationMessages(id, query)}
 			readCache={() => db.messages.where({ conversation_id: id }).sortBy('timestamp')}
 			emptyDescription="Send the first message."
 			errorDescription="There was a problem reading this conversation."

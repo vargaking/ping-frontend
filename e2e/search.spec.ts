@@ -4,6 +4,7 @@ import {
 	createChannel,
 	createServer,
 	registerUser,
+	seedMessages,
 	sendMessageViaUi,
 	uniqueName
 } from './helpers';
@@ -64,6 +65,62 @@ test('a stored message is found with Ctrl+K and opened in its channel', async ({
 	await expect(search).toHaveValue(word.slice(0, 8));
 	await page.keyboard.press('Control+k');
 	await expect(search).toBeHidden();
+});
+
+test('a result far back opens in a window around it', async ({ browser }) => {
+	const context = await browser.newContext();
+	await registerUser(context, 'deepsearcher');
+	const page = await context.newPage();
+
+	const server = await createServer(context, uniqueName('Guild'));
+	const general = await createChannel(context, server.id, 'general');
+	const word = `quokka${Date.now().toString(36)}`;
+	const label = (n: number) => `msg ${String(n).padStart(3, '0')}`;
+	const filler = 'lorem ipsum dolor sit amet '.repeat(12);
+	await seedMessages(
+		context,
+		{ serverId: server.id, channelId: general.id },
+		Array.from({ length: 60 }, (_, i) =>
+			i === 0 ? `${label(1)} ${word}` : `${label(i + 1)} ${filler}`
+		)
+	);
+
+	const row = (text: string) => page.locator('[data-message-id]').filter({ hasText: text });
+	const jumpButton = page.getByRole('button', { name: /^Jump to latest/ });
+
+	await page.goto(channelPath(server.id, general.id));
+	await expect(row(label(60))).toBeVisible({ timeout: 20_000 });
+	await expect.poll(() => storedMessageCount(page, word)).toBe(1);
+
+	const pageRequests: URL[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (
+			url.pathname === `/channels/${general.id}/messages` &&
+			url.searchParams.get('limit') === '50'
+		) {
+			pageRequests.push(url);
+		}
+	});
+
+	await page.keyboard.press('Control+k');
+	const search = page.getByRole('combobox', { name: 'Search messages' });
+	await search.fill(word.slice(0, 8));
+	await expect(page.getByRole('option').filter({ hasText: word })).toBeVisible();
+	await search.press('Enter');
+
+	await expect(row(label(1))).toBeVisible();
+	await expect(row(label(1))).toHaveClass(/bg-accent/);
+	await expect(page).not.toHaveURL(/[?&]m=/);
+	await expect(row(label(60)), 'only a window around the result is loaded').toHaveCount(0);
+	await expect(jumpButton).toHaveAccessibleName('Jump to latest');
+	expect(pageRequests, 'one request opens the window').toHaveLength(1);
+	expect(pageRequests[0].searchParams.has('around')).toBe(true);
+
+	await sendMessageViaUi(page, 'sent from the window');
+	await expect(row('sent from the window')).toBeInViewport();
+	await expect(row(label(60))).toBeAttached();
+	await expect(jumpButton).toHaveCount(0);
 });
 
 test('the top bar search bar opens the search dialog', async ({ browser }) => {

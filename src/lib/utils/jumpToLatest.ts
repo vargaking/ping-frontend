@@ -44,18 +44,28 @@ export function jumpLabel(newCount: number): string {
 
 export type SeenMarker = { id: string; timestamp: string };
 
-/** Messages from others after `seen`, the newest message on screen the last time the view was at the bottom. */
+/** Stored messages after `seen`, the newest message on screen the last time the view was at the bottom. */
+export function messagesBelow(messages: MessageType[], seen: SeenMarker | null): MessageType[] {
+	if (!seen) return [];
+	const at = messages.findIndex((m) => m.id === seen.id);
+	const seenMs = timestampMs(seen.timestamp);
+	const below =
+		at >= 0 ? messages.slice(at + 1) : messages.filter((m) => timestampMs(m.timestamp) > seenMs);
+	return below.filter((m) => !m.status);
+}
+
+/** Messages from others after `seen`. */
 export function countNewBelow(
 	messages: MessageType[],
 	seen: SeenMarker | null,
 	meId: number | null
 ): number {
-	if (!seen) return 0;
-	const at = messages.findIndex((m) => m.id === seen.id);
-	const seenMs = timestampMs(seen.timestamp);
-	const below =
-		at >= 0 ? messages.slice(at + 1) : messages.filter((m) => timestampMs(m.timestamp) > seenMs);
-	return below.filter((m) => m.user_id !== meId && !m.status).length;
+	return messagesBelow(messages, seen).filter((m) => m.user_id !== meId).length;
+}
+
+/** Messages held back from a detached list that someone else sent. */
+export function countHeldBack(held: { user_id: number }[], meId: number | null): number {
+	return held.filter((m) => m.user_id !== meId).length;
 }
 
 type EscapeKey = Pick<
