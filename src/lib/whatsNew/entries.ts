@@ -7,6 +7,18 @@ import type { WhatsNewEntry } from '$lib/types/whatsNew.types';
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
 	{
+		id: '2026-10-11',
+		date: '2026-10-11',
+		title: 'Profile cards, and old messages in context',
+		bullets: [
+			'Click a name or avatar for a profile card with a banner, roles, when they joined and a Message button. Set your own banner in Settings → My account.',
+			'Search results and reply quotes open at that message however far back it is. "Jump to latest" brings you back.',
+			'Server import brings private channels along, lets you search for the member to match each author, and shows an upload running on another device.',
+			'Pasted Markdown keeps its formatting, [text](url) becomes a link, and underline shows up in messages.',
+			'Older messages load whenever you scroll to the top, and the @mention list and imported messages stay current without a reload.'
+		]
+	},
+	{
 		id: '2026-10-10-2',
 		date: '2026-10-10',
 		title: 'Catching up is quicker',
