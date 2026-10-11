@@ -10,7 +10,14 @@ import { tokenize } from '$lib/utils/searchText';
 import { channelThreadKey, directThreadKey, postThreadKey } from '$lib/utils/threadKeys';
 
 export type SyncThread =
-	| { kind: 'channel'; key: string; serverId: number; channelId: number; marker: string | null }
+	| {
+			kind: 'channel';
+			key: string;
+			serverId: number;
+			channelId: number;
+			marker: string | null;
+			rev: number | null;
+	  }
 	| {
 			kind: 'post';
 			key: string;
@@ -18,6 +25,7 @@ export type SyncThread =
 			channelId: number;
 			postId: number;
 			marker: string;
+			rev: number | null;
 	  }
 	| { kind: 'direct'; key: string; conversationId: number; marker: string | null };
 
@@ -54,6 +62,24 @@ function isGone(error: unknown): boolean {
 	return status === 403 || status === 404;
 }
 
+/** How many import batches have written to the channel; null when it never had an import. */
+export function importRev(channel: Channel): number | null {
+	const settings = channel.channel_settings as { import?: unknown } | null | undefined;
+	const marker = settings?.import;
+	if (marker == null || typeof marker !== 'object') return null;
+	const rev = (marker as { rev?: unknown }).rev;
+	return typeof rev === 'number' && Number.isInteger(rev) ? rev : 0;
+}
+
+/** Drops the sync rows of channels, and of the server when `channelIds` is null, so the next run walks them again. Messages stay. */
+export async function forgetSyncedChannels(
+	serverId: number,
+	channelIds: number[] | null
+): Promise<void> {
+	if (channelIds == null) await db.threadSync.where('serverId').equals(serverId).delete();
+	else await db.threadSync.where('channelId').anyOf(channelIds).delete();
+}
+
 function newSync(thread: SyncThread, page: MessagePage, marker: string): ThreadSync {
 	return {
 		key: thread.key,
@@ -62,7 +88,8 @@ function newSync(thread: SyncThread, page: MessagePage, marker: string): ThreadS
 		head: page.messages.slice(0, HEAD_SIZE).map((m) => m.id),
 		marker,
 		olderCursor: page.next_cursor,
-		complete: isLastPage(page)
+		complete: isLastPage(page),
+		rev: thread.kind === 'direct' ? null : thread.rev
 	};
 }
 
@@ -171,7 +198,11 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 		return result;
 	}
 
-	async function listPostThreads(serverId: number, channelId: number): Promise<SyncThread[]> {
+	async function listPostThreads(
+		serverId: number,
+		channelId: number,
+		rev: number | null
+	): Promise<SyncThread[]> {
 		const posts = new Map<number, ForumPostPage['posts'][number]>();
 		let cursor: string | null = null;
 		do {
@@ -202,8 +233,26 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 			serverId,
 			channelId,
 			postId: post.id,
-			marker: post.last_activity_at
+			marker: post.last_activity_at,
+			rev
 		}));
+	}
+
+	/** A channel whose import revision moved holds older messages we haven't walked to. */
+	async function dropStaleRevisions(serverId: number, channels: Channel[]) {
+		const revs = new Map<number, number | null>();
+		for (const channel of channels) {
+			if (channel.type === 'text' || channel.type === 'forum')
+				revs.set(channel.id, importRev(channel));
+		}
+		const rows = await db.threadSync.where('serverId').equals(serverId).toArray();
+		const stale = rows.filter(
+			(row) =>
+				row.channelId != null &&
+				revs.has(row.channelId) &&
+				(row.rev ?? null) !== revs.get(row.channelId)
+		);
+		await db.threadSync.bulkDelete(stale.map((row) => row.key));
 	}
 
 	/** Null when the server's channels can't be listed this run. */
@@ -216,19 +265,23 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 			return null;
 		}
 
+		await dropStaleRevisions(serverId, channels);
+
 		const threads: SyncThread[] = [];
 		for (const channel of channels) {
+			const rev = importRev(channel);
 			if (channel.type === 'text') {
 				threads.push({
 					kind: 'channel',
 					key: channelThreadKey(channel.id),
 					serverId,
 					channelId: channel.id,
-					marker: channel.last_message_id ?? null
+					marker: channel.last_message_id ?? null,
+					rev
 				});
 			} else if (channel.type === 'forum') {
 				try {
-					threads.push(...(await listPostThreads(serverId, channel.id)));
+					threads.push(...(await listPostThreads(serverId, channel.id, rev)));
 				} catch (e) {
 					if (e instanceof Aborted) throw e;
 				}

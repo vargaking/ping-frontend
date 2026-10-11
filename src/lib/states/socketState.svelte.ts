@@ -15,6 +15,7 @@ import {
 } from './messagesState.svelte';
 import { forumState } from './forumState.svelte';
 import { serverImportState } from './serverImportState.svelte';
+import { refreshAfterImport } from './importRefresh';
 import { typingState } from './typingState.svelte';
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
@@ -663,11 +664,8 @@ class SocketState {
 	}
 
 	/** Every member sees what an import added; the owner's tab also shows the outcome. */
-	handleServerImportFinished({ server_id }: ServerImportFinishedFrame) {
-		serversState
-			.fetchServerChannels(server_id)
-			.catch((e) => console.warn('Failed to reload channels after an import', e));
-		serverImportState.refresh(server_id);
+	handleServerImportFinished(frame: ServerImportFinishedFrame) {
+		void refreshAfterImport(frame);
 	}
 
 	handleUserUpdate(user: User) {

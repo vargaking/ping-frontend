@@ -24,4 +24,6 @@ export type ThreadSync = {
 	/** Where the walk towards the oldest message continues. */
 	olderCursor: string | null;
 	complete: boolean;
+	/** Import revision of the channel when this thread was walked; null for DMs and channels never imported into. Absent on older rows. */
+	rev?: number | null;
 };

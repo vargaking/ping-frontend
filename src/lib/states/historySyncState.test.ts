@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, localHistoryReady } from '$lib/utils/db';
-import { runHistorySync, type HistorySyncOptions } from '$lib/utils/historySync';
+import {
+	forgetSyncedChannels,
+	runHistorySync,
+	type HistorySyncOptions
+} from '$lib/utils/historySync';
 import { historyStatusLabel, historySyncState } from './historySyncState.svelte';
 import type { Channel } from '$lib/types/channel.types';
 import { serversState } from './serversState.svelte';
@@ -13,9 +17,13 @@ vi.mock('$lib/utils/db', () => ({
 	localHistoryAvailable: true,
 	localHistoryReady: vi.fn()
 }));
-vi.mock('$lib/utils/historySync', () => ({ runHistorySync: vi.fn() }));
+vi.mock('$lib/utils/historySync', () => ({
+	runHistorySync: vi.fn(),
+	forgetSyncedChannels: vi.fn()
+}));
 
 const runMock = vi.mocked(runHistorySync);
+const forgetMock = vi.mocked(forgetSyncedChannels);
 const readyMock = vi.mocked(localHistoryReady);
 const syncRowsMock = vi.mocked(db.threadSync.toArray);
 
@@ -42,11 +50,14 @@ beforeEach(() => {
 	runMock.mockResolvedValue(undefined);
 	readyMock.mockReset();
 	readyMock.mockResolvedValue(true);
+	forgetMock.mockReset();
+	forgetMock.mockResolvedValue(undefined);
 	syncRowsMock.mockReset();
 	syncRowsMock.mockResolvedValue([]);
 	vi.stubGlobal('navigator', { locks: undefined });
 	serversState.servers = { 1: { id: 1, name: 'one' }, 2: { id: 2, name: 'two' } };
 	serversState.selectedServerId = 2;
+	serversState.loaded = true;
 });
 
 afterEach(async () => {
@@ -316,5 +327,115 @@ describe('run rate', () => {
 describe('historyStatusLabel', () => {
 	it('waits before anything was reported', () => {
 		expect(historyStatusLabel()).toBe('Message history: waiting');
+	});
+});
+
+describe('forgetChannels', () => {
+	it('aborts a run in flight, waits for it, then deletes and starts a new run', async () => {
+		const order: string[] = [];
+		let signal!: AbortSignal;
+		runMock.mockImplementationOnce(async (options) => {
+			signal = options.signal;
+			await new Promise<void>((resolve) =>
+				options.signal.addEventListener('abort', () => resolve(), { once: true })
+			);
+			order.push('run ended');
+		});
+		forgetMock.mockImplementation(async () => {
+			order.push('forgot');
+		});
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(historySyncState.status).toBe('running');
+
+		await historySyncState.forgetChannels(1, [4, 5]);
+
+		expect(signal.aborted).toBe(true);
+		expect(order).toEqual(['run ended', 'forgot']);
+		expect(forgetMock).toHaveBeenCalledExactlyOnceWith(1, [4, 5]);
+		expect(runMock).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('starts after the start delay even within the gap since the last run', async () => {
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(1);
+
+		await historySyncState.forgetChannels(1, null);
+		await vi.advanceTimersByTimeAsync(2999);
+		expect(runMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+
+		expect(forgetMock).toHaveBeenCalledExactlyOnceWith(1, null);
+		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('leaves the run to the layout while the server list has not loaded', async () => {
+		serversState.loaded = false;
+
+		await historySyncState.forgetChannels(1, [4]);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(forgetMock).toHaveBeenCalledExactlyOnceWith(1, [4]);
+		expect(runMock).not.toHaveBeenCalled();
+	});
+
+	it('goes from done back to idle', async () => {
+		runMock.mockImplementationOnce(async (options) => {
+			options.onProgress?.({ threads: 1, complete: 1 });
+		});
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(historySyncState.status).toBe('done');
+
+		await historySyncState.forgetChannels(1, [4]);
+
+		expect(historySyncState.status).toBe('idle');
+	});
+
+	it('starts nothing when stopped while waiting for the run in flight', async () => {
+		runMock.mockImplementationOnce(
+			(options) =>
+				new Promise<void>((resolve) =>
+					options.signal.addEventListener('abort', () => resolve(), { once: true })
+				)
+		);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		const forgetting = historySyncState.forgetChannels(1, [4]);
+		await historySyncState.stop();
+		await forgetting;
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(forgetMock).not.toHaveBeenCalled();
+		expect(runMock).toHaveBeenCalledTimes(1);
+		expect(historySyncState.status).toBe('idle');
+	});
+
+	it('starts nothing when stopped while deleting the sync rows', async () => {
+		let finishForget!: () => void;
+		forgetMock.mockImplementation(() => new Promise<void>((resolve) => (finishForget = resolve)));
+
+		const forgetting = historySyncState.forgetChannels(1, [4]);
+		await historySyncState.stop();
+		finishForget();
+		await forgetting;
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(runMock).not.toHaveBeenCalled();
+	});
+
+	it('still starts a run when deleting fails', async () => {
+		forgetMock.mockRejectedValue(new Error('quota'));
+
+		await historySyncState.forgetChannels(1, [4]);
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(warn).toHaveBeenCalled();
+		expect(runMock).toHaveBeenCalledTimes(1);
 	});
 });
