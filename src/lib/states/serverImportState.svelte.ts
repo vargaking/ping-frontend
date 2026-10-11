@@ -16,7 +16,8 @@ import {
 	fileProblem,
 	mappingPayload,
 	mergeImportFrame,
-	pollInterval
+	pollInterval,
+	UPLOAD_ACTIVE_MS
 } from '$lib/utils/serverImport';
 import {
 	abortableSleep,
@@ -73,6 +74,8 @@ class ServerImportState {
 	private loadSeq = new Map<number, number>();
 	private polls = new Map<number, { timer: ReturnType<typeof setInterval>; ms: number }>();
 	private watchers = new Map<number, number>();
+	/** Our own upload that just stopped; the server keeps calling it active for a while. */
+	private justStopped = new Map<number, { id: Import['id']; until: number }>();
 	private guarding = false;
 
 	of(serverId: number): ServerImportEntry {
@@ -135,6 +138,10 @@ class ServerImportState {
 
 	private store(serverId: number, value: Import | null) {
 		const entry = this.ensure(serverId);
+		const stopped = this.justStopped.get(serverId);
+		if (value?.upload_active && stopped?.id === value.id && Date.now() < stopped.until) {
+			value = { ...value, upload_active: false };
+		}
 		entry.import = value;
 		this.syncPolling(serverId);
 	}
@@ -259,7 +266,10 @@ class ServerImportState {
 			{
 				uploadPiece: (offset, piece, signal) =>
 					uploadImportPiece(serverId, target.id, offset, piece, signal),
-				fetchImport: async () => (await getServerImport(serverId)).import,
+				fetchImport: async () => {
+					const current = (await getServerImport(serverId)).import;
+					return current?.id === target.id ? current : null;
+				},
 				describeError: normalizeError,
 				sleep: abortableSleep,
 				now: () => performance.now()
@@ -303,11 +313,14 @@ class ServerImportState {
 				});
 			}
 			void this.load(serverId);
-		} else if (result.kind === 'superseded') {
-			if (result.import?.id !== target.id) entry.error = UPLOAD_DISCARDED;
+		} else if (result.kind === 'superseded' && result.import) {
 			this.storeAnswer(serverId, result.import);
+		} else if (result.kind === 'superseded') {
+			entry.error = UPLOAD_DISCARDED;
+			await this.load(serverId);
 		} else {
 			if (result.kind === 'stopped') entry.error = result.error;
+			this.justStopped.set(serverId, { id: target.id, until: Date.now() + UPLOAD_ACTIVE_MS });
 			await this.load(serverId);
 		}
 		this.endSession(serverId);
@@ -383,6 +396,7 @@ class ServerImportState {
 		if (poll) clearInterval(poll.timer);
 		this.polls.delete(serverId);
 		this.watchers.delete(serverId);
+		this.justStopped.delete(serverId);
 		this.loadSeq.delete(serverId);
 		delete this.entries[serverId];
 		this.syncUnloadGuard();

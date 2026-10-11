@@ -17,6 +17,8 @@ export const isWorking = (status: Import['status'] | undefined): boolean =>
 
 export const POLL_MS = 15_000;
 export const WATCH_MS = 5_000;
+/** How long the server keeps calling an upload active after its last piece. */
+export const UPLOAD_ACTIVE_MS = 30_000;
 
 /**
  * How often to refetch the import, or null for not at all. A tab that isn't sending

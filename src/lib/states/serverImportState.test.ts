@@ -335,6 +335,41 @@ describe('upload', () => {
 		expect(serverImportState.of(SERVER).upload).toBeNull();
 	});
 
+	it('stops at once when a resync finds a different upload', async () => {
+		requests.create.mockResolvedValue(created);
+		const { AxiosError } = await import('axios');
+		requests.piece.mockRejectedValue(
+			new AxiosError('x', '409', undefined, undefined, {
+				status: 409,
+				data: { detail: 'This import is not waiting for data' }
+			} as never)
+		);
+		const other = { ...created, id: 'imp-2', received: 5, upload_active: true };
+		requests.get.mockResolvedValue(serve(other));
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).error).toBe(UPLOAD_DISCARDED);
+		expect(serverImportState.of(SERVER).import?.id).toBe('imp-2');
+		expect(requests.piece).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not take its own stopped upload for one from another device', async () => {
+		requests.create.mockResolvedValue(created);
+		requests.get.mockResolvedValue(serve({ ...created, upload_active: true }));
+		const { AxiosError } = await import('axios');
+		requests.piece.mockRejectedValue(
+			new AxiosError('x', '413', undefined, undefined, {
+				status: 413,
+				data: { detail: 'The piece is larger than the limit (1 KB)' }
+			} as never)
+		);
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).import?.upload_active).toBe(false);
+	});
+
 	it('stops with the server message on a 413', async () => {
 		requests.create.mockResolvedValue(created);
 		requests.get.mockResolvedValue(serve(created));
