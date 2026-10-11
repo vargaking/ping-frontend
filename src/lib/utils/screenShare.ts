@@ -6,30 +6,44 @@ export type ScreenContent = 'detail' | 'motion';
 
 export const SCREEN_PRESETS: Record<
 	ScreenPresetId,
-	{ label: string; preset: VideoPreset; layers: VideoPreset[] }
+	{ label: string; preset: VideoPreset; upperLayers: VideoPreset[] }
 > = {
 	'720p30': {
 		label: '720p 30fps',
 		preset: new VideoPreset(1280, 720, 2_500_000, 30),
-		layers: [ScreenSharePresets.h360fps15]
+		upperLayers: []
 	},
 	'1080p30': {
 		label: '1080p 30fps',
 		preset: new VideoPreset(1920, 1080, 4_500_000, 30),
-		layers: [ScreenSharePresets.h360fps15, ScreenSharePresets.h720fps30]
+		upperLayers: [ScreenSharePresets.h720fps30]
 	},
 	'1080p60': {
 		label: '1080p 60fps',
 		preset: new VideoPreset(1920, 1080, 7_000_000, 60),
-		layers: [ScreenSharePresets.h360fps15, ScreenSharePresets.h720fps30]
+		upperLayers: [ScreenSharePresets.h720fps30]
 	}
 };
 
-export function screenPublishOptions(id: ScreenPresetId): TrackPublishOptions {
-	const { preset, layers } = SCREEN_PRESETS[id];
+const BOTTOM_LAYER: Record<ScreenContent, VideoPreset> = {
+	detail: ScreenSharePresets.h360fps15,
+	motion: new VideoPreset(640, 360, 600_000, 30, 'medium')
+};
+
+const DEGRADATION: Record<ScreenContent, RTCDegradationPreference> = {
+	detail: 'maintain-resolution',
+	motion: 'maintain-framerate'
+};
+
+export function screenPublishOptions(
+	id: ScreenPresetId,
+	content: ScreenContent
+): TrackPublishOptions {
+	const { preset, upperLayers } = SCREEN_PRESETS[id];
 	return {
 		screenShareEncoding: preset.encoding,
-		screenShareSimulcastLayers: layers,
+		screenShareSimulcastLayers: [BOTTOM_LAYER[content], ...upperLayers],
+		degradationPreference: DEGRADATION[content],
 		simulcast: true
 	};
 }

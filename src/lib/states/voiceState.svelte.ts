@@ -145,7 +145,7 @@ class VoiceState {
 	// Bumped by every join, rejoin and leave so superseded async work can tell.
 	private generation = 0;
 	private swappingScreen = false;
-	private pendingScreenPreset: ScreenPresetId | null = null;
+	private screenRepublishQueued = false;
 	// Removal of a remote screen tile is delayed so a republished track can replace it in place.
 	private screenRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 	// The saved device is unplugged and the call is on the default one instead.
@@ -576,7 +576,7 @@ class VoiceState {
 					systemAudio: 'include',
 					suppressLocalAudioPlayback: true
 				},
-				screenPublishOptions(voiceSettingsState.screenPreset)
+				screenPublishOptions(voiceSettingsState.screenPreset, voiceSettingsState.screenContent)
 			);
 			const video = this.localScreenTrack;
 			if (gen === this.generation && this.sharing && video) {
@@ -609,23 +609,26 @@ class VoiceState {
 	/** Republishes the same capture under the new preset's encodings, so viewers get real layers. */
 	async setScreenQuality(id: ScreenPresetId) {
 		voiceSettingsState.save({ screenPreset: id });
+		await this.republishScreenWithSettings();
+	}
+
+	private async republishScreenWithSettings() {
 		if (!this.localScreenTrack) return;
 		if (this.swappingScreen) {
-			this.pendingScreenPreset = id;
+			this.screenRepublishQueued = true;
 			return;
 		}
 		this.swappingScreen = true;
-		let next: ScreenPresetId | null = id;
-		while (next) {
-			this.pendingScreenPreset = null;
-			if (!(await this.republishScreen(next))) break;
-			next = this.pendingScreenPreset;
-		}
-		this.pendingScreenPreset = null;
+		do {
+			this.screenRepublishQueued = false;
+			const { screenPreset, screenContent } = voiceSettingsState;
+			if (!(await this.republishScreen(screenPreset, screenContent))) break;
+		} while (this.screenRepublishQueued);
+		this.screenRepublishQueued = false;
 		this.swappingScreen = false;
 	}
 
-	private async republishScreen(id: ScreenPresetId): Promise<boolean> {
+	private async republishScreen(id: ScreenPresetId, content: ScreenContent): Promise<boolean> {
 		const lp = this.room?.localParticipant;
 		const track = this.localScreenTrack;
 		if (!lp || !track) return false;
@@ -642,7 +645,7 @@ class VoiceState {
 			next.source = Track.Source.ScreenShare;
 			await lp.publishTrack(next, {
 				source: Track.Source.ScreenShare,
-				...screenPublishOptions(id)
+				...screenPublishOptions(id, content)
 			});
 			return true;
 		} catch (err) {
@@ -660,10 +663,12 @@ class VoiceState {
 		}
 	}
 
-	setScreenContent(content: ScreenContent) {
+	/** The degradation preference and bottom layer are publish options, so a live share is republished. */
+	async setScreenContent(content: ScreenContent) {
 		voiceSettingsState.save({ screenContent: content });
 		const track = this.localScreenTrack;
 		if (track) track.mediaStreamTrack.contentHint = content;
+		await this.republishScreenWithSettings();
 	}
 
 	async setInputDevice(deviceId: string) {
@@ -734,7 +739,7 @@ class VoiceState {
 		this.screenRemovals.forEach((timer) => clearTimeout(timer));
 		this.screenRemovals.clear();
 		this.swappingScreen = false;
-		this.pendingScreenPreset = null;
+		this.screenRepublishQueued = false;
 		this.screens = new SvelteMap();
 		this.departed = new SvelteSet();
 		this.sharing = false;
