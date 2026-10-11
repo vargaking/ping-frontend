@@ -46,6 +46,7 @@ export default defineConfig({
 			'/server-requests': `http://${process.env.LOCAL_IP}:8000`,
 			'/media': `http://${process.env.LOCAL_IP}:8000`,
 			'/attachments': `http://${process.env.LOCAL_IP}:8000`,
+			'/whats-new': `http://${process.env.LOCAL_IP}:8000`,
 			'/ws': { target: `ws://${process.env.LOCAL_IP}:8000`, ws: true }
 		}
 	}

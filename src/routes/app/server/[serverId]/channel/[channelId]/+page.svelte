@@ -67,6 +67,7 @@
 					db.messages.where({ server_id: serverId, channel_id: channelId }).sortBy('timestamp')}
 				emptyDescription="Be the first to say something in this channel."
 				errorDescription="There was a problem reading this channel."
+				beginningLabel={channel ? `Beginning of #${channel.name}` : 'Beginning of this channel'}
 				jumpTo={page.url.searchParams.get(JUMP_PARAM)}
 				onJumped={() => clearJumpParam(page.url)}
 			/>

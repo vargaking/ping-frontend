@@ -6,12 +6,13 @@
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
 	import type { MessageTarget, MessageType } from '$lib/types/messages.types';
 	import type { MessagePage } from '$lib/requests/channels/getChannelMessages';
 	import { messagesState } from '$lib/states/messagesState.svelte';
 	import { normalizeError } from '$lib/requests/errors';
 	import { db } from '$lib/utils/db';
-	import { tick, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { ArrowDown, MessagesSquare } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
@@ -35,6 +36,7 @@
 		type SeenMarker
 	} from '$lib/utils/jumpToLatest';
 	import { hasEscapeLayer, isEditable } from '$lib/utils/openLayer';
+	import { NEAR_TOP_PX, OlderHistory } from '$lib/utils/olderHistory.svelte';
 
 	type Props = {
 		/** messagesState key of the thread shown (see threadKey). */
@@ -47,6 +49,8 @@
 		readCache: () => Promise<MessageType[]>;
 		emptyDescription: string;
 		errorDescription: string;
+		/** Shown above the first message once all older history is loaded, e.g. "Beginning of #general". */
+		beginningLabel: string;
 		/** When set, a 404 calls this instead of falling back to the cache. */
 		onNotFound?: () => void;
 		/** False when something else marks the thread read (a forum post is read with its channel). */
@@ -64,6 +68,7 @@
 		readCache,
 		emptyDescription,
 		errorDescription,
+		beginningLabel,
 		onNotFound,
 		trackRead = true,
 		jumpTo = null,
@@ -78,10 +83,8 @@
 	// The jump (thread and message) already carried out, so each value jumps once.
 	let jumpDone: string | null = null;
 
-	// Cursor for the next older page, and a guard so overlapping scrolls don't
-	// fire two history loads at once.
+	// Cursor for the next older page.
 	let nextCursor = $state<string | null>(null);
-	let loadingOlder = $state(false);
 
 	// Id of the newest message we've already scrolled to, so a live message at
 	// the bottom pins the view but prepending older history never does.
@@ -108,8 +111,11 @@
 	let opening = false;
 	let openingTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Set once the component is torn down; whatever was still in flight must then do nothing.
+	let destroyed = false;
+
 	// The list shows the IndexedDB cache because the API failed.
-	let fromCache = false;
+	let fromCache = $state(false);
 	// Older pages may hold edits or deletes we missed; they are dropped once back at the bottom.
 	let staleOlder = false;
 
@@ -123,6 +129,7 @@
 		if (smoothJumping && !isAtBottom(el)) return;
 		stopSmoothJump();
 		farFromBottom = isFarFromBottom(el);
+		void older.request();
 		if (el.clientHeight !== viewHeight) return;
 		stickToBottom = isAtBottom(el);
 		if (stickToBottom && staleOlder && !resyncing) void resync();
@@ -267,10 +274,12 @@
 		opening = true;
 		if (openingTimer) clearTimeout(openingTimer);
 		tick().then(() => {
+			if (destroyed) return;
 			scrollToBottom();
 			openingTimer = setTimeout(() => {
 				if (stickToBottom) scrollToBottom();
 				opening = false;
+				void older.request();
 			}, 100);
 		});
 	}
@@ -278,6 +287,7 @@
 	async function loadMessages(key: string) {
 		const token = ++loadToken;
 		nextCursor = null;
+		older.reset();
 		messagesState.beginNewestLoad(key);
 
 		// Only flash the skeleton on a first visit, when there's nothing cached
@@ -327,61 +337,53 @@
 		}
 	}
 
-	async function loadOlder() {
-		if (loadingOlder || opening) return;
-		if (!messagesState.hasMore(threadKey) || !nextCursor) return;
-
+	// Pins the view to the same messages across a change at the top of the list, such as a page
+	// arriving or placeholder rows appearing or going away. At the bottom it stays at the bottom.
+	// It sets an absolute offset, so it gives the same result with or without the browser's own
+	// scroll anchoring. With `revealTop`, a view parked at the very top stays there so rows added
+	// above the messages are seen rather than pushed out of view.
+	async function keepView(change: () => void, { revealTop = false } = {}) {
 		const el = messageWrapper;
-		// The top sentinel stays permanently in view while the loaded history is
-		// too short to overflow the viewport, which would otherwise make the
-		// observer drain every page back-to-back the moment a thread opens. Only
-		// auto-load older history once the list is actually scrollable and the
-		// user has scrolled near the top — i.e. there's a real "scroll up" gesture.
-		if (el) {
-			const scrollable = el.scrollHeight - el.clientHeight;
-			const OVERFLOW_SLACK = 4; // ignore sub-pixel rounding
-			if (scrollable <= OVERFLOW_SLACK) return;
-			if (el.scrollTop > 150) return;
-		}
-
-		await fetchOlder();
+		const prevHeight = el?.scrollHeight ?? 0;
+		const prevTop = el?.scrollTop ?? 0;
+		change();
+		await tick();
+		if (!el || destroyed) return;
+		if (revealTop && prevTop <= 1) el.scrollTop = prevTop;
+		else if (stickToBottom) scrollToBottom();
+		else el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
 	}
 
-	let olderInFlight: Promise<void> | null = null;
-
-	function fetchOlder(): Promise<void> {
-		olderInFlight ??= loadOlderPage().finally(() => (olderInFlight = null));
-		return olderInFlight;
-	}
-
-	async function loadOlderPage() {
-		const key = threadKey;
-		const el = messageWrapper;
-		loadingOlder = true;
-
-		try {
-			const pageData = await fetchPage(nextCursor);
-			if (key !== threadKey) return;
-
+	const older = new OlderHistory<MessagePage>({
+		metrics: () => messageWrapper ?? null,
+		available: () =>
+			!destroyed &&
+			!opening &&
+			loadedKey === threadKey &&
+			messagesState.hasMore(threadKey) &&
+			nextCursor != null,
+		fetch: () => fetchPage(nextCursor),
+		apply(pageData) {
 			const olderAscending = [...pageData.messages].reverse();
-			const prevHeight = el?.scrollHeight ?? 0;
-			const prevTop = el?.scrollTop ?? 0;
-			messagesState.prependOlder(key, olderAscending, pageData.has_more);
+			const before = messagesState.messages(threadKey).length;
+			messagesState.prependOlder(threadKey, olderAscending, pageData.has_more);
 			nextCursor = pageData.next_cursor;
 			db.messages
 				.bulkPut(olderAscending)
 				.catch((e) => console.warn('Failed to cache older messages', e));
+			return messagesState.messages(threadKey).length - before;
+		},
+		keepView
+	});
 
-			// Keep the viewport pinned to the same message: prepending taller
-			// content on top would otherwise make the view jump.
-			await tick();
-			if (el) el.scrollTop = prevTop + (el.scrollHeight - prevHeight);
-		} catch (e) {
-			console.error('Failed to load older messages', e);
-		} finally {
-			loadingOlder = false;
-		}
-	}
+	onDestroy(() => {
+		destroyed = true;
+		loadToken++;
+		older.reset();
+		if (openingTimer) clearTimeout(openingTimer);
+		openingTimer = null;
+		stopSmoothJump();
+	});
 
 	let resyncing: Promise<void> | null = null;
 
@@ -394,7 +396,7 @@
 	async function resyncThread() {
 		const key = threadKey;
 		if (loadState !== 'ready' || fromCache) return loadMessages(key);
-		if (olderInFlight) await olderInFlight;
+		await older.idle();
 		if (key !== threadKey) return;
 
 		const token = ++loadToken;
@@ -512,10 +514,12 @@
 		const key = threadKey;
 		for (let pages = 0; !isLoaded(id) && pages < maxPages; pages++) {
 			if (!messagesState.hasMore(key) || !nextCursor) break;
-			const cursor = nextCursor;
-			await fetchOlder();
-			if (key !== threadKey) return;
-			if (nextCursor === cursor) break; // the page failed to load
+			const result = await older.load();
+			if (key !== threadKey || destroyed) return;
+			if (!result.ok) {
+				toast.error("Couldn't load older messages");
+				return;
+			}
 		}
 
 		if (!isLoaded(id)) {
@@ -597,16 +601,16 @@
 		untrack(() => resync());
 	});
 
-	// Load older history when the top of the list scrolls into view.
+	// Also ask for older history when the top of the list scrolls into view; scrolling covers the rest.
 	$effect(() => {
 		const root = messageWrapper;
 		const sentinel = topSentinel;
 		if (!root || !sentinel) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0]?.isIntersecting) loadOlder();
+				if (entries[0]?.isIntersecting) void older.request();
 			},
-			{ root, rootMargin: '150px 0px 0px 0px' }
+			{ root, rootMargin: `${NEAR_TOP_PX}px 0px 0px 0px` }
 		);
 		observer.observe(sentinel);
 		return () => observer.disconnect();
@@ -784,6 +788,24 @@
 				class="flex flex-col gap-[18px] px-8 pt-6 pb-2 select-text max-md:px-3 pointer-coarse:select-none"
 			>
 				<div bind:this={topSentinel} aria-hidden="true"></div>
+				{#if older.slow}
+					<LoadingList rows={3} avatar label="Loading older messages…" />
+				{:else if older.failed}
+					<div
+						class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px] text-text-subtle"
+						role="alert"
+					>
+						<span>Couldn't load older messages</span>
+						<Button
+							variant="secondary"
+							size="sm"
+							disabled={older.loading}
+							onclick={() => void older.request(true)}>Retry</Button
+						>
+					</div>
+				{:else if !older.loading && !fromCache && !messagesState.hasMore(threadKey)}
+					<p class="text-center text-[13px] text-text-subtle">{beginningLabel}</p>
+				{/if}
 				{#each items as item (item.key)}
 					{#if item.kind === 'date'}
 						<DateDivider label={item.label} />

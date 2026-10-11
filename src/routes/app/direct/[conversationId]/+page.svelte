@@ -55,6 +55,9 @@
 			readCache={() => db.messages.where({ conversation_id: id }).sortBy('timestamp')}
 			emptyDescription="Send the first message."
 			errorDescription="There was a problem reading this conversation."
+			beginningLabel={otherUser
+				? `Beginning of your conversation with ${otherUser.username}`
+				: 'Beginning of your conversation'}
 			onNotFound={fallBack}
 			jumpTo={page.url.searchParams.get(JUMP_PARAM)}
 			onJumped={() => clearJumpParam(page.url)}
