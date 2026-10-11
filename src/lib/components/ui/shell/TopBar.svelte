@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { Menu, Search } from 'lucide-svelte';
+	import { Menu, Search, Sparkles } from 'lucide-svelte';
 	import Logo from '$lib/components/brand/Logo.svelte';
 	import { frameless } from '$lib/desktop';
 	import SearchDialog from '$lib/components/search/SearchDialog.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index';
+	import WhatsNewPanel from '$lib/components/whatsNew/WhatsNewPanel.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
@@ -68,14 +70,34 @@
 	<!-- Centre: the search bar, from md up -->
 	<div class="hidden justify-self-center md:block"><SearchBar /></div>
 
-	<!-- Right: the search button on a phone, where the bar has no room -->
-	<button
-		type="button"
-		aria-label="Search"
-		title="Search (Ctrl K)"
-		onclick={() => overlayState.open(SearchDialog)}
-		class="flex h-9 w-9 items-center justify-center justify-self-end rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none md:hidden"
-	>
-		<Search size={18} strokeWidth={1.75} />
-	</button>
+	<!-- Right: What's new, and the search button on a phone, where the bar has no room -->
+	<div class="flex items-center justify-self-end">
+		<Tooltip.Provider>
+			<Tooltip.Root delayDuration={300} disabled={phoneState.touch}>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<button
+							{...props}
+							type="button"
+							aria-label="What's new"
+							onclick={() => overlayState.open(WhatsNewPanel)}
+							class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+						>
+							<Sparkles size={18} strokeWidth={1.75} />
+						</button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content side="bottom" sideOffset={6}>What's new</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
+		<button
+			type="button"
+			aria-label="Search"
+			title="Search (Ctrl K)"
+			onclick={() => overlayState.open(SearchDialog)}
+			class="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none md:hidden"
+		>
+			<Search size={18} strokeWidth={1.75} />
+		</button>
+	</div>
 </header>
