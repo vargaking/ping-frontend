@@ -3,16 +3,17 @@ import { newUser, registerUser } from './helpers';
 
 const NEWEST_TITLE = 'Catching up is quicker';
 
-/** The button reads "What's new" until the state has loaded too, so wait for it. */
+function newPills(page: Page) {
+	return page.getByText('New', { exact: true });
+}
+
 function stateLoaded(page: Page) {
 	return page.waitForResponse(
 		(r) => r.url().endsWith('/whats-new/state') && r.request().method() === 'GET'
 	);
 }
 
-test('the dot shows for unseen entries and clears once the panel was opened', async ({
-	browser
-}) => {
+test('unseen entries carry New until the panel was opened', async ({ browser }) => {
 	const { context, page, user } = await newUser(browser);
 
 	await Promise.all([stateLoaded(page), page.goto('/app/')]);
@@ -24,9 +25,10 @@ test('the dot shows for unseen entries and clears once the panel was opened', as
 	expect(stored.ok()).toBe(true);
 	await page.reload();
 
-	await page.getByRole('button', { name: "What's new, new updates", exact: true }).click();
+	await page.getByRole('button', { name: "What's new", exact: true }).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
 	await expect(page.getByRole('heading', { name: NEWEST_TITLE })).toBeVisible();
+	await expect(newPills(page).first()).toBeVisible();
 
 	await page.getByRole('button', { name: "Close what's new", exact: true }).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeHidden();
@@ -36,7 +38,9 @@ test('the dot shows for unseen entries and clears once the panel was opened', as
 		'2026-10-10-2'
 	);
 	await Promise.all([stateLoaded(page), page.reload()]);
-	await expect(page.getByRole('button', { name: "What's new", exact: true })).toBeVisible();
+	await page.getByRole('button', { name: "What's new", exact: true }).click();
+	await expect(page.getByRole('heading', { name: NEWEST_TITLE })).toBeVisible();
+	await expect(newPills(page)).toHaveCount(0);
 
 	const other = await browser.newContext();
 	const login = await other.request.post('/auth/login', {
@@ -45,7 +49,9 @@ test('the dot shows for unseen entries and clears once the panel was opened', as
 	expect(login.ok()).toBe(true);
 	const otherPage = await other.newPage();
 	await Promise.all([stateLoaded(otherPage), otherPage.goto('/app/')]);
-	await expect(otherPage.getByRole('button', { name: "What's new", exact: true })).toBeVisible();
+	await otherPage.getByRole('button', { name: "What's new", exact: true }).click();
+	await expect(otherPage.getByRole('heading', { name: NEWEST_TITLE })).toBeVisible();
+	await expect(newPills(otherPage)).toHaveCount(0);
 	await other.close();
 });
 
@@ -61,7 +67,7 @@ test.describe('on a phone', () => {
 
 		await page.goto('/app/direct/');
 		const url = page.url();
-		await page.getByRole('button', { name: "What's new, new updates", exact: true }).tap();
+		await page.getByRole('button', { name: "What's new", exact: true }).tap();
 
 		const heading = page.getByRole('heading', { name: "What's new", level: 1 });
 		await expect(heading).toBeVisible();
