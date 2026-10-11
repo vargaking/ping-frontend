@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('livekit-client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('livekit-client')>()),
@@ -15,6 +15,7 @@ vi.mock('$lib/requests/voice/refreshVoicePresence', () => ({
 
 import { voiceState } from './voiceState.svelte';
 import { voiceSettingsState } from './voiceSettingsState.svelte';
+import { usersState } from './usersState.svelte';
 
 function fakeRoom(disconnect: () => Promise<void>) {
 	const stopMic = vi.fn();
@@ -57,6 +58,67 @@ describe('voiceState.leaveVoice', () => {
 
 		expect(voiceState.channelId).toBeNull();
 		expect(voiceState.serverId).toBeNull();
+	});
+});
+
+describe('voiceState.joinVoice self state', () => {
+	function stubConnect() {
+		const store = new Map<string, string>();
+		vi.stubGlobal('localStorage', {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => void store.set(key, value)
+		});
+		const seen: { muted: boolean; deafened: boolean; stored: string | null }[] = [];
+		const spy = vi
+			.spyOn(voiceState as unknown as { connect: () => Promise<void> }, 'connect')
+			.mockImplementation(async () => {
+				seen.push({
+					muted: voiceState.muted,
+					deafened: voiceState.deafened,
+					stored: localStorage.getItem('voice.selfState')
+				});
+			});
+		return { seen, spy };
+	}
+
+	function signedIn() {
+		usersState.loggedInUser = { id: 1 } as typeof usersState.loggedInUser;
+	}
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		usersState.loggedInUser = null;
+	});
+
+	it.each([
+		{ saved: { muted: true, deafened: true }, options: { muted: false, deafened: false } },
+		{ saved: { muted: false, deafened: false }, options: { muted: true, deafened: false } },
+		{ saved: { muted: true, deafened: true }, options: { muted: true, deafened: false } }
+	])(
+		'applies and saves $options over $saved after leaving the previous call',
+		async ({ saved, options }) => {
+			signedIn();
+			const { room } = fakeRoom(async () => {});
+			Object.assign(voiceState, { room, channelId: 5, serverId: 1, ...saved });
+			const { seen } = stubConnect();
+
+			await voiceState.joinVoice(1, 6, options);
+
+			expect(seen).toEqual([{ ...options, stored: JSON.stringify(options) }]);
+			expect(voiceState.channelId).toBe(6);
+			expect(room.disconnect).toHaveBeenCalledOnce();
+		}
+	);
+
+	it('keeps the saved state when no options are given', async () => {
+		signedIn();
+		Object.assign(voiceState, { room: null, muted: true, deafened: true });
+		const { seen } = stubConnect();
+
+		await voiceState.joinVoice(1, 6);
+
+		expect(seen).toEqual([expect.objectContaining({ muted: true, deafened: true })]);
 	});
 });
 

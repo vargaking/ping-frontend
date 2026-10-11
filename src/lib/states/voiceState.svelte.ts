@@ -850,12 +850,22 @@ class VoiceState {
 		await this.setSelfState({ muted: this.muted, deafened: !this.deafened });
 	}
 
-	async joinVoice(serverId: number, channelId: number) {
+	/** Joins a channel. `options` replaces the saved mute and deafen choice for this join. */
+	async joinVoice(
+		serverId: number,
+		channelId: number,
+		options?: { muted?: boolean; deafened?: boolean }
+	) {
 		if (!usersState.loggedInUser) return;
 
 		// Already connected somewhere: leave first. Leaving bumps the generation,
 		// so this attempt's own is taken afterwards.
 		if (this.room) await this.leaveVoice();
+		if (options) {
+			this.muted = options.muted ?? this.muted;
+			this.deafened = options.deafened ?? this.deafened;
+			this.persistSelfState();
+		}
 		const gen = ++this.generation;
 
 		this.connecting = true;
