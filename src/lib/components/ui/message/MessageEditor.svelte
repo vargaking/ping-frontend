@@ -6,13 +6,13 @@
 	import { mount, unmount, untrack } from 'svelte';
 	import MentionList from '$lib/components/ui/MentionList.svelte';
 	import type { User } from '$lib/types/auth.types';
-	import { usersState } from '$lib/states/usersState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { contentExtensions } from '$lib/editor/extensions';
 	import { closeFencedCode, openFencedCode } from '$lib/editor/fenceShortcuts';
 	import { MarkdownLinks } from '$lib/editor/markdownLinks';
 	import { MarkdownPaste } from '$lib/editor/markdownPaste';
 	import { withoutTrailingEmptyParagraphs } from '$lib/editor/trimDocument';
+	import { mentionSuggestions } from '$lib/utils/mentions';
 
 	let {
 		content = '',
@@ -22,6 +22,7 @@
 		allowEmpty = false,
 		editorClass = '',
 		mentionCandidates,
+		onMentionStart,
 		onSubmit,
 		onChange,
 		onCancel,
@@ -36,6 +37,8 @@
 		editorClass?: string;
 		/** Who the @mention list can suggest; without it there are no suggestions. */
 		mentionCandidates?: () => User[];
+		/** Called when the mention list opens, to bring the candidates up to date. */
+		onMentionStart?: () => void;
 		onSubmit: (json: JSONContent) => void;
 		/** Called after every edit to the content. */
 		onChange?: (json: JSONContent) => void;
@@ -44,6 +47,7 @@
 	} = $props();
 
 	let element: HTMLElement;
+	const suggest = (query: string) => mentionSuggestions(mentionCandidates?.() ?? [], query);
 	let editor: Editor | null = $state(null);
 
 	export function submit() {
@@ -144,24 +148,23 @@
 						class: 'bg-primary/15 text-primary font-semibold px-1.5 py-0.5 rounded-md'
 					},
 					suggestion: {
-						items: ({ query }) => {
-							return (mentionCandidates?.() ?? [])
-								.map((m) => usersState.users[m.id] ?? m)
-								.filter((item) => item.username.toLowerCase().startsWith(query.toLowerCase()))
-								.slice(0, 5);
-						},
+						items: ({ query }) => suggest(query),
 						render: () => {
 							let popup: Instance[];
 							let propsState = $state({
-								items: [] as User[],
+								query: '',
 								command: (() => {}) as (props: { id: string; label: string }) => void
 							});
+							// Derived from the query rather than taken from the plugin, so the open
+							// list follows members, names and access as they change.
+							const items = $derived(suggest(propsState.query));
 							let component: ReturnType<typeof mount>;
 
 							return {
 								onStart: (props) => {
-									propsState.items = props.items;
+									propsState.query = props.query;
 									propsState.command = props.command;
+									onMentionStart?.();
 
 									const targetDiv = document.createElement('div');
 									targetDiv.dataset.escapeLayer = '';
@@ -170,7 +173,10 @@
 										target: targetDiv,
 										props: {
 											get items() {
-												return propsState.items;
+												return items;
+											},
+											get query() {
+												return propsState.query;
 											},
 											get command() {
 												return propsState.command;
@@ -189,7 +195,7 @@
 									});
 								},
 								onUpdate: (props) => {
-									propsState.items = props.items;
+									propsState.query = props.query;
 									propsState.command = props.command;
 
 									popup[0].setProps({ getReferenceClientRect: props.clientRect as () => DOMRect });
