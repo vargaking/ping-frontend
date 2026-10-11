@@ -149,6 +149,11 @@ export async function sendMessageViaUi(page: Page, text: string) {
 	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
 	await composer.fill(text);
 	await composer.press('Enter');
+	await expectSent(page, text);
+}
+
+/** Waits until the message with this exact text is shown and the server has acknowledged it. */
+export async function expectSent(page: Page, text: string) {
 	const row = page
 		.locator('[data-message-id]')
 		.filter({ has: page.getByText(text, { exact: true }) });
