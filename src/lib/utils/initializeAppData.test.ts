@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
 	setLoggedInUser: vi.fn(),
 	fetchUserServers: vi.fn(),
 	loadServerChannels: vi.fn(),
-	fetchConversations: vi.fn()
+	fetchConversations: vi.fn(),
+	fetchFriends: vi.fn()
 }));
 
 vi.mock('$lib/requests/auth/me', () => ({ getMe: mocks.getMe }));
@@ -23,6 +24,10 @@ vi.mock('$lib/states/serversState.svelte', () => ({
 }));
 vi.mock('$lib/states/conversationsState.svelte', () => ({
 	conversationsState: { fetch: mocks.fetchConversations }
+}));
+
+vi.mock('$lib/states/friendsState.svelte', () => ({
+	friendsState: { fetch: mocks.fetchFriends }
 }));
 
 import { initializeAppData } from './initializeAppData';
@@ -58,12 +63,14 @@ describe('initializeAppData', () => {
 		mocks.getMe.mockResolvedValue({ id: 1, username: 'a' });
 		mocks.fetchUserServers.mockImplementation(never);
 		mocks.fetchConversations.mockImplementation(never);
+		mocks.fetchFriends.mockImplementation(never);
 
 		await expect(initializeAppData()).resolves.toBe('ok');
 		expect(mocks.setLoggedInUser).toHaveBeenCalledWith({ id: 1, username: 'a' });
 		expect(mocks.connect).toHaveBeenCalled();
 		expect(mocks.fetchUserServers).toHaveBeenCalled();
 		expect(mocks.fetchConversations).toHaveBeenCalled();
+		expect(mocks.fetchFriends).toHaveBeenCalled();
 		expect(localStorage.getItem('last_updated')).toBeNull();
 	});
 
@@ -72,6 +79,7 @@ describe('initializeAppData', () => {
 		mocks.fetchUserServers.mockResolvedValue([{ id: 4 }, { id: 9 }]);
 		mocks.loadServerChannels.mockResolvedValue([]);
 		mocks.fetchConversations.mockResolvedValue(undefined);
+		mocks.fetchFriends.mockResolvedValue(undefined);
 
 		await initializeAppData();
 		await vi.waitFor(() => expect(mocks.loadServerChannels).toHaveBeenCalledTimes(2));

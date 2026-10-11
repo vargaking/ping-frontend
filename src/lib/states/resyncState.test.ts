@@ -6,7 +6,9 @@ const servers = vi.hoisted(() => ({
 	loadRoster: vi.fn()
 }));
 vi.mock('./serversState.svelte', () => ({ serversState: servers }));
+const friends = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('./conversationsState.svelte', () => ({ conversationsState: { fetch: vi.fn() } }));
+vi.mock('./friendsState.svelte', () => ({ friendsState: friends }));
 vi.mock('$lib/utils/notificationSweep', () => ({ closeReadNotifications: vi.fn() }));
 
 import { ResyncState, refreshLists } from './resyncState.svelte';
@@ -75,6 +77,16 @@ describe('refreshLists', () => {
 			[8, 0]
 		]);
 		expect(servers.loadRoster.mock.calls).toEqual([[3], [8]]);
+	});
+
+	it('reloads the friends list', async () => {
+		servers.loadServerChannels.mockReset().mockResolvedValue([]);
+		servers.loadRoster.mockReset().mockResolvedValue([]);
+		friends.fetch.mockReset();
+
+		await refreshLists();
+
+		expect(friends.fetch).toHaveBeenCalledTimes(1);
 	});
 
 	it('still refreshes the other servers when one roster fails', async () => {

@@ -52,6 +52,9 @@ vi.mock('$lib/states/serversState.svelte', () => ({
 vi.mock('$lib/states/serverRequestState.svelte', () => ({
 	serverRequestState: { reset: mocks.step('serverRequest.reset') }
 }));
+vi.mock('$lib/states/friendsState.svelte', () => ({
+	friendsState: { reset: mocks.step('friends.reset') }
+}));
 vi.mock('$lib/states/overwritesState.svelte', () => ({
 	overwritesState: { reset: mocks.step('overwrites.reset') }
 }));
@@ -117,6 +120,7 @@ describe('clearSession', () => {
 			expect.arrayContaining([
 				'shareDialog.close',
 				'voicePresence.reset',
+				'friends.reset',
 				'reply.reset',
 				'messageEdit.stop',
 				'overlay.close'

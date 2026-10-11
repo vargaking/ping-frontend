@@ -1,5 +1,6 @@
 import { serversState } from './serversState.svelte';
 import { conversationsState } from './conversationsState.svelte';
+import { friendsState } from './friendsState.svelte';
 import { closeReadNotifications } from '$lib/utils/notificationSweep';
 
 export type ResyncReason = 'reconnect' | 'resume' | 'notification' | 'import';
@@ -46,6 +47,7 @@ export async function refreshLists() {
 	const syncedAt = Date.now();
 	await Promise.all([
 		conversationsState.fetch(),
+		friendsState.fetch(),
 		...Object.keys(serversState.servers).flatMap((id) => [
 			serversState
 				.loadServerChannels(Number(id), 0)

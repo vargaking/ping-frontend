@@ -7,6 +7,7 @@ import { serverImportState } from '$lib/states/serverImportState.svelte';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { unreadState } from '$lib/states/unreadState.svelte';
 import { serverRequestState } from '$lib/states/serverRequestState.svelte';
+import { friendsState } from '$lib/states/friendsState.svelte';
 import { notificationsState } from '$lib/states/notificationsState.svelte';
 import { socketState } from '$lib/states/socketState.svelte';
 import { historySyncState } from '$lib/states/historySyncState.svelte';
@@ -69,6 +70,7 @@ export async function clearSession(): Promise<void> {
 	forumState.reset();
 	serverImportState.reset();
 	conversationsState.reset();
+	friendsState.reset();
 	unreadState.reset();
 	notificationsState.resetPush();
 	searchState.reset();
