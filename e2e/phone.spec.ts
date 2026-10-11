@@ -452,3 +452,39 @@ test('on a phone the jump button stays above the composer while the keyboard is 
 		.y;
 	expect(box.y + box.height, 'the button sits above the composer').toBeLessThanOrEqual(composerTop);
 });
+
+test('on a phone the navigation covers the jump button', async ({ context, page }) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Cover Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	const messages = page.locator('[data-message-id]');
+	for (let i = 1; i <= 8; i++) {
+		await composer.fill(`message ${i} ` + 'filler '.repeat(60));
+		await page.getByRole('button', { name: 'Send message' }).tap();
+		await expect(messages).toHaveCount(i);
+	}
+	await composer.blur();
+	const scroller = messages
+		.first()
+		.locator('xpath=ancestor::div[contains(@class, "overflow-y-auto")][1]');
+	await scroller.evaluate((el) => el.scrollTo({ top: 0 }));
+	const jump = page.getByRole('button', { name: /^Jump to latest/ });
+	await expect(jump).toBeInViewport();
+	const box = (await jump.boundingBox())!;
+
+	await page.getByRole('button', { name: 'Open navigation' }).tap();
+	await expect(page.getByRole('navigation', { name: 'Servers' })).toBeInViewport();
+	await page.waitForTimeout(300);
+	// Hit testing skips the inert page, so lift that to see which one paints on top.
+	const hit = await page.evaluate(
+		([x, y]) => {
+			document.querySelector('[data-nav-pane] + [inert]')?.removeAttribute('inert');
+			return !!document.elementFromPoint(x, y)?.closest('[data-nav-pane]');
+		},
+		[box.x + box.width / 2, box.y + box.height / 2]
+	);
+	expect(hit, 'the navigation is on top at the button').toBe(true);
+});

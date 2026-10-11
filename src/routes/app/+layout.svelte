@@ -275,7 +275,10 @@
 				<ChannelSidebar />
 			{/if}
 		</div>
-		<div class="min-w-0 flex-1 bg-background" inert={phoneState.phone && phoneState.navOpen}>
+		<div
+			class="isolate min-w-0 flex-1 bg-background"
+			inert={phoneState.phone && phoneState.navOpen}
+		>
 			{@render children()}
 		</div>
 	</div>
