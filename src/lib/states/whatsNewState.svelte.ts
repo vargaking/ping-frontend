@@ -7,7 +7,7 @@ import { WHATS_NEW } from '$lib/whatsNew/entries';
 export class WhatsNewState {
 	/** The last server answer; null while unknown. */
 	seen: WhatsNewSeen | null = $state(null);
-	/** Set when the panel opens, so the dot clears even if the server cannot be reached. */
+	/** Set when the panel opens, so the "New" pills clear even if the server cannot be reached. */
 	private localSeenId: string | null = $state(null);
 	private userId: number | null = null;
 	private generation = 0;
@@ -22,10 +22,6 @@ export class WhatsNewState {
 	isUnseen(entry: WhatsNewEntry): boolean {
 		const marker = this.marker;
 		return marker != null && isUnseen(entry, marker);
-	}
-
-	get hasUnseen(): boolean {
-		return this.entries.some((entry) => this.isUnseen(entry));
 	}
 
 	/** Follows the signed-in user; a different user starts from unknown. */

@@ -167,6 +167,41 @@ test('on a phone swiping a message left past the threshold replies to it', async
 	await expect(page.getByRole('navigation', { name: 'Servers' })).not.toBeInViewport();
 });
 
+test('on a phone a long reply quote is cut off instead of widening the list', async ({
+	context,
+	page
+}) => {
+	await registerUser(context);
+	const server = await createServer(context, uniqueName('Quote Guild'));
+	const channel = await createChannel(context, server.id, 'general');
+	await page.goto(channelPath(server.id, channel.id));
+	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+
+	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
+	const send = page.getByRole('button', { name: 'Send message' });
+	await composer.fill('lorem ipsum '.repeat(30).trim());
+	await send.tap();
+	const original = page.locator('[data-message-id]', { hasText: 'lorem ipsum' });
+	await expect(original).toBeVisible();
+	await composer.blur();
+
+	const box = (await original.boundingBox())!;
+	const y = box.y + box.height / 2;
+	const startX = box.x + box.width - 40;
+	await drag(page, [startX, y], [startX - 100, y]);
+	await expect(page.getByRole('button', { name: 'Cancel reply' })).toBeVisible();
+
+	await composer.fill('short answer');
+	await send.tap();
+	const quote = page
+		.locator('[data-message-id]', { hasText: 'short answer' })
+		.getByRole('button', { name: /lorem ipsum/ });
+	await expect(quote).toBeVisible();
+
+	const quoteBox = (await quote.boundingBox())!;
+	expect(quoteBox.x + quoteBox.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+});
+
 test('on a phone a swipe on a sideways scrolling code block does not reply', async ({
 	context,
 	page

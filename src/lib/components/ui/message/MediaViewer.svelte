@@ -3,6 +3,7 @@
 	import type { Attachment } from '$lib/types/attachment.types';
 	import { attachmentUrl } from '$lib/requests/attachments/uploadAttachment';
 	import { download, mediaKind, openFullSize } from '$lib/requests/attachments/attachmentActions';
+	import { frameless } from '$lib/desktop';
 	import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from 'lucide-svelte';
 
 	let {
@@ -193,7 +194,13 @@
 		>
 			{#if current}
 				<div
-					class="flex shrink-0 items-center gap-2 px-3 py-2 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] sm:px-4"
+					class={[
+						'flex shrink-0 items-center gap-2 px-3 sm:px-4',
+						frameless ? 'app-drag h-11' : 'py-2 pt-[calc(0.5rem+env(safe-area-inset-top,0px))]'
+					]}
+					style={frameless
+						? 'padding-left: max(1rem, var(--titlebar-inset-left)); padding-right: max(1rem, calc(var(--titlebar-controls) + 0.5rem))'
+						: undefined}
 				>
 					<DialogPrimitive.Title class="min-w-0 flex-1 truncate text-sm font-medium">
 						{current.filename}

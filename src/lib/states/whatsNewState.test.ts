@@ -47,27 +47,27 @@ afterEach(() => {
 });
 
 describe('loading', () => {
-	it('has no unseen entries before the state loads', () => {
+	it('marks no entry unseen before the state loads', () => {
 		const state = new WhatsNewState(ENTRIES);
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 		getMock.mockReturnValue(new Promise(() => {}));
 		state.sync(1);
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 	});
 
-	it('has no unseen entries after a failed load', async () => {
+	it('marks no entry unseen after a failed load', async () => {
 		getMock.mockRejectedValue(new Error('404'));
 		const state = new WhatsNewState(ENTRIES);
 		state.sync(1);
 		await flush();
 		expect(state.seen).toBeNull();
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 	});
 
 	it('loads on sync and does not refetch for the same user', async () => {
 		const state = await loaded(answer(null));
 		expect(getMock).toHaveBeenCalledTimes(1);
-		expect(state.hasUnseen).toBe(true);
+		expect(state.isUnseen(ENTRIES[0])).toBe(true);
 		state.sync(1);
 		expect(getMock).toHaveBeenCalledTimes(1);
 	});
@@ -76,7 +76,7 @@ describe('loading', () => {
 		const state = await loaded(answer(null));
 		getMock.mockRejectedValue(new Error('offline'));
 		await state.refresh();
-		expect(state.hasUnseen).toBe(true);
+		expect(state.isUnseen(ENTRIES[0])).toBe(true);
 	});
 
 	it('does nothing on refresh without a user', async () => {
@@ -89,7 +89,7 @@ describe('loading', () => {
 		const state = await loaded(answer(null));
 		state.sync(null);
 		expect(state.seen).toBeNull();
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 	});
 
 	it('ignores a stale answer after the user changed', async () => {
@@ -103,16 +103,16 @@ describe('loading', () => {
 		first.resolve(answer(null));
 		await flush();
 		expect(state.seen?.last_seen_id).toBe('2026-10-10');
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 	});
 });
 
 describe('markAllSeen', () => {
-	it('clears the dot at once and stores the newest id', async () => {
+	it('marks everything seen at once and stores the newest id', async () => {
 		const state = await loaded(answer(null));
 		putMock.mockResolvedValue({ last_seen_id: '2026-10-10' });
 		const pending = state.markAllSeen();
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 		await pending;
 		expect(putMock).toHaveBeenCalledExactlyOnceWith('2026-10-10');
 		expect(state.seen?.last_seen_id).toBe('2026-10-10');
@@ -124,11 +124,11 @@ describe('markAllSeen', () => {
 		expect(putMock).not.toHaveBeenCalled();
 	});
 
-	it('keeps the dot cleared after a failed save and retries on the next open', async () => {
+	it('keeps entries seen after a failed save and retries on the next open', async () => {
 		const state = await loaded(answer(null));
 		putMock.mockRejectedValueOnce(new Error('offline'));
 		await state.markAllSeen();
-		expect(state.hasUnseen).toBe(false);
+		expect(state.isUnseen(ENTRIES[0])).toBe(false);
 		expect(state.seen?.last_seen_id).toBeNull();
 
 		putMock.mockResolvedValueOnce({ last_seen_id: '2026-10-10' });
@@ -155,7 +155,7 @@ describe('markAllSeen', () => {
 		put.resolve({ last_seen_id: '2026-10-10' });
 		await pending;
 		expect(state.seen?.last_seen_id).toBeNull();
-		expect(state.hasUnseen).toBe(true);
+		expect(state.isUnseen(ENTRIES[0])).toBe(true);
 	});
 
 	it('does nothing without a user', async () => {

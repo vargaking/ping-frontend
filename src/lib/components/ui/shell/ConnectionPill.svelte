@@ -44,7 +44,9 @@
 		class="relative flex h-8 min-w-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 	>
 		<span class="h-1.5 w-1.5 shrink-0 rounded-full {dots[status]}"></span>
-		<span class="max-w-40 truncate text-[13px] max-md:max-w-[5.5rem]">{serverName}</span>
+		<span class="max-w-40 truncate text-[13px] max-md:max-w-[5.5rem] max-[22rem]:max-w-16"
+			>{serverName}</span
+		>
 		<span class="shrink-0 translate-y-px font-mono text-[11px] text-text-subtle"
 			>{formatRtt(info?.rttMs ?? null)}</span
 		>
