@@ -209,6 +209,7 @@
 					readCache={() => db.messages.where({ post_id: postId }).sortBy('timestamp')}
 					emptyDescription="Nothing here yet."
 					errorDescription="There was a problem reading this post."
+					beginningLabel={post ? `Beginning of “${post.title}”` : 'Beginning of this post'}
 					onNotFound={() => (status = 'missing')}
 					jumpTo={page.url.searchParams.get(JUMP_PARAM)}
 					onJumped={() => clearJumpParam(page.url)}
