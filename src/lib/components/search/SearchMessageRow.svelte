@@ -6,15 +6,19 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { attachmentUrl } from '$lib/requests/attachments/uploadAttachment';
 	import type { User } from '$lib/types/auth.types';
 	import type { StoredMessage } from '$lib/types/localHistory.types';
 	import { db } from '$lib/utils/db';
 	import { searchableText, snippet } from '$lib/utils/messageSearch';
+	import { attachmentKind, type HasKind } from '$lib/utils/searchFacets';
+	import { File as FileIcon } from 'lucide-svelte';
 	import SearchHighlight from './SearchHighlight.svelte';
 
 	let {
 		message,
 		tokens,
+		has = [],
 		active,
 		id,
 		onOpen,
@@ -22,6 +26,7 @@
 	}: {
 		message: StoredMessage;
 		tokens: string[];
+		has?: HasKind[];
 		active: boolean;
 		id: string;
 		onOpen: () => void;
@@ -90,6 +95,18 @@
 	});
 
 	const parts = $derived(snippet(searchableText(message), tokens));
+
+	const thumbnail = $derived.by(() => {
+		for (const kind of ['image', 'video'] as const) {
+			if (!has.includes(kind)) continue;
+			const found = message.attachments?.find((a) => attachmentKind(a) === kind);
+			if (found) return { kind, attachment: found };
+		}
+		return null;
+	});
+	const fileName = $derived(
+		!thumbnail && has.includes('file') ? (message.attachments?.[0]?.filename ?? null) : null
+	);
 </script>
 
 <button
@@ -120,5 +137,31 @@
 		<span class="line-clamp-2 text-sm break-words text-text-body">
 			<SearchHighlight {parts} />
 		</span>
+		{#if thumbnail}
+			<span aria-hidden="true" class="mt-1 block h-14 w-14 overflow-hidden rounded-lg bg-black/40">
+				{#if thumbnail.kind === 'image'}
+					<img
+						src={attachmentUrl(thumbnail.attachment)}
+						alt=""
+						loading="lazy"
+						class="h-full w-full object-cover"
+					/>
+				{:else}
+					<video
+						src="{attachmentUrl(thumbnail.attachment)}#t=0.1"
+						preload="metadata"
+						muted
+						playsinline
+						tabindex="-1"
+						class="h-full w-full object-cover"
+					></video>
+				{/if}
+			</span>
+		{:else if fileName}
+			<span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-subtle">
+				<FileIcon size={14} strokeWidth={1.75} class="shrink-0" aria-hidden="true" />
+				<span class="truncate">{fileName}</span>
+			</span>
+		{/if}
 	</span>
 </button>

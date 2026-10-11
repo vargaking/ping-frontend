@@ -2,14 +2,22 @@ import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 import {
 	findMessageIds,
 	findPosts,
+	fromKeysForName,
 	loadMessages,
-	queryTokens,
+	pageMessages,
+	storedUserIds,
+	type MessageFilters,
+	type MessagePager,
 	type SearchScope
 } from '$lib/utils/messageSearch';
+import type { HasKind } from '$lib/utils/searchFacets';
+import { hasFilters, parseSearchQuery } from '$lib/utils/searchQuery';
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
+import { usersState } from './usersState.svelte';
 
 const DEBOUNCE_MS = 120;
+const AUTHOR_FETCHES = 4;
 const PAGE_SIZE = 30;
 const POST_LIMIT = 5;
 /** Posts are filtered by what the person can still see, so ask for more than are shown. */
@@ -37,21 +45,27 @@ class SearchState {
 	query = $state('');
 	scope = $state<SearchScope>(EVERYWHERE);
 	status = $state<Status>('idle');
-	/** Matching messages not yet found hidden; shrinks as hidden ones are met while paging. */
-	total = $state(0);
+	/** Matching messages not yet found hidden; shrinks as hidden ones are met while paging.
+	 *  Null when the search reads lazily and the count isn't known. */
+	total = $state<number | null>(0);
 	hits = $state.raw<StoredMessage[]>([]);
 	posts = $state.raw<StoredPost[]>([]);
 	/** The words the shown results were found with. */
 	tokens = $state.raw<string[]>([]);
+	/** The `has:` filters the shown results were found with. */
+	has = $state.raw<HasKind[]>([]);
 	hasMore = $state(false);
 
 	private ids: string[] = [];
+	private pager: MessagePager | null = null;
 	private cursor = 0;
 	private hidden = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	/** Bumped by every new search and by reset, so a slow older one can't overwrite a newer. */
 	private token = 0;
 	private loadingToken: number | null = null;
+	/** Stored authors whose profile was already asked for, so a name with no match isn't refetched. */
+	private authorFetches = new Map<number, Promise<unknown>>();
 
 	setQuery(query: string) {
 		this.query = query;
@@ -74,6 +88,13 @@ class SearchState {
 		if (this.status !== 'ready' || !this.hasMore || this.loadingToken === token) return;
 		this.loadingToken = token;
 		try {
+			if (this.pager) {
+				const page = await this.nextPagerPage(this.pager, token);
+				if (!page) return;
+				this.hits = [...this.hits, ...page.rows];
+				this.hasMore = !page.done;
+				return;
+			}
 			const page = await this.nextPage(this.ids, this.cursor, token);
 			if (!page) return;
 			this.hits = [...this.hits, ...page.rows];
@@ -93,17 +114,20 @@ class SearchState {
 		this.clearTimer();
 		this.query = '';
 		this.scope = EVERYWHERE;
+		this.authorFetches.clear();
 		this.clear();
 	}
 
 	private clear() {
 		this.ids = [];
+		this.pager = null;
 		this.cursor = 0;
 		this.hidden = 0;
 		this.total = 0;
 		this.hits = [];
 		this.posts = [];
 		this.tokens = [];
+		this.has = [];
 		this.hasMore = false;
 		this.status = 'idle';
 	}
@@ -116,7 +140,8 @@ class SearchState {
 	private schedule(delay: number) {
 		this.clearTimer();
 		const token = ++this.token;
-		if (queryTokens(this.query).length === 0) {
+		const query = parseSearchQuery(this.query);
+		if (query.words.length === 0 && !hasFilters(query)) {
 			this.clear();
 			return;
 		}
@@ -128,24 +153,46 @@ class SearchState {
 	}
 
 	private async run(token: number) {
-		const tokens = queryTokens(this.query);
+		const query = parseSearchQuery(this.query);
+		const tokens = query.words;
 		const scope = this.scope;
 		try {
-			const [ids, posts] = await Promise.all([
-				findMessageIds(tokens, scope),
-				findPosts(tokens, scope, POST_CANDIDATES)
+			const fromKeys = query.from ? await this.resolveFrom(query.from) : null;
+			if (token !== this.token) return;
+			const filters: MessageFilters = {
+				fromKeys,
+				has: query.has,
+				since: query.since,
+				until: query.until
+			};
+			const lazy = hasFilters(query);
+			const [source, posts] = await Promise.all([
+				lazy ? pageMessages(tokens, scope, filters) : findMessageIds(tokens, scope),
+				findPosts(tokens, scope, POST_CANDIDATES, filters)
 			]);
 			if (token !== this.token) return;
-			const page = await this.nextPage(ids, 0, token);
-			if (!page) return;
-			this.ids = ids;
-			this.hidden = page.hidden;
-			this.cursor = page.next;
-			this.total = ids.length - page.hidden;
-			this.hits = page.rows;
+			if (Array.isArray(source)) {
+				const page = await this.nextPage(source, 0, token);
+				if (!page) return;
+				this.ids = source;
+				this.pager = null;
+				this.hidden = page.hidden;
+				this.cursor = page.next;
+				this.total = source.length - page.hidden;
+				this.hits = page.rows;
+				this.hasMore = page.next < source.length;
+			} else {
+				const page = await this.nextPagerPage(source, token);
+				if (!page) return;
+				this.ids = [];
+				this.pager = source;
+				this.total = null;
+				this.hits = page.rows;
+				this.hasMore = !page.done;
+			}
 			this.posts = posts.filter((post) => channelVisible(post.channel_id)).slice(0, POST_LIMIT);
 			this.tokens = tokens;
-			this.hasMore = page.next < ids.length;
+			this.has = query.has;
 			this.status = 'ready';
 		} catch (e) {
 			console.warn('Search failed', e);
@@ -154,6 +201,46 @@ class SearchState {
 			this.tokens = tokens;
 			this.status = 'ready';
 		}
+	}
+
+	/** The author keys a `from:` name can mean. Profiles of stored authors that aren't loaded
+	 *  are fetched only when no loaded user has the name. */
+	private async resolveFrom(name: string): Promise<string[]> {
+		const known = fromKeysForName(name, Object.values(usersState.users));
+		if (known.some((key) => key.startsWith('user:'))) return known;
+		const missing = (await storedUserIds()).filter((id) => !usersState.users[id]);
+		const queue = [...missing];
+		const worker = async () => {
+			for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+				await this.fetchAuthor(id);
+			}
+		};
+		await Promise.all(Array.from({ length: AUTHOR_FETCHES }, worker));
+		return fromKeysForName(name, Object.values(usersState.users));
+	}
+
+	/** One request per author; a later search waits for it, and one that failed is tried again. */
+	private fetchAuthor(id: number): Promise<unknown> {
+		let pending = this.authorFetches.get(id);
+		if (!pending) {
+			pending = usersState.getOrFetchUser(id).catch(() => this.authorFetches.delete(id));
+			this.authorFetches.set(id, pending);
+		}
+		return pending;
+	}
+
+	/** Up to one page of visible rows from the pager; null when a newer search has taken over. */
+	private async nextPagerPage(pager: MessagePager, token: number) {
+		const rows: StoredMessage[] = [];
+		let done = false;
+		while (rows.length < PAGE_SIZE && !done) {
+			const want = PAGE_SIZE - rows.length;
+			const chunk = await pager.next(want);
+			if (token !== this.token) return null;
+			done = chunk.length < want;
+			rows.push(...chunk.filter(messageVisible));
+		}
+		return { rows, done };
 	}
 
 	/** Up to one page of visible rows from `from`; null when a newer search has taken over. */

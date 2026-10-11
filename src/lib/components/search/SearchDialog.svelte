@@ -14,6 +14,7 @@
 	import { localHistoryReady } from '$lib/utils/db';
 	import type { SearchScope } from '$lib/utils/messageSearch';
 	import { openSearchResult, type SearchResult } from '$lib/utils/openSearchResult';
+	import { FILTER_HINTS } from '$lib/utils/searchQuery';
 	import SearchMessageRow from './SearchMessageRow.svelte';
 	import SearchPostRow from './SearchPostRow.svelte';
 
@@ -72,11 +73,14 @@
 	let active = $state(0);
 
 	const searched = $derived(searchState.status !== 'idle');
+	const showHints = $derived(!searched && searchState.query.trim() === '');
 	const showResults = $derived(items.length > 0);
 	const nothingFound = $derived(searchState.status === 'ready' && items.length === 0);
 	const downloading = $derived(storage === 'ready' && historySyncState.status !== 'done');
 	const countLabel = $derived(
-		`${searchState.total.toLocaleString()} ${searchState.total === 1 ? 'message' : 'messages'}`
+		searchState.total === null
+			? 'Messages'
+			: `${searchState.total.toLocaleString()} ${searchState.total === 1 ? 'message' : 'messages'}`
 	);
 
 	onMount(() => {
@@ -89,9 +93,15 @@
 	// New results start from the top.
 	$effect(() => {
 		void searchState.tokens;
+		void searchState.has;
 		void searchState.scope;
 		active = 0;
 	});
+
+	function insertFilter(text: string) {
+		searchState.setQuery(text);
+		input?.focus();
+	}
 
 	function toResult(item: Item): SearchResult {
 		return item.kind === 'post'
@@ -252,6 +262,7 @@
 							<SearchMessageRow
 								{message}
 								tokens={searchState.tokens}
+								has={searchState.has}
 								id={optionId(index)}
 								active={index === active}
 								onOpen={() => open(index)}
@@ -264,6 +275,23 @@
 			<div bind:this={sentinel} class="h-px" aria-hidden="true"></div>
 		{:else if nothingFound}
 			<p role="status" class="px-6 py-10 text-center text-sm text-text-subtle">Nothing found.</p>
+		{:else if showHints}
+			<div role="group" aria-label="Filters">
+				<div class="px-3 pt-1 pb-1 text-xs font-medium text-text-subtle">Filters</div>
+				{#each FILTER_HINTS as hint (hint.insert)}
+					<button
+						type="button"
+						onclick={() => insertFilter(hint.insert)}
+						class="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					>
+						<span class="font-mono text-sm text-foreground">{hint.example}</span>
+						<span class="min-w-0 text-xs text-text-subtle">{hint.description}</span>
+					</button>
+				{/each}
+				<p class="px-3 pt-3 text-xs text-text-subtle">
+					Search runs on this device, over the history stored here.
+				</p>
+			</div>
 		{:else if !searched}
 			<p class="px-6 py-10 text-center text-sm text-text-subtle">
 				Search runs on this device, over the history stored here.

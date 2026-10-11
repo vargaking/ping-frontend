@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { Attachment } from '$lib/types/attachment.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { clearLocalCache, createDexieDb, db, localHistoryAvailable } from './db';
 
@@ -21,6 +22,26 @@ function message(id: string, content: string, extra: Partial<MessageType> = {}):
 		...extra
 	};
 }
+
+const linkDoc = (url: string) =>
+	({
+		type: 'doc',
+		content: [{ type: 'paragraph', content: [{ type: 'text', text: `see ${url}` }] }]
+	}) as never;
+
+const file = (extra: Partial<Attachment> = {}): Attachment => ({
+	id: 'f',
+	filename: 'a.bin',
+	content_type: 'application/octet-stream',
+	size: 1,
+	kind: 'file',
+	width: null,
+	height: null,
+	url: '/a',
+	...extra
+});
+
+const image = () => file({ kind: 'image', content_type: 'image/png' });
 
 beforeEach(async () => {
 	await clearLocalCache();
@@ -154,6 +175,94 @@ describe('message store', () => {
 	});
 });
 
+describe('search facets', () => {
+	const flags = async (id: string) => {
+		const row = await db.messages.get(id);
+		return { fromKey: row?.fromKey, file: row?.hasFile, image: row?.hasImage, link: row?.hasLink };
+	};
+
+	it.each([
+		['put', (m: MessageType) => db.messages.put(m)],
+		['add', (m: MessageType) => db.messages.add(m)],
+		['bulkPut', (m: MessageType) => db.messages.bulkPut([m])]
+	])('derives them on %s', async (_, write) => {
+		await write(
+			message('a', 'x1', { attachments: [image()], content: linkDoc('https://example.com') })
+		);
+		expect(await flags('a')).toEqual({ fromKey: 'user:1', file: 1, image: 1, link: 1 });
+	});
+
+	it('keys an imported author by name', async () => {
+		await db.messages.put(message('a', 'x1', { imported_author: { id: 'i', name: 'Old  Náme' } }));
+		expect((await db.messages.get('a'))?.fromKey).toBe('name:old name');
+	});
+
+	it('sets the flags when an update adds attachments later', async () => {
+		await db.messages.put(message('a', 'x1'));
+		expect((await flags('a')).file).toBeUndefined();
+		await db.messages.update('a', { attachments: [image()] });
+		expect(await flags('a')).toMatchObject({ file: 1, image: 1 });
+	});
+
+	it('drops a flag that no longer holds after an update', async () => {
+		await db.messages.put(
+			message('a', 'x1', { attachments: [image()], content: linkDoc('https://example.com') })
+		);
+		await db.messages.update('a', { content: doc('no link now') });
+		expect(await flags('a')).toMatchObject({ file: 1, image: 1, link: undefined });
+		await db.messages.update('a', { attachments: [] });
+		expect(await flags('a')).toMatchObject({ file: undefined, image: undefined });
+	});
+
+	it('re-derives for Collection.modify with a function and with a change object', async () => {
+		await db.messages.put(message('a', 'x1', { attachments: [image()] }));
+		await db.messages
+			.where('id')
+			.equals('a')
+			.modify((m) => {
+				m.attachments = [];
+			});
+		expect(await flags('a')).toMatchObject({ file: undefined, image: undefined });
+		await db.messages
+			.where('id')
+			.equals('a')
+			.modify({ attachments: [file()] });
+		expect(await flags('a')).toMatchObject({ file: 1, image: undefined });
+	});
+
+	it('does not mutate the object it was given', async () => {
+		const original = message('a', 'x1', { attachments: [image()] });
+		const snapshot = structuredClone(original);
+		await db.messages.put(original);
+		expect(original).toEqual(snapshot);
+	});
+
+	it('keeps each has index to the matching rows, ordered by time', async () => {
+		await db.messages.bulkPut([
+			message('late', 'x1', { attachments: [image()], timestamp: '2025-03-03T00:00:00Z' }),
+			message('plain', 'x1'),
+			message('early', 'x1', { attachments: [image()], timestamp: '2025-03-01T00:00:00Z' }),
+			message('doc', 'x1', { attachments: [file()] })
+		]);
+		expect(await db.messages.orderBy('[hasImage+ts]').primaryKeys()).toEqual(['early', 'late']);
+		expect(await db.messages.orderBy('[hasFile+ts]').count()).toBe(3);
+		expect(await db.messages.orderBy('[hasVideo+ts]').count()).toBe(0);
+	});
+
+	it('orders an author by time through the fromKey index', async () => {
+		await db.messages.bulkPut([
+			message('b', 'x1', { timestamp: '2025-03-02T00:00:00Z' }),
+			message('a', 'x1', { timestamp: '2025-03-01T00:00:00Z' }),
+			message('other', 'x1', { user_id: 2 })
+		]);
+		const ids = await db.messages
+			.where('[fromKey+ts]')
+			.between(['user:1', Dexie.minKey], ['user:1', Dexie.maxKey])
+			.primaryKeys();
+		expect(ids).toEqual(['a', 'b']);
+	});
+});
+
 describe('upgrade from version 3', () => {
 	it('derives ts and words for rows that already exist', async () => {
 		const name = 'UpgradeFromV3';
@@ -186,6 +295,60 @@ describe('upgrade from version 3', () => {
 		expect(b?.ts).toBe(Date.parse('2024-12-31T23:59:59Z'));
 		expect(await upgraded.messages.where('words').startsWith('arv').count()).toBe(1);
 		expect(await upgraded.posts.count()).toBe(0);
+		expect(a?.fromKey).toBe('user:1');
+		upgraded.close();
+	});
+});
+
+describe('upgrade from version 4', () => {
+	it('adds the author and has facets to rows that already exist', async () => {
+		const name = 'UpgradeFromV4';
+		const old = new Dexie(name);
+		old.version(1).stores({
+			servers: '++id, name, server_profile, server_settings',
+			channels: '++id, server_id, name, channel_settings',
+			messages: 'id, server_id, channel_id, user_id, content, timestamp',
+			users: '++id, username, public_key, profile'
+		});
+		old.version(2).stores({
+			messages: 'id, server_id, channel_id, conversation_id, user_id, content, timestamp'
+		});
+		old.version(3).stores({
+			messages: 'id, server_id, channel_id, conversation_id, post_id, user_id, content, timestamp'
+		});
+		old.version(4).stores({
+			messages:
+				'id, server_id, channel_id, conversation_id, post_id, user_id, ts, *words, [server_id+ts], [channel_id+ts], [conversation_id+ts], [post_id+ts]',
+			posts: 'id, channel_id, server_id, *words',
+			threadSync: 'key, serverId, channelId'
+		});
+		await old.table('messages').bulkAdd([
+			{
+				...message('imported', 'x1', { imported_author: { id: 'i', name: 'Old Name' } }),
+				ts: 1,
+				words: []
+			},
+			{ ...message('pic', 'x1', { attachments: [image()] }), ts: 2, words: [] },
+			{ ...message('link', 'x1'), content: linkDoc('https://example.com'), ts: 3, words: [] },
+			{ ...message('plain', 'x1'), ts: 4, words: [] }
+		]);
+		old.close();
+
+		const upgraded = createDexieDb(name);
+		const rows = Object.fromEntries((await upgraded.messages.toArray()).map((m) => [m.id, m]));
+		expect(rows.imported.fromKey).toBe('name:old name');
+		expect(rows.pic).toMatchObject({ fromKey: 'user:1', hasFile: 1, hasImage: 1 });
+		expect(rows.link.hasLink).toBe(1);
+		expect(rows.plain.hasFile).toBeUndefined();
+		expect('hasImage' in rows.plain).toBe(false);
+
+		const images = await upgraded.messages.orderBy('[hasImage+ts]').primaryKeys();
+		expect(images).toEqual(['pic']);
+		const fromImported = await upgraded.messages
+			.where('[fromKey+ts]')
+			.between(['name:old name', Dexie.minKey], ['name:old name', Dexie.maxKey])
+			.primaryKeys();
+		expect(fromImported).toEqual(['imported']);
 		upgraded.close();
 	});
 });
