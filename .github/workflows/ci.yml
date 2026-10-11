@@ -8,7 +8,34 @@ on:
     paths-ignore: ['desktop/**']
 
 jobs:
-  lint-and-check:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore ESLint cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/eslint
+          key: eslint-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'svelte.config.js') }}-${{ github.sha }}
+          restore-keys: |
+            eslint-${{ runner.os }}-${{ hashFiles('package-lock.json', 'eslint.config.js', 'svelte.config.js') }}-
+
+      - name: Prettier
+        run: npx prettier --check .
+
+      - name: ESLint
+        run: npx eslint . --cache --cache-strategy content --cache-location node_modules/.cache/eslint/
+
+  svelte-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,14 +53,53 @@ jobs:
       - name: Seed public env
         run: cp .env.example .env
 
-      - name: Lint (prettier + eslint)
-        run: npm run lint
-
       - name: Type check (svelte-check)
         run: npm run check
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Seed public env
+        run: cp .env.example .env
 
       - name: Unit tests
         run: npm test
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Seed public env
+        run: cp .env.example .env
+
       - name: Build
         run: npm run build
+
+  lint-and-check:
+    needs: [lint, svelte-check, unit-tests, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to succeed
+        run: |
+          echo '${{ toJSON(needs.*.result) }}'
+          [ "${{ join(needs.*.result, ' ') }}" = "success success success success" ]
