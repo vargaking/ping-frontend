@@ -11,6 +11,8 @@ type ChannelPresence = { serverId: number; participants: VoicePresenceParticipan
 class VoicePresenceState {
 	/** Keyed by channel id. Empty channels have no entry. */
 	private channels = new SvelteMap<number, ChannelPresence>();
+	/** Bumped by reset() so a load started before it can't write into the next session. */
+	private epoch = 0;
 	/** One set per in-flight load: channels that got a newer live frame meanwhile. */
 	private pendingLoads: Array<Set<number>> = [];
 
@@ -36,6 +38,7 @@ class VoicePresenceState {
 	}
 
 	async load(serverId: number) {
+		const epoch = this.epoch;
 		const fresh = new Set<number>();
 		this.pendingLoads.push(fresh);
 		let fetched: VoicePresenceChannel[];
@@ -47,6 +50,7 @@ class VoicePresenceState {
 		} finally {
 			this.pendingLoads = this.pendingLoads.filter((s) => s !== fresh);
 		}
+		if (epoch !== this.epoch) return;
 
 		for (const [channelId, entry] of [...this.channels]) {
 			if (entry.serverId === serverId && !fresh.has(channelId)) this.channels.delete(channelId);
@@ -60,6 +64,12 @@ class VoicePresenceState {
 
 	forgetChannel(channelId: number) {
 		this.channels.delete(channelId);
+	}
+
+	reset() {
+		this.epoch++;
+		this.channels.clear();
+		this.pendingLoads = [];
 	}
 }
 

@@ -22,6 +22,10 @@ class ReplyState {
 			if (message?.id === messageId) delete this.target[key];
 		}
 	}
+
+	reset() {
+		this.target = {};
+	}
 }
 
 export const replyState = new ReplyState();

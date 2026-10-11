@@ -12,9 +12,40 @@ import { socketState } from '$lib/states/socketState.svelte';
 import { historySyncState } from '$lib/states/historySyncState.svelte';
 import { searchState } from '$lib/states/searchState.svelte';
 import { overwritesState } from '$lib/states/overwritesState.svelte';
+import { voiceState } from '$lib/states/voiceState.svelte';
+import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
+import { shareDialogState } from '$lib/states/shareDialogState.svelte';
+import { replyState } from '$lib/states/replyState.svelte';
+import { messageEditState } from '$lib/states/messageEditState.svelte';
+import { overlayState } from '$lib/states/overlayState.svelte';
 import { clearLocalCache } from '$lib/utils/db';
 import { disablePush } from '$lib/utils/push';
 import { logout as logoutRequest } from '$lib/requests/auth/logout';
+
+/** Longest a slow LiveKit disconnect may hold up the logout. */
+const VOICE_LEAVE_TIMEOUT_MS = 3000;
+
+/**
+ * Leave the call, never throwing and never waiting past the timeout. The mic and
+ * screen tracks are already stopped by then, so a disconnect that is still
+ * running only delays the server learning about it.
+ */
+async function leaveVoiceForLogout(): Promise<void> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<void>((resolve) => {
+		timer = setTimeout(() => {
+			console.warn('Leaving voice is taking too long; continuing the logout');
+			resolve();
+		}, VOICE_LEAVE_TIMEOUT_MS);
+	});
+	try {
+		await Promise.race([voiceState.leaveVoice(), timeout]);
+	} catch (e) {
+		console.warn('Failed to leave voice during session teardown', e);
+	} finally {
+		clearTimeout(timer);
+	}
+}
 
 /**
  * Tear down all client-side session state: close the socket, empty the in-memory
@@ -24,6 +55,9 @@ import { logout as logoutRequest } from '$lib/requests/auth/logout';
  */
 export async function clearSession(): Promise<void> {
 	socketState.disconnect();
+	await leaveVoiceForLogout();
+	shareDialogState.close();
+	voicePresenceState.reset();
 
 	usersState.reset();
 
@@ -38,6 +72,9 @@ export async function clearSession(): Promise<void> {
 	unreadState.reset();
 	notificationsState.resetPush();
 	searchState.reset();
+	replyState.reset();
+	messageEditState.stop();
+	overlayState.close();
 
 	// Settled first, so no write lands after the cache is cleared.
 	await historySyncState.stop();
@@ -50,14 +87,15 @@ export async function clearSession(): Promise<void> {
 }
 
 /**
- * Full logout: close the socket, remove the push subscription, tell the server to drop the session, wipe local state, and land
+ * Full logout: close the socket, leave voice, remove the push subscription, tell the server to drop the session, wipe local state, and land
  * on /login. The cookie is cleared server-side even if the request fails, so we
  * always tear down and redirect regardless.
  */
 export async function logout(): Promise<void> {
-	// First, so the user goes offline right away instead of after the slower
-	// push and logout requests below.
+	// First, so the user goes offline and the mic stops right away instead of
+	// after the slower push and logout requests below.
 	socketState.disconnect();
+	await leaveVoiceForLogout();
 	// Needs the session cookie, so it has to come before the logout request.
 	// Otherwise the next account on this browser would receive these pushes.
 	try {
