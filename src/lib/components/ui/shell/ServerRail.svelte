@@ -3,11 +3,13 @@
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { unreadState } from '$lib/states/unreadState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { friendsState } from '$lib/states/friendsState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import ServerRailItem from './ServerRailItem.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import AddServerDialog from '$lib/components/servers/AddServerDialog.svelte';
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
+	import { directRailLabel } from '$lib/utils/friends';
 	import { serverActions } from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
 	import { MessagesSquare, Plus } from 'lucide-svelte';
@@ -19,9 +21,9 @@
 	let inviteOpen = $state(false);
 
 	const dmUnreadTotal = $derived(conversationsState.unreadTotal);
-	const directLabel = $derived(
-		`Direct messages${dmUnreadTotal > 0 ? `, ${dmUnreadTotal} unread` : ''}`
-	);
+	const requestCount = $derived(friendsState.incomingCount);
+	const directBadge = $derived(dmUnreadTotal + requestCount);
+	const directLabel = $derived(directRailLabel(dmUnreadTotal, requestCount));
 </script>
 
 <nav
@@ -47,12 +49,12 @@
 							></span>
 						{/if}
 						<MessagesSquare size={18} strokeWidth={1.75} />
-						{#if dmUnreadTotal > 0}
+						{#if directBadge > 0}
 							<span
 								class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-lg bg-primary px-1 font-mono text-[10px] leading-none font-semibold text-primary-foreground ring-2 ring-rail"
 								aria-hidden="true"
 							>
-								{dmUnreadTotal > 99 ? '99+' : dmUnreadTotal}
+								{directBadge > 99 ? '99+' : directBadge}
 							</span>
 						{/if}
 					</a>

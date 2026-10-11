@@ -5,12 +5,14 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import ActionDropdownItems from '$lib/components/ui/dropdown-menu/ActionDropdownItems.svelte';
+	import FriendButton from '$lib/components/friends/FriendButton.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import type { ProfileCardTarget } from '$lib/states/profileCardState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { friendCardActions } from '$lib/utils/friendActions';
 	import { openDirectMessage, profileCardActions } from '$lib/utils/menuActions';
 	import { bannerOf, cardStatus, closingFirst } from '$lib/utils/profileCard';
 	import ProfileBanner from './ProfileBanner.svelte';
@@ -94,7 +96,9 @@
 			: null
 	);
 	const overflow = $derived(
-		acting && user ? closingFirst(profileCardActions(serverId, user), onclose) : []
+		acting && user
+			? closingFirst([...profileCardActions(serverId, user), ...friendCardActions(user)], onclose)
+			: []
 	);
 
 	function message() {
@@ -142,6 +146,7 @@
 							Message
 						</Button>
 					{/if}
+					{#if !isMe}<FriendButton {user} />{/if}
 					{#if overflow.length > 0}
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger
