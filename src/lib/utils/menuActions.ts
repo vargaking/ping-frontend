@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { page } from '$app/state';
 import { toast } from 'svelte-sonner';
 import {
 	CheckCheck,
@@ -37,11 +38,9 @@ import { updateForumPost } from '$lib/requests/forum/updateForumPost';
 import { getErrorMessage } from '$lib/requests/errors';
 import { conversationsState } from '$lib/states/conversationsState.svelte';
 import { forumState } from '$lib/states/forumState.svelte';
-import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 import { messageEditState } from '$lib/states/messageEditState.svelte';
 import { messagesState, messageThreadKey } from '$lib/states/messagesState.svelte';
 import { overlayState } from '$lib/states/overlayState.svelte';
-import { phoneState } from '$lib/states/phoneState.svelte';
 import { replyState } from '$lib/states/replyState.svelte';
 import { serversState } from '$lib/states/serversState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
@@ -399,21 +398,21 @@ export function channelGroupActions(
 	return actions;
 }
 
-/** The member sheet closes on navigation, so it opens once the server's page is up. */
-async function showMembers(serverId: number, selected: boolean) {
-	if (!selected) await goto(`/app/server/${serverId}/`);
-	phoneState.closeNav();
-	membersPanelState.show();
+/** Server settings shows the server on the route, so that server's page comes first. */
+async function openMembers(serverId: number, onRoute: boolean) {
+	if (!onRoute) await goto(`/app/server/${serverId}/`);
+	overlayState.open(SettingsModal, { category: 'server', tab: 'server-members' });
 }
 
-/** Invite and settings open dialogs that work on the selected server, so they only show for it. */
+/** Invite and settings open dialogs that work on the open server, so they only show for it.
+ *  The selected server lingers on direct message pages, so the route decides. */
 export function serverActions(
 	server: Server,
 	{ onInvite, onCreateChannel }: { onInvite?: () => void; onCreateChannel?: () => void } = {}
 ): MenuAction[] {
 	const serverId = server.id;
 	if (serverId == null) return [];
-	const selected = serversState.selectedServerId === serverId;
+	const selected = page.params.serverId != null && parseInt(page.params.serverId) === serverId;
 	const me = usersState.loggedInUser;
 	const actions: MenuAction[] = [];
 
@@ -458,7 +457,7 @@ export function serverActions(
 		label: 'Members',
 		icon: Users,
 		group: 'manage',
-		run: () => showMembers(serverId, selected)
+		run: () => openMembers(serverId, selected)
 	});
 	if (selected) {
 		actions.push({
