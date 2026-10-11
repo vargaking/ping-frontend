@@ -29,7 +29,7 @@ const sw = self as unknown as ServiceWorkerGlobalScope;
 
 type PushPayload = {
 	v: number;
-	kind: 'dm' | 'mention' | 'server_request' | 'read';
+	kind: 'dm' | 'mention' | 'server_request' | 'friend_request' | 'read';
 	tag: string;
 	title?: string;
 	body?: string;
@@ -63,7 +63,7 @@ function parsePayload(event: PushEvent): ParsedPayload {
 	}
 	if (payload?.v !== 1) return { ok: false, reason: 'wrong v' };
 	if (typeof payload.tag !== 'string' || !payload.tag) return { ok: false, reason: 'no tag' };
-	if (!['dm', 'mention', 'server_request', 'read'].includes(payload.kind))
+	if (!['dm', 'mention', 'server_request', 'friend_request', 'read'].includes(payload.kind))
 		return { ok: false, reason: 'unknown kind' };
 	return { ok: true, payload };
 }
@@ -172,11 +172,13 @@ async function handlePush(event: PushEvent) {
 
 	const previous = withTag(await sw.registration.getNotifications(), payload.tag);
 	const messageUuid = typeof payload.message_uuid === 'string' ? payload.message_uuid : undefined;
-	const { count, alreadyShown } = threadNotificationCount({
+	const { count: counted, alreadyShown } = threadNotificationCount({
 		unread: payload.kind === 'dm' ? payload.count : undefined,
 		previous,
 		messageUuid
 	});
+	// Resent requests don't pile up: the badge counts each sender once.
+	const count = payload.kind === 'friend_request' ? 1 : counted;
 	if (alreadyShown && !apple) {
 		console.debug(`[push] skipped: already shown ${payload.tag}`);
 		return;
