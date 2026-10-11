@@ -23,6 +23,8 @@
 		actions?: MenuAction[];
 		/** A video or screen-share stream. Replaces the avatar and fills the tile. */
 		media?: Snippet;
+		/** Makes the name a button that hands over itself, for anchoring what it opens. */
+		onNameClick?: (anchor: HTMLElement) => void;
 	};
 
 	let {
@@ -37,7 +39,8 @@
 		localMuted = false,
 		streaming = false,
 		actions = [],
-		media
+		media,
+		onNameClick
 	}: Props = $props();
 
 	const stateLabel = $derived(
@@ -82,18 +85,29 @@
 		</DropdownMenu.Root>
 	{/if}
 
-	<div
-		class="absolute right-2 bottom-2 left-2 flex items-center justify-between gap-2"
-		aria-hidden="true"
-	>
+	<div class="absolute right-2 bottom-2 left-2 flex items-center justify-between gap-2">
 		<span class="flex min-w-0 items-center gap-1.5">
-			<span
-				class="min-w-0 truncate rounded-md bg-background/80 px-2 py-0.5 text-[13px] text-foreground"
-			>
-				{name}
-			</span>
+			{#if onNameClick}
+				<button
+					type="button"
+					aria-label="Show profile of {name}"
+					aria-haspopup="dialog"
+					class="min-w-0 truncate rounded-md bg-background/80 px-2 py-0.5 text-[13px] text-foreground hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+					onclick={(e) => onNameClick?.(e.currentTarget)}
+				>
+					{name}
+				</button>
+			{:else}
+				<span
+					class="min-w-0 truncate rounded-md bg-background/80 px-2 py-0.5 text-[13px] text-foreground"
+					aria-hidden="true"
+				>
+					{name}
+				</span>
+			{/if}
 			{#if streaming}
 				<span
+					aria-hidden="true"
 					class="shrink-0 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-semibold text-white"
 				>
 					LIVE
@@ -102,6 +116,7 @@
 		</span>
 		{#if muted || deafened || serverMuted || localMuted}
 			<span
+				aria-hidden="true"
 				class="flex shrink-0 items-center gap-1 rounded-md bg-background/80 px-1.5 py-1 text-text-subtle"
 			>
 				{#if localMuted}

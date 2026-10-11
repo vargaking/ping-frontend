@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
+	import { profileCardState, provideProfileCardServer } from '$lib/states/profileCardState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import type { User } from '$lib/types/auth.types';
 	import type { MessageType } from '$lib/types/messages.types';
@@ -12,6 +13,9 @@
 		messages,
 		onJumpToMessage
 	}: { messages: MessageType[]; onJumpToMessage: (messageId: string) => void } = $props();
+
+	const serverId = $derived(messages[0].server_id ?? null);
+	provideProfileCardServer(() => serverId);
 
 	const userId = $derived(messages[0].user_id);
 	const imported = $derived(messages[0].imported_author ?? null);
@@ -49,16 +53,28 @@
 				})
 			: ''
 	);
+
+	function openCard(anchor: HTMLElement) {
+		profileCardState.toggle(
+			anchor,
+			imported
+				? { kind: 'imported', name: imported.name }
+				: { kind: 'user', userId, serverId, fallbackName: user?.username },
+			{ side: 'right', align: 'start' }
+		);
+	}
 </script>
 
 {#snippet avatar()}
-	<Avatar
-		{user}
-		name={imported?.name}
-		size="md"
-		rounded="rounded-[10px]"
-		className="mt-0.5 h-9 w-9"
-	/>
+	<button
+		type="button"
+		aria-label="Show profile of {imported?.name ?? user?.username ?? 'this author'}"
+		aria-haspopup="dialog"
+		class="mt-0.5 block rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		onclick={(e) => openCard(e.currentTarget)}
+	>
+		<Avatar {user} name={imported?.name} size="md" rounded="rounded-[10px]" className="h-9 w-9" />
+	</button>
 {/snippet}
 
 {#snippet header()}
@@ -71,6 +87,7 @@
 				name={imported?.name ?? user?.username ?? '…'}
 				imported={imported != null}
 				color={nameColor}
+				onclick={openCard}
 			/>
 		</span>
 		<span class="shrink-0 font-mono text-[11px] whitespace-nowrap text-text-subtle">

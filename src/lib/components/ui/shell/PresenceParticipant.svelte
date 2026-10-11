@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { profileCardState } from '$lib/states/profileCardState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import type { VoiceMember } from '$lib/states/voiceRoster.svelte';
 	import VoiceParticipant from './VoiceParticipant.svelte';
@@ -25,6 +26,17 @@
 	{#snippet children(menuProps)}
 		<VoiceParticipant
 			{...menuProps}
+			onclick={(e) =>
+				profileCardState.toggle(
+					e.currentTarget,
+					{
+						kind: 'user',
+						userId: member.userId,
+						serverId: member.serverId,
+						fallbackName: member.fallbackName
+					},
+					{ side: 'right', align: 'start' }
+				)}
 			{name}
 			toneKey={member.userId}
 			initialsFrom={user?.username ?? member.fallbackName ?? '?'}

@@ -11,6 +11,8 @@ import {
 } from './helpers';
 
 const members = (page: Page) => page.getByRole('complementary', { name: 'Members' });
+const card = (page: Page) => page.getByRole('dialog');
+const moreActions = (page: Page) => card(page).getByRole('button', { name: 'More actions' });
 
 test('the owner changes a member’s roles from the members sidebar', async ({ browser }) => {
 	const owner = await newUser(browser, 'owner');
@@ -30,6 +32,7 @@ test('the owner changes a member’s roles from the members sidebar', async ({ b
 	const scout = owner.page.getByRole('menuitemcheckbox', { name: 'Scout' });
 
 	await row.click();
+	await moreActions(owner.page).click();
 	await owner.page.getByRole('menuitem', { name: 'Roles' }).click();
 	await helper.click();
 	await expect(helper).toBeChecked();
@@ -46,7 +49,9 @@ test('the owner changes a member’s roles from the members sidebar', async ({ b
 	await expect(members(member.page).getByText('Helper', { exact: true })).toBeHidden();
 
 	await members(member.page).getByRole('button', { name: owner.user.username }).click();
-	await expect(member.page.getByRole('menuitem', { name: 'Message' })).toBeVisible();
+	await expect(card(member.page).getByRole('button', { name: 'Message' })).toBeVisible();
+	await moreActions(member.page).click();
+	await expect(member.page.getByRole('menuitem', { name: 'Copy username' })).toBeVisible();
 	await expect(
 		member.page.getByRole('menuitem', { name: 'Roles' }),
 		'a member without Manage Roles should not get the submenu'

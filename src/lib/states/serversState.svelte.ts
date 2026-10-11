@@ -62,6 +62,8 @@ export class ServersState {
 	roles: Record<number, Role[]> = $state({});
 	/** Assigned role ids per server and user; the default role is never listed. */
 	memberRoles: Record<number, Record<number, number[]>> = $state({});
+	/** When each member joined, per server and user, from the last roster load. */
+	memberJoinedAt: Record<number, Record<number, string>> = $state({});
 
 	serversList: Server[] = $derived(Object.values(this.servers));
 	selectedServer: Server | null = $derived(
@@ -196,6 +198,7 @@ export class ServersState {
 		this.channelGroups = {};
 		this.channelLoads = {};
 		this.channelsLoadedAt = {};
+		this.memberJoinedAt = {};
 		this.channelViewers = {};
 		this.viewerLoads = {};
 		this.viewersLoadedAt = {};
@@ -237,6 +240,9 @@ export class ServersState {
 
 		this.setRoles(serverId, roles);
 		this.memberRoles[serverId] = Object.fromEntries(members.map((m) => [m.user.id, m.role_ids]));
+		this.memberJoinedAt[serverId] = Object.fromEntries(
+			members.map((m) => [m.user.id, m.joined_at])
+		);
 		members.forEach((m) => usersState.applyUser(m.user));
 		if ((this.memberEvents[serverId] ?? 0) === eventsBefore) {
 			this.patchServer(serverId, { members: members.map((m) => m.user) });
@@ -305,6 +311,11 @@ export class ServersState {
 		const me = usersState.loggedInUser?.id;
 		const ids = me != null ? (this.memberRoles[serverId]?.[me] ?? []) : [];
 		return rankOf(this.roles[serverId] ?? [], ids);
+	}
+
+	/** When the member joined, or null until a roster load has said. */
+	joinedAtOf(serverId: number, userId: number): string | null {
+		return this.memberJoinedAt[serverId]?.[userId] ?? null;
 	}
 
 	/** A member's assigned roles, highest first. */
@@ -439,6 +450,7 @@ export class ServersState {
 		delete this.channelPermissions[serverId];
 		delete this.roles[serverId];
 		delete this.memberRoles[serverId];
+		delete this.memberJoinedAt[serverId];
 		unreadState.forgetServer(serverId);
 	}
 
@@ -483,6 +495,8 @@ export class ServersState {
 	/** Drop a member who left or was kicked (member_left). */
 	removeMember(serverId: number, userId: number) {
 		this.memberEvents[serverId] = (this.memberEvents[serverId] ?? 0) + 1;
+		const joinedAt = this.memberJoinedAt[serverId];
+		if (joinedAt) delete joinedAt[userId];
 		const server = this.servers[serverId];
 		if (!server?.members?.some((m) => m.id === userId)) return;
 

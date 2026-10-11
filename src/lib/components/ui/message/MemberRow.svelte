@@ -1,9 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/components/ui/avatar/Avatar.svelte';
 	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
-	import ActionDropdownItems from '$lib/components/ui/dropdown-menu/ActionDropdownItems.svelte';
-	import { usersState } from '$lib/states/usersState.svelte';
+	import { profileCardState } from '$lib/states/profileCardState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { memberActions } from '$lib/utils/menuActions';
 	import type { User } from '$lib/types/auth.types';
@@ -17,7 +15,8 @@
 
 	let { user, online = false, role, serverId = null }: Props = $props();
 
-	const isMe = $derived(usersState.loggedInUser?.id === user.id);
+	let button = $state<HTMLButtonElement | null>(null);
+
 	const color = $derived(serversState.nameColorOf(serverId, user.id));
 	const actions = $derived(memberActions(serversState.selectedServerId, user));
 </script>
@@ -46,26 +45,23 @@
 
 <ActionContextMenu {actions}>
 	{#snippet children(menuProps)}
-		{#if isMe}
-			<div
-				{...menuProps}
-				class="flex h-10 items-center gap-2.5 rounded-lg px-2 hover:bg-accent pointer-coarse:h-11"
-			>
-				{@render row()}
-			</div>
-		{:else}
-			<div {...menuProps}>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger
-						class="flex h-10 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent pointer-coarse:h-11"
-					>
-						{@render row()}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content side="left" align="start" class="w-48">
-						<ActionDropdownItems {actions} />
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
-			</div>
-		{/if}
+		<button
+			{...menuProps}
+			bind:this={button}
+			type="button"
+			aria-haspopup="dialog"
+			data-state={profileCardState.anchor === button
+				? 'open'
+				: (menuProps['data-state'] ?? 'closed')}
+			class="flex h-10 w-full items-center gap-2.5 rounded-lg px-2 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent pointer-coarse:h-11"
+			onclick={(e) =>
+				profileCardState.toggle(
+					e.currentTarget,
+					{ kind: 'user', userId: user.id, serverId, fallbackName: user.username },
+					{ side: 'left', align: 'start' }
+				)}
+		>
+			{@render row()}
+		</button>
 	{/snippet}
 </ActionContextMenu>
