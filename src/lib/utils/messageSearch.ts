@@ -1,7 +1,15 @@
+import type { User } from '$lib/types/auth.types';
 import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 import { db } from '$lib/utils/db';
-import { messagePlainText } from '$lib/utils/messageContent';
-import { normalizeText, tokenize } from '$lib/utils/searchText';
+import { messagePlainText, timestampMs } from '$lib/utils/messageContent';
+import {
+	HAS_FIELD,
+	normalizeName,
+	postFromKey,
+	type HasField,
+	type HasKind
+} from '$lib/utils/searchFacets';
+import { normalizeText } from '$lib/utils/searchText';
 import Dexie from 'dexie';
 
 export type SearchScope =
@@ -14,10 +22,6 @@ export type SearchScope =
 /** Match sets up to this size are loaded and sorted; bigger ones walk the time index. */
 const SMALL_MATCH_SET = 500;
 const WORD_SEPARATORS = /([^\p{L}\p{N}]+)/u;
-
-export function queryTokens(query: string): string[] {
-	return tokenize(query);
-}
 
 /** Keys of every row with a word starting with each token. A multiEntry prefix query can
  *  return the same key more than once, so the result is a set. */
@@ -54,44 +58,155 @@ function inMessageScope(message: StoredMessage, scope: SearchScope): boolean {
 	}
 }
 
-type TimeIndex = '[server_id+ts]' | '[channel_id+ts]' | '[post_id+ts]' | '[conversation_id+ts]';
+export type MessageFilters = {
+	/** Every `fromKey` the author filter can mean; null when there is none. */
+	fromKeys: string[] | null;
+	has: HasKind[];
+	/** Inclusive start in ms. */
+	since: number | null;
+	/** Exclusive end in ms. */
+	until: number | null;
+};
 
-/** Primary keys of the scope's messages, newest first, read from the time index. */
-function scopeKeysNewestFirst(scope: SearchScope): Promise<string[]> {
-	if (scope.kind === 'everywhere') {
-		return db.messages.orderBy('ts').reverse().primaryKeys();
-	}
-	const [index, id]: [TimeIndex, number] =
-		scope.kind === 'server'
-			? ['[server_id+ts]', scope.serverId]
-			: scope.kind === 'channel'
-				? ['[channel_id+ts]', scope.channelId]
-				: scope.kind === 'post'
-					? ['[post_id+ts]', scope.postId]
-					: ['[conversation_id+ts]', scope.conversationId];
+export const NO_FILTERS: MessageFilters = { fromKeys: null, has: [], since: null, until: null };
+
+function isFiltered(f: MessageFilters): boolean {
+	return f.fromKeys !== null || f.has.length > 0 || f.since !== null || f.until !== null;
+}
+
+type TimeIndex =
+	| '[server_id+ts]'
+	| '[channel_id+ts]'
+	| '[post_id+ts]'
+	| '[conversation_id+ts]'
+	| '[fromKey+ts]'
+	| `[${HasField}+ts]`;
+
+/** Primary keys under one index value within the date window, oldest first (ties by id). */
+function keysAscending(index: TimeIndex, value: string | number, f: MessageFilters) {
 	return db.messages
 		.where(index)
-		.between([id, Dexie.minKey], [id, Dexie.maxKey])
-		.reverse()
+		.between([value, f.since ?? Dexie.minKey], [value, f.until ?? Dexie.maxKey], true, false)
 		.primaryKeys();
 }
 
-/** Ids of every stored message matching all tokens within scope, newest first. */
-export async function findMessageIds(tokens: string[], scope: SearchScope): Promise<string[]> {
-	if (tokens.length === 0) return [];
-	const matches = await intersectPrefixes('messages', tokens);
-	if (matches.size === 0) return [];
+function allKeysAscending(f: MessageFilters) {
+	return db.messages
+		.where('ts')
+		.between(f.since ?? Dexie.minKey, f.until ?? Dexie.maxKey, true, false)
+		.primaryKeys();
+}
 
-	if (matches.size > SMALL_MATCH_SET) {
-		const ordered = await scopeKeysNewestFirst(scope);
-		return ordered.filter((id) => matches.has(id));
+function scopeRange(scope: SearchScope): [TimeIndex, number] | null {
+	switch (scope.kind) {
+		case 'everywhere':
+			return null;
+		case 'server':
+			return ['[server_id+ts]', scope.serverId];
+		case 'channel':
+			return ['[channel_id+ts]', scope.channelId];
+		case 'post':
+			return ['[post_id+ts]', scope.postId];
+		case 'direct':
+			return ['[conversation_id+ts]', scope.conversationId];
 	}
+}
 
-	const rows = await db.messages.bulkGet([...matches] as string[]);
+function matchesRow(
+	row: StoredMessage,
+	scope: SearchScope,
+	f: MessageFilters,
+	words: Set<string> | null
+): boolean {
+	if (!inMessageScope(row, scope)) return false;
+	const ts = row.ts ?? 0;
+	if (f.since !== null && ts < f.since) return false;
+	if (f.until !== null && ts >= f.until) return false;
+	if (f.has.some((kind) => row[HAS_FIELD[kind]] !== 1)) return false;
+	if (f.fromKeys && !(row.fromKey && f.fromKeys.includes(row.fromKey))) return false;
+	return words === null || words.has(row.id);
+}
+
+async function rowsNewestFirst(
+	ids: Iterable<string>,
+	scope: SearchScope,
+	f: MessageFilters,
+	words: Set<string> | null
+): Promise<string[]> {
+	const rows = await db.messages.bulkGet([...ids]);
 	return rows
-		.filter((row): row is StoredMessage => row != null && inMessageScope(row, scope))
+		.filter((row): row is StoredMessage => row != null && matchesRow(row, scope, f, words))
 		.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0) || (a.id < b.id ? 1 : -1))
 		.map((row) => row.id);
+}
+
+/** Ids of every account with a stored message, including the shared account imported rows belong to. */
+export async function storedUserIds(): Promise<number[]> {
+	return (await db.messages.orderBy('user_id').uniqueKeys()) as number[];
+}
+
+/** Every `fromKey` a normalized `from:` name can mean: the imported author of that name, and
+ *  each user whose username normalizes to it. */
+export function fromKeysForName(name: string, users: Iterable<User>): string[] {
+	const keys = [`name:${name}`];
+	for (const user of users) {
+		if (normalizeName(user.username) === name) keys.push(`user:${user.id}`);
+	}
+	return keys;
+}
+
+/** Ids of every stored message matching all tokens and filters within scope, newest first. */
+export async function findMessageIds(
+	tokens: string[],
+	scope: SearchScope,
+	filters: MessageFilters = NO_FILTERS
+): Promise<string[]> {
+	if (tokens.length === 0 && !isFiltered(filters)) return [];
+	if (filters.fromKeys?.length === 0) return [];
+	if (filters.since !== null && filters.until !== null && filters.since >= filters.until) return [];
+
+	let words: Set<string> | null = null;
+	if (tokens.length > 0) {
+		words = (await intersectPrefixes('messages', tokens)) as Set<string>;
+		if (words.size === 0) return [];
+		if (words.size <= SMALL_MATCH_SET) return rowsNewestFirst(words, scope, filters, words);
+	}
+
+	const [hasLists, fromLists] = await Promise.all([
+		Promise.all(filters.has.map((kind) => keysAscending(`[${HAS_FIELD[kind]}+ts]`, 1, filters))),
+		Promise.all((filters.fromKeys ?? []).map((key) => keysAscending('[fromKey+ts]', key, filters)))
+	]);
+	if (hasLists.some((list) => list.length === 0)) return [];
+	const fromNonEmpty = fromLists.filter((list) => list.length > 0);
+	if (filters.fromKeys && fromNonEmpty.length === 0) return [];
+
+	const ordered = [...hasLists];
+	let fromUnion: Set<string> | null = null;
+	if (fromNonEmpty.length === 1) ordered.push(fromNonEmpty[0]);
+	else if (fromNonEmpty.length > 1) fromUnion = new Set(fromNonEmpty.flat());
+
+	const candidates: (string[] | Set<string>)[] = [...ordered];
+	if (fromUnion) candidates.push(fromUnion);
+	if (words) candidates.push(words);
+	if (candidates.length > 0) {
+		const smallest = candidates.reduce((a, b) => (sizeOf(b) < sizeOf(a) ? b : a));
+		if (sizeOf(smallest) <= SMALL_MATCH_SET)
+			return rowsNewestFirst(smallest, scope, filters, words);
+	}
+
+	const range = scopeRange(scope);
+	if (range) ordered.push(await keysAscending(range[0], range[1], filters));
+	else if (ordered.length === 0) ordered.push(await allKeysAscending(filters));
+
+	const source = ordered.reduce((a, b) => (b.length < a.length ? b : a));
+	const others: Set<string>[] = ordered.filter((list) => list !== source).map((l) => new Set(l));
+	if (fromUnion) others.push(fromUnion);
+	if (words) others.push(words);
+	return source.reverse().filter((id) => others.every((set) => set.has(id)));
+}
+
+function sizeOf(list: string[] | Set<string>): number {
+	return Array.isArray(list) ? list.length : list.size;
 }
 
 /** Rows for ids, in the same order; ids no longer stored are skipped. */
@@ -115,20 +230,32 @@ function inPostScope(post: StoredPost, scope: SearchScope): boolean {
 	}
 }
 
-/** Forum posts whose title matches all tokens, most recently active first. */
+/** Forum posts whose title matches all tokens, most recently active first. A post has no
+ *  attachments or links of its own, so any `has:` filter excludes them all. */
 export async function findPosts(
 	tokens: string[],
 	scope: SearchScope,
-	limit = 5
+	limit = 5,
+	filters: MessageFilters = NO_FILTERS
 ): Promise<StoredPost[]> {
-	if (tokens.length === 0 || scope.kind === 'direct') return [];
+	if (tokens.length === 0 || scope.kind === 'direct' || filters.has.length > 0) return [];
 	const matches = await intersectPrefixes('posts', tokens);
 	if (matches.size === 0) return [];
 	const rows = await db.posts.bulkGet([...matches] as number[]);
 	return rows
 		.filter((row): row is StoredPost => row != null && inPostScope(row, scope))
+		.filter((row) => postMatchesFilters(row, filters))
 		.sort((a, b) => Date.parse(b.last_activity_at) - Date.parse(a.last_activity_at))
 		.slice(0, limit);
+}
+
+function postMatchesFilters(post: StoredPost, f: MessageFilters): boolean {
+	if (f.fromKeys) {
+		const key = postFromKey(post);
+		if (key === null || !f.fromKeys.includes(key)) return false;
+	}
+	const created = timestampMs(post.created_at);
+	return (f.since === null || created >= f.since) && (f.until === null || created < f.until);
 }
 
 export type TextPart = { text: string; hit: boolean };

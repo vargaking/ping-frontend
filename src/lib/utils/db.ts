@@ -2,6 +2,7 @@ import type { User } from '$lib/types/auth.types';
 import type { Channel } from '$lib/types/channel.types';
 import type { StoredMessage, StoredPost, ThreadSync } from '$lib/types/localHistory.types';
 import type { Server } from '$lib/types/server.types';
+import { HAS_FIELDS, messageFacets } from '$lib/utils/searchFacets';
 import { messageWords } from '$lib/utils/searchText';
 import { timestampMs } from '$lib/utils/messageContent';
 import Dexie, { type DBCore, type EntityTable } from 'dexie';
@@ -105,11 +106,18 @@ function indexedDBAvailable(): boolean {
 }
 
 function withDerivedFields(message: StoredMessage): StoredMessage {
-	return { ...message, ts: timestampMs(message.timestamp), words: messageWords(message) };
+	const row: StoredMessage = {
+		...message,
+		ts: timestampMs(message.timestamp),
+		words: messageWords(message)
+	};
+	// update and modify put back the old row, which may carry flags that no longer hold.
+	for (const field of HAS_FIELDS) delete row[field];
+	return Object.assign(row, messageFacets(message));
 }
 
 /** Every write to `messages` (add, put, and the update/modify calls built on put) gets
- *  fresh `ts` and `words`, so no call site has to know about them. */
+ *  fresh derived search fields, so no call site has to know about them. */
 function deriveMessageFields(down: DBCore): DBCore {
 	return {
 		...down,
@@ -164,6 +172,23 @@ export function createDexieDb(name = 'PingDatabase'): AppDb {
 				.modify((message) => {
 					message.ts = timestampMs(message.timestamp);
 					message.words = messageWords(message);
+				})
+		);
+	// v5 adds the author and has: facets, each with a time index, so filters can be answered
+	// from the index alone.
+	dexieDb
+		.version(5)
+		.stores({
+			messages:
+				'id, server_id, channel_id, conversation_id, post_id, user_id, ts, *words, [server_id+ts], [channel_id+ts], [conversation_id+ts], [post_id+ts], [fromKey+ts], [hasFile+ts], [hasImage+ts], [hasVideo+ts], [hasLink+ts]'
+		})
+		.upgrade((tx) =>
+			tx
+				.table<StoredMessage>('messages')
+				.toCollection()
+				.modify((message) => {
+					for (const field of HAS_FIELDS) delete message[field];
+					Object.assign(message, messageFacets(message));
 				})
 		);
 	dexieDb.use({ stack: 'dbcore', name: 'deriveMessageFields', create: deriveMessageFields });

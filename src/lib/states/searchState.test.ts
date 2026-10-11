@@ -1,19 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
-import { findMessageIds, findPosts, loadMessages } from '$lib/utils/messageSearch';
-import { tokenize } from '$lib/utils/searchText';
+import type { User } from '$lib/types/auth.types';
+import {
+	findMessageIds,
+	findPosts,
+	loadMessages,
+	NO_FILTERS,
+	storedUserIds
+} from '$lib/utils/messageSearch';
 import { conversationsState } from './conversationsState.svelte';
 import { searchState } from './searchState.svelte';
 import { unreadState } from './unreadState.svelte';
+import { usersState } from './usersState.svelte';
 
-vi.mock('$lib/utils/messageSearch', () => ({
-	queryTokens: (query: string) => tokenize(query),
+vi.mock('$lib/utils/messageSearch', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/utils/messageSearch')>()),
 	findMessageIds: vi.fn(),
 	findPosts: vi.fn(),
-	loadMessages: vi.fn()
+	loadMessages: vi.fn(),
+	storedUserIds: vi.fn()
 }));
 
 const findIds = vi.mocked(findMessageIds);
+const storedIds = vi.mocked(storedUserIds);
 const findPostRows = vi.mocked(findPosts);
 const loadRows = vi.mocked(loadMessages);
 
@@ -34,6 +43,7 @@ beforeEach(() => {
 	vi.useFakeTimers();
 	findIds.mockReset().mockResolvedValue([]);
 	findPostRows.mockReset().mockResolvedValue([]);
+	storedIds.mockReset().mockResolvedValue([]);
 	loadRows.mockReset().mockImplementation(async (ids) => ids.map((id) => channelMessage(id, 10)));
 	unreadState.noteNewChannel(1, { id: 10, name: 'general', type: 'text' } as never);
 	unreadState.noteNewChannel(1, { id: 20, name: 'forum', type: 'forum' } as never);
@@ -41,8 +51,10 @@ beforeEach(() => {
 
 afterEach(() => {
 	searchState.reset();
+	usersState.reset();
 	unreadState.reset();
 	conversationsState.reset();
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 });
 
@@ -57,7 +69,7 @@ describe('searchState', () => {
 
 		await vi.advanceTimersByTimeAsync(20);
 		expect(findIds).toHaveBeenCalledTimes(1);
-		expect(findIds).toHaveBeenCalledWith(['mir'], { kind: 'everywhere' });
+		expect(findIds).toHaveBeenCalledWith(['mir'], { kind: 'everywhere' }, NO_FILTERS);
 		expect(searchState.status).toBe('ready');
 	});
 
@@ -114,10 +126,104 @@ describe('searchState', () => {
 		searchState.setScope({ kind: 'channel', channelId: 10 });
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(findIds).toHaveBeenLastCalledWith(['abc'], { kind: 'channel', channelId: 10 });
+		expect(findIds).toHaveBeenLastCalledWith(
+			['abc'],
+			{ kind: 'channel', channelId: 10 },
+			NO_FILTERS
+		);
 		searchState.setScope({ kind: 'channel', channelId: 10 });
 		await vi.advanceTimersByTimeAsync(500);
 		expect(findIds).toHaveBeenCalledTimes(2);
+	});
+
+	describe('filters', () => {
+		const user = (id: number, username: string) => ({ id, username }) as User;
+
+		it('searches on filters alone and exposes the has: filters', async () => {
+			findIds.mockResolvedValue(['a']);
+			searchState.setQuery('has:image has:file');
+			await vi.advanceTimersByTimeAsync(120);
+
+			expect(findIds).toHaveBeenCalledWith(
+				[],
+				{ kind: 'everywhere' },
+				{
+					fromKeys: null,
+					has: ['image', 'file'],
+					since: null,
+					until: null
+				}
+			);
+			expect(findPostRows).toHaveBeenCalledWith([], { kind: 'everywhere' }, 25, expect.anything());
+			expect(searchState.hits).toHaveLength(1);
+			expect(searchState.has).toEqual(['image', 'file']);
+
+			searchState.setQuery('');
+			expect(searchState.has).toEqual([]);
+		});
+
+		it('turns a loaded username into author keys without fetching profiles', async () => {
+			usersState.applyUser(user(5, 'Dáni'));
+			const fetchUser = vi.spyOn(usersState, 'getOrFetchUser');
+			searchState.setQuery('from:dani');
+			await vi.advanceTimersByTimeAsync(120);
+
+			expect(findIds.mock.calls[0][2]?.fromKeys).toEqual(['name:dani', 'user:5']);
+			expect(storedIds).not.toHaveBeenCalled();
+			expect(fetchUser).not.toHaveBeenCalled();
+		});
+
+		it('fetches the profiles of stored authors it does not know, once', async () => {
+			storedIds.mockResolvedValue([5, 6]);
+			usersState.applyUser(user(6, 'someone'));
+			const fetchUser = vi.spyOn(usersState, 'getOrFetchUser').mockImplementation(async (id) => {
+				usersState.applyUser(user(id, 'Gone'));
+				return usersState.users[id];
+			});
+
+			searchState.setQuery('from:gone');
+			await vi.advanceTimersByTimeAsync(120);
+			expect(fetchUser).toHaveBeenCalledTimes(1);
+			expect(fetchUser).toHaveBeenCalledWith(5);
+			expect(findIds.mock.calls[0][2]?.fromKeys).toEqual(['name:gone', 'user:5']);
+
+			searchState.setQuery('from:nobody');
+			await vi.advanceTimersByTimeAsync(120);
+			expect(fetchUser).toHaveBeenCalledTimes(1);
+			expect(findIds.mock.calls[1][2]?.fromKeys).toEqual(['name:nobody']);
+		});
+
+		it('does not retry a profile that failed to load', async () => {
+			storedIds.mockResolvedValue([9]);
+			const fetchUser = vi
+				.spyOn(usersState, 'getOrFetchUser')
+				.mockRejectedValue(new Error('deleted'));
+
+			searchState.setQuery('from:ghost');
+			await vi.advanceTimersByTimeAsync(120);
+			searchState.setQuery('from:ghost x1');
+			await vi.advanceTimersByTimeAsync(120);
+
+			expect(fetchUser).toHaveBeenCalledTimes(1);
+			expect(searchState.status).toBe('ready');
+		});
+
+		it('lets a newer query win while an author is still being resolved', async () => {
+			const slow = deferred<number[]>();
+			storedIds.mockReturnValueOnce(slow.promise);
+			findIds.mockResolvedValue(['new']);
+
+			searchState.setQuery('from:slow');
+			await vi.advanceTimersByTimeAsync(120);
+			searchState.setQuery('abc');
+			await vi.advanceTimersByTimeAsync(120);
+			expect(searchState.hits.map((h) => h.id)).toEqual(['new']);
+
+			slow.resolve([]);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(findIds).toHaveBeenCalledTimes(1);
+			expect(searchState.tokens).toEqual(['abc']);
+		});
 	});
 
 	describe('loadMore', () => {

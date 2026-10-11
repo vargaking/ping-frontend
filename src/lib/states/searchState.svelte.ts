@@ -2,12 +2,17 @@ import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 import {
 	findMessageIds,
 	findPosts,
+	fromKeysForName,
 	loadMessages,
-	queryTokens,
+	storedUserIds,
+	type MessageFilters,
 	type SearchScope
 } from '$lib/utils/messageSearch';
+import type { HasKind } from '$lib/utils/searchFacets';
+import { hasFilters, parseSearchQuery } from '$lib/utils/searchQuery';
 import { conversationsState } from './conversationsState.svelte';
 import { unreadState } from './unreadState.svelte';
+import { usersState } from './usersState.svelte';
 
 const DEBOUNCE_MS = 120;
 const PAGE_SIZE = 30;
@@ -43,6 +48,8 @@ class SearchState {
 	posts = $state.raw<StoredPost[]>([]);
 	/** The words the shown results were found with. */
 	tokens = $state.raw<string[]>([]);
+	/** The `has:` filters the shown results were found with. */
+	has = $state.raw<HasKind[]>([]);
 	hasMore = $state(false);
 
 	private ids: string[] = [];
@@ -52,6 +59,8 @@ class SearchState {
 	/** Bumped by every new search and by reset, so a slow older one can't overwrite a newer. */
 	private token = 0;
 	private loadingToken: number | null = null;
+	/** Stored authors whose profile was already asked for, so a name with no match isn't refetched. */
+	private triedAuthors = new Set<number>();
 
 	setQuery(query: string) {
 		this.query = query;
@@ -93,6 +102,7 @@ class SearchState {
 		this.clearTimer();
 		this.query = '';
 		this.scope = EVERYWHERE;
+		this.triedAuthors.clear();
 		this.clear();
 	}
 
@@ -104,6 +114,7 @@ class SearchState {
 		this.hits = [];
 		this.posts = [];
 		this.tokens = [];
+		this.has = [];
 		this.hasMore = false;
 		this.status = 'idle';
 	}
@@ -116,7 +127,8 @@ class SearchState {
 	private schedule(delay: number) {
 		this.clearTimer();
 		const token = ++this.token;
-		if (queryTokens(this.query).length === 0) {
+		const query = parseSearchQuery(this.query);
+		if (query.words.length === 0 && !hasFilters(query)) {
 			this.clear();
 			return;
 		}
@@ -128,12 +140,21 @@ class SearchState {
 	}
 
 	private async run(token: number) {
-		const tokens = queryTokens(this.query);
+		const query = parseSearchQuery(this.query);
+		const tokens = query.words;
 		const scope = this.scope;
 		try {
+			const fromKeys = query.from ? await this.resolveFrom(query.from) : null;
+			if (token !== this.token) return;
+			const filters: MessageFilters = {
+				fromKeys,
+				has: query.has,
+				since: query.since,
+				until: query.until
+			};
 			const [ids, posts] = await Promise.all([
-				findMessageIds(tokens, scope),
-				findPosts(tokens, scope, POST_CANDIDATES)
+				findMessageIds(tokens, scope, filters),
+				findPosts(tokens, scope, POST_CANDIDATES, filters)
 			]);
 			if (token !== this.token) return;
 			const page = await this.nextPage(ids, 0, token);
@@ -145,6 +166,7 @@ class SearchState {
 			this.hits = page.rows;
 			this.posts = posts.filter((post) => channelVisible(post.channel_id)).slice(0, POST_LIMIT);
 			this.tokens = tokens;
+			this.has = query.has;
 			this.hasMore = page.next < ids.length;
 			this.status = 'ready';
 		} catch (e) {
@@ -154,6 +176,19 @@ class SearchState {
 			this.tokens = tokens;
 			this.status = 'ready';
 		}
+	}
+
+	/** The author keys a `from:` name can mean. Profiles of stored authors that aren't loaded
+	 *  are fetched only when no loaded user has the name, once per author. */
+	private async resolveFrom(name: string): Promise<string[]> {
+		const known = fromKeysForName(name, Object.values(usersState.users));
+		if (known.some((key) => key.startsWith('user:'))) return known;
+		const missing = (await storedUserIds()).filter(
+			(id) => !usersState.users[id] && !this.triedAuthors.has(id)
+		);
+		missing.forEach((id) => this.triedAuthors.add(id));
+		await Promise.allSettled(missing.map((id) => usersState.getOrFetchUser(id)));
+		return fromKeysForName(name, Object.values(usersState.users));
 	}
 
 	/** Up to one page of visible rows from `from`; null when a newer search has taken over. */

@@ -1,18 +1,22 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { User } from '$lib/types/auth.types';
 import type { StoredPost } from '$lib/types/localHistory.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { clearLocalCache, db } from './db';
 import {
 	findMessageIds,
 	findPosts,
+	fromKeysForName,
 	loadMessages,
 	markWords,
-	queryTokens,
+	NO_FILTERS,
 	searchableText,
 	snippet,
+	storedUserIds,
 	type SearchScope
 } from './messageSearch';
+import { parseSearchQuery } from './searchQuery';
 import { tokenize } from './searchText';
 
 const doc = (value: string) =>
@@ -56,7 +60,7 @@ function post(id: number, title: string, extra: Partial<StoredPost> = {}): Store
 }
 
 async function find(query: string, scope: SearchScope = { kind: 'everywhere' }) {
-	return findMessageIds(queryTokens(query), scope);
+	return findMessageIds(tokenize(query), scope);
 }
 
 beforeEach(async () => {
@@ -231,6 +235,289 @@ describe('findMessageIds', () => {
 	});
 });
 
+describe('filters', () => {
+	const EVERYWHERE: SearchScope = { kind: 'everywhere' };
+	const dani = { id: 2, username: 'Dáni' } as User;
+	const importer = { id: 1, username: 'importer' } as User;
+
+	async function search(input: string, scope: SearchScope = EVERYWHERE, users = [dani, importer]) {
+		const query = parseSearchQuery(input);
+		return findMessageIds(query.words, scope, {
+			fromKeys: query.from ? fromKeysForName(query.from, users) : null,
+			has: query.has,
+			since: query.since,
+			until: query.until
+		});
+	}
+
+	const attachment = (extra: Record<string, unknown>) =>
+		({ id: 'f', filename: 'x', size: 1, kind: 'file', ...extra }) as never;
+	const withImage = { attachments: [attachment({ kind: 'image', content_type: 'image/png' })] };
+	const withVideo = { attachments: [attachment({ content_type: 'video/mp4' })] };
+	const withPdf = { attachments: [attachment({ content_type: 'application/pdf' })] };
+	const linkText = (url: string) =>
+		({
+			type: 'doc',
+			content: [
+				{
+					type: 'paragraph',
+					content: [{ type: 'text', text: 'docs', marks: [{ type: 'link', attrs: { href: url } }] }]
+				}
+			]
+		}) as never;
+	const imported = (id: string, name: string) => ({ imported_author: { id, name } });
+
+	describe('from:', () => {
+		it('matches one user, newest first', async () => {
+			await db.messages.bulkPut([
+				message('a', 'one', { user_id: 1 }),
+				message('b', 'two', { user_id: 2 }),
+				message('c', 'three', { user_id: 2 }),
+				message('d', 'four', { user_id: 1 })
+			]);
+			expect(await search('from:dani')).toEqual(['c', 'b']);
+		});
+
+		it('matches an imported name for every author that has it, and no other import', async () => {
+			await db.messages.bulkPut([
+				message('a', 'one', imported('x1', 'Old Name')),
+				message('b', 'two', imported('x2', 'old  náme')),
+				message('c', 'three', imported('x3', 'Other')),
+				message('d', 'four', { user_id: 1 })
+			]);
+			expect(await search('from:"Old Name"')).toEqual(['b', 'a']);
+			expect(await search('from:other')).toEqual(['c']);
+		});
+
+		it('joins a user and an imported author of the same name, newest first', async () => {
+			await db.messages.bulkPut([
+				message('a', 'one', { user_id: 2 }),
+				message('b', 'two', imported('x1', 'dani')),
+				message('c', 'three', { user_id: 2 }),
+				message('d', 'four', imported('x2', 'Dáni')),
+				message('e', 'five', { user_id: 3 })
+			]);
+			expect(await search('from:dani')).toEqual(['d', 'c', 'b', 'a']);
+		});
+
+		it('does not let the shared import account match its imported rows', async () => {
+			await db.messages.bulkPut([
+				message('a', 'one', { user_id: 1 }),
+				message('b', 'two', { user_id: 1, ...imported('x1', 'Someone') })
+			]);
+			expect(await search('from:importer')).toEqual(['a']);
+		});
+
+		it('matches whole names only', async () => {
+			await db.messages.bulkPut([
+				message('a', 'one', { user_id: 2 }),
+				message('b', 'two', imported('x1', 'Daniel'))
+			]);
+			expect(await search('from:dan')).toEqual([]);
+		});
+
+		it('finds nothing for no author keys', async () => {
+			await db.messages.put(message('a', 'one'));
+			expect(await findMessageIds([], EVERYWHERE, { ...NO_FILTERS, fromKeys: [] })).toEqual([]);
+		});
+	});
+
+	describe('has:', () => {
+		beforeEach(async () => {
+			await db.messages.bulkPut([
+				message('img', 'x1', withImage),
+				message('vid', 'x1', withVideo),
+				message('pdf', 'x1', withPdf),
+				message('link', 'x1', { content: linkText('https://example.com') }),
+				message('bare', 'see https://example.com'),
+				message('plain', 'x1')
+			]);
+		});
+
+		it.each([
+			['has:file', ['pdf', 'vid', 'img']],
+			['has:image', ['img']],
+			['has:video', ['vid']],
+			['has:link', ['bare', 'link']]
+		])('%s', async (input, expected) => {
+			expect(await search(input)).toEqual(expected);
+		});
+
+		it('needs every kind that is asked for', async () => {
+			await db.messages.put(
+				message('both', 'x1', { ...withImage, content: linkText('https://a.io') })
+			);
+			expect(await search('has:image has:link')).toEqual(['both']);
+			expect(await search('has:image has:video')).toEqual([]);
+		});
+
+		it('works with words', async () => {
+			await db.messages.put(message('named', 'mirage', withImage));
+			expect(await search('mirage has:image')).toEqual(['named']);
+			expect(await search('mirage has:video')).toEqual([]);
+		});
+	});
+
+	describe('dates', () => {
+		const local = (...args: [number, number, number, number, number]) =>
+			new Date(...args).toISOString();
+
+		beforeEach(async () => {
+			await db.messages.bulkPut([
+				message('feb', 'x1', { timestamp: local(2026, 1, 28, 23, 59) }),
+				message('first', 'x1', { timestamp: local(2026, 2, 1, 0, 0) }),
+				message('last', 'x1', { timestamp: local(2026, 2, 31, 23, 30) }),
+				message('midnight', 'x1', { timestamp: local(2026, 3, 1, 0, 0) }),
+				message('april', 'x1', { timestamp: local(2026, 3, 1, 0, 10) })
+			]);
+		});
+
+		it.each([
+			['during:2026-03', ['last', 'first']],
+			['after:2026-03-01 before:2026-04-01', ['last', 'first']],
+			['during:2026-03-31', ['last']],
+			['during:2026-03-01', ['first']],
+			['before:2026-03-01', ['feb']],
+			['before:2026-04-01', ['last', 'first', 'feb']],
+			['after:2026-04-01', ['april', 'midnight']],
+			['after:2026-03-31 before:2026-04-02', ['april', 'midnight', 'last']],
+			['after:2026-05-01 before:2026-04-01', []]
+		])('%s', async (input, expected) => {
+			expect(await search(input)).toEqual(expected);
+		});
+
+		it('applies to a scope as well', async () => {
+			const channel: SearchScope = { kind: 'channel', channelId: 10 };
+			expect(await search('during:2026-03', channel)).toEqual(['last', 'first']);
+			expect(await search('before:2026-03-01', channel)).toEqual(['feb']);
+		});
+
+		it('combines with has: and words', async () => {
+			await db.messages.put(
+				message('shot', 'mirage', { ...withImage, timestamp: local(2026, 2, 15, 12, 0) })
+			);
+			expect(await search('mirage has:image during:2026-03')).toEqual(['shot']);
+			expect(await search('mirage has:image during:2026-04')).toEqual([]);
+		});
+	});
+
+	it('orders messages with the same time by id, newest first', async () => {
+		const timestamp = '2025-03-01T10:00:00Z';
+		await db.messages.bulkPut([
+			message('a', 'x1', { ...withImage, timestamp }),
+			message('c', 'x1', { ...withImage, timestamp }),
+			message('b', 'x1', { ...withImage, timestamp })
+		]);
+		expect(await search('has:image')).toEqual(['c', 'b', 'a']);
+		expect(await search('x1 has:image')).toEqual(['c', 'b', 'a']);
+	});
+
+	describe('scopes', () => {
+		beforeEach(async () => {
+			await db.messages.bulkPut([
+				message('s1c10', 'topic', { ...withImage, server_id: 1, channel_id: 10 }),
+				message('s1c11', 'topic', { ...withImage, server_id: 1, channel_id: 11 }),
+				message('s2c30', 'topic', { ...withImage, server_id: 2, channel_id: 30 }),
+				message('post5', 'topic', { ...withImage, server_id: 1, channel_id: 20, post_id: 5 }),
+				message('dm7', 'topic', {
+					...withImage,
+					server_id: null,
+					channel_id: null,
+					conversation_id: 7
+				}),
+				message('noimage', 'topic', { server_id: 1, channel_id: 10 })
+			]);
+		});
+
+		it.each([
+			[{ kind: 'everywhere' }, ['dm7', 'post5', 's2c30', 's1c11', 's1c10']],
+			[{ kind: 'server', serverId: 1 }, ['post5', 's1c11', 's1c10']],
+			[{ kind: 'channel', channelId: 10 }, ['s1c10']],
+			[{ kind: 'post', postId: 5 }, ['post5']],
+			[{ kind: 'direct', conversationId: 7 }, ['dm7']]
+		] as [SearchScope, string[]][])('narrows has:image to %j', async (scope, expected) => {
+			expect(await search('has:image', scope)).toEqual(expected);
+		});
+	});
+
+	describe('more than 500 candidates', () => {
+		const COUNT = 1200;
+		const id = (i: number) => `m${String(i).padStart(4, '0')}`;
+		const isImage = (i: number) => i % 2 === 0;
+		const userOf = (i: number) => (i % 11 === 0 ? 2 : 1);
+		const serverOf = (i: number) => (i % 3 === 0 ? 2 : 1);
+		const newestFirst = (indexes: number[]) => indexes.map(id).sort().reverse();
+		const all = Array.from({ length: COUNT }, (_, i) => i);
+		const one = { id: 1, username: 'one' } as User;
+
+		beforeEach(async () => {
+			await db.messages.bulkPut(
+				all.map((i) =>
+					message(id(i), `needle ${i}`, {
+						user_id: userOf(i),
+						server_id: serverOf(i),
+						...(isImage(i) ? withImage : {})
+					})
+				)
+			);
+		});
+
+		it('combines words, has: and from:', async () => {
+			const expected = newestFirst(all.filter((i) => isImage(i) && userOf(i) === 1));
+			expect(expected.length).toBeGreaterThan(500);
+			expect(await search('needle has:image from:one', EVERYWHERE, [one])).toEqual(expected);
+		});
+
+		it('narrows a filter-only query to a scope', async () => {
+			const expected = newestFirst(all.filter((i) => isImage(i) && serverOf(i) === 1));
+			expect(await search('has:image', { kind: 'server', serverId: 1 })).toEqual(expected);
+		});
+
+		it('walks the time index for a date window alone', async () => {
+			const since = (await db.messages.get(id(100)))?.ts ?? 0;
+			const found = await findMessageIds([], EVERYWHERE, { ...NO_FILTERS, since });
+			expect(found).toEqual(newestFirst(all.filter((i) => i >= 100)));
+		});
+
+		it('joins a user and several imported authors that share a name', async () => {
+			const importedIds = Array.from({ length: 700 }, (_, i) => `x${id(i)}`);
+			await db.messages.bulkPut(
+				importedIds.map((importedId, i) =>
+					message(importedId, 'extra', imported(`author${i % 3}`, 'Dani'))
+				)
+			);
+			const expected = [
+				...[...importedIds].sort().reverse(),
+				...newestFirst(all.filter((i) => userOf(i) === 2))
+			];
+			expect(await search('from:dani')).toEqual(expected);
+		});
+	});
+});
+
+describe('fromKeysForName', () => {
+	it('names the imported author and every user whose name folds to it', () => {
+		const users = [
+			{ id: 2, username: 'Dáni' },
+			{ id: 3, username: 'dani' },
+			{ id: 4, username: 'daniel' }
+		] as User[];
+		expect(fromKeysForName('dani', users)).toEqual(['name:dani', 'user:2', 'user:3']);
+		expect(fromKeysForName('nobody', users)).toEqual(['name:nobody']);
+	});
+});
+
+describe('storedUserIds', () => {
+	it('lists each account with a stored message once', async () => {
+		await db.messages.bulkPut([
+			message('a', 'x1', { user_id: 3 }),
+			message('b', 'x1', { user_id: 3 }),
+			message('c', 'x1', { user_id: 1 })
+		]);
+		expect(await storedUserIds()).toEqual([1, 3]);
+	});
+});
+
 describe('loadMessages', () => {
 	it('keeps the order of the ids and skips missing ones', async () => {
 		await db.messages.bulkPut([message('a', 'one'), message('b', 'two'), message('c', 'three')]);
@@ -254,21 +541,21 @@ describe('findPosts', () => {
 	});
 
 	it('matches titles by prefix, all words, newest activity first', async () => {
-		const posts = await findPosts(queryTokens('mir'), { kind: 'everywhere' });
+		const posts = await findPosts(tokenize('mir'), { kind: 'everywhere' });
 		expect(posts.map((p) => p.id)).toEqual([2, 3, 1]);
-		const narrowed = await findPosts(queryTokens('mir smo'), { kind: 'everywhere' });
+		const narrowed = await findPosts(tokenize('mir smo'), { kind: 'everywhere' });
 		expect(narrowed.map((p) => p.id)).toEqual([1]);
 	});
 
 	it('ignores accents', async () => {
 		await db.posts.put(post(5, 'Árvíz térkép'));
-		expect(
-			(await findPosts(queryTokens('arviz'), { kind: 'everywhere' })).map((p) => p.id)
-		).toEqual([5]);
+		expect((await findPosts(tokenize('arviz'), { kind: 'everywhere' })).map((p) => p.id)).toEqual([
+			5
+		]);
 	});
 
 	it('is scoped by server, channel and post', async () => {
-		const tokens = queryTokens('mirage');
+		const tokens = tokenize('mirage');
 		expect((await findPosts(tokens, { kind: 'server', serverId: 1 })).map((p) => p.id)).toEqual([
 			2, 1
 		]);
@@ -279,18 +566,52 @@ describe('findPosts', () => {
 	});
 
 	it('finds none in a direct conversation', async () => {
-		expect(await findPosts(queryTokens('mirage'), { kind: 'direct', conversationId: 1 })).toEqual(
-			[]
-		);
+		expect(await findPosts(tokenize('mirage'), { kind: 'direct', conversationId: 1 })).toEqual([]);
 	});
 
 	it('stops at the limit', async () => {
-		expect(await findPosts(queryTokens('mirage'), { kind: 'everywhere' }, 2)).toHaveLength(2);
-		expect(await findPosts(queryTokens('mirage'), { kind: 'everywhere' })).toHaveLength(3);
+		expect(await findPosts(tokenize('mirage'), { kind: 'everywhere' }, 2)).toHaveLength(2);
+		expect(await findPosts(tokenize('mirage'), { kind: 'everywhere' })).toHaveLength(3);
 	});
 
 	it('returns nothing for an empty query', async () => {
 		expect(await findPosts([], { kind: 'everywhere' })).toEqual([]);
+	});
+
+	describe('with filters', () => {
+		const everywhere = { kind: 'everywhere' } as const;
+		const tokens = tokenize('mirage');
+
+		beforeEach(async () => {
+			await db.posts.bulkPut([
+				post(10, 'Mirage by dani', { author_id: 2, created_at: '2025-03-10T12:00:00Z' }),
+				post(11, 'Mirage by import', {
+					author_id: 1,
+					imported_author: { id: 'x', name: 'Old Name' },
+					created_at: '2025-04-10T12:00:00Z'
+				})
+			]);
+		});
+
+		it.each([
+			['an account', { fromKeys: ['user:2'] }, [10]],
+			['an imported name', { fromKeys: ['name:old name'] }, [11]],
+			['no match', { fromKeys: ['user:99'] }, []],
+			['a start date', { since: Date.parse('2025-04-01T00:00:00Z') }, [11]],
+			['an end date', { until: Date.parse('2025-04-01T00:00:00Z') }, [10]]
+		])('narrows to %s', async (_, filters, expected) => {
+			const posts = await findPosts(tokens, everywhere, 25, { ...NO_FILTERS, ...filters });
+			expect(posts.map((p) => p.id).filter((id) => id >= 10)).toEqual(expected);
+		});
+
+		it('finds none when a has: filter is set', async () => {
+			expect(await findPosts(tokens, everywhere, 25, { ...NO_FILTERS, has: ['link'] })).toEqual([]);
+		});
+
+		it('finds none without words', async () => {
+			const filters = { ...NO_FILTERS, fromKeys: ['user:2'] };
+			expect(await findPosts([], everywhere, 25, filters)).toEqual([]);
+		});
 	});
 });
 
