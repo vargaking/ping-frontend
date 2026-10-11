@@ -118,11 +118,43 @@ describe('loading the newest page past a gap', () => {
 		expect(messagesState.messages(KEY)[1].edited_at).toBe('2026-10-08T12:05:00Z');
 	});
 
+	it('keeps what arrived when another load begins meanwhile', () => {
+		messagesState.addMessage(msg('during'));
+
+		messagesState.beginNewestLoad(KEY);
+		messagesState.set(KEY, [msg('x')], false);
+
+		expect(ids()).toEqual(['x', 'during']);
+	});
+
 	it('stops waiting once the load ends without a page', () => {
 		messagesState.endNewestLoad(KEY);
 		messagesState.addMessage(msg('late'));
 		messagesState.set(KEY, [msg('x')], false);
 		expect(ids()).toEqual(['x']);
+	});
+});
+
+describe('a window opened over a detached thread', () => {
+	beforeEach(() => {
+		messagesState.setWindow(KEY, [msg('w1'), msg('w2')], true);
+		messagesState.beginNewestLoad(KEY);
+		messagesState.addMessage(msg('live', { user_id: 3 }));
+	});
+
+	it('shows a message that arrived meanwhile when the window reaches the present', () => {
+		messagesState.set(KEY, [msg('x'), msg('y')], false);
+
+		expect(ids()).toEqual(['x', 'y', 'live']);
+		expect(messagesState.newerExists(KEY)).toBe(false);
+		expect(messagesState.heldBack(KEY)).toEqual([]);
+	});
+
+	it('counts a message that arrived meanwhile when the window stops short of the present', () => {
+		messagesState.setWindow(KEY, [msg('x'), msg('y')], true);
+
+		expect(ids()).toEqual(['x', 'y']);
+		expect(messagesState.heldBack(KEY)).toEqual([{ id: 'live', user_id: 3 }]);
 	});
 });
 
@@ -219,6 +251,31 @@ describe('a window of history', () => {
 			expect(ids()).toEqual(['w1', 'w2', 'n1', 'mine', 'n2', 'n3']);
 			expect(messagesState.newerAnchor(KEY)).toBeNull();
 		});
+	});
+
+	it.each([
+		['the edge', 'w2', 'w1'],
+		['a message before the edge', 'w1', 'w2']
+	])('moves the server edge back when %s is deleted', (_name, removed, edge) => {
+		window();
+		messagesState.addMessage(msg('mine', { status: 'pending' }));
+
+		messagesState.removeMessage(removed);
+
+		expect(messagesState.newerAnchor(KEY)).toBe(edge);
+	});
+
+	it.each([
+		['a page that continues the window', true, ['a']],
+		['the last page', false, []]
+	])('drops what %s shows from the held-back messages', (_name, hasNewer, expected) => {
+		window();
+		messagesState.addMessage(msg('live'));
+		messagesState.addMessage(msg('a'));
+
+		messagesState.appendNewer(KEY, [msg('n1'), msg('live')], hasNewer);
+
+		expect(messagesState.heldBack(KEY).map((m) => m.id)).toEqual(expected);
 	});
 
 	it('has nothing held back for unknown threads', () => {

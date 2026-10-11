@@ -113,12 +113,15 @@ class MessagesState {
 		thread.newerExists = true;
 	}
 
-	/** Past a gap, keep the messages that arrive while the newest page loads instead of dropping them. */
+	/**
+	 * Past a gap, keep the messages that arrive while the newest page loads instead of dropping
+	 * them. A load already running keeps what it collected.
+	 */
 	beginNewestLoad(key: string) {
 		const thread = this.threads[key];
 		if (!thread?.newerExists) return;
 		thread.newestLoad = {
-			arrived: [],
+			arrived: thread.newestLoad?.arrived ?? [],
 			known: new Set(thread.messages.filter((m) => !m.status).map((m) => m.id))
 		};
 	}
@@ -149,7 +152,8 @@ class MessagesState {
 		const thread = this.threads[key];
 		const shown = new Set(page.map((m) => m.id));
 		const heldBack: NonNullable<ThreadMessages['heldBack']> = [];
-		for (const m of [...(thread?.heldBack ?? []), ...unseen]) {
+		const arrived = thread?.newestLoad?.arrived ?? [];
+		for (const m of [...(thread?.heldBack ?? []), ...arrived, ...unseen]) {
 			if (shown.has(m.id)) continue;
 			shown.add(m.id);
 			heldBack.push({ id: m.id, user_id: m.user_id });
@@ -180,6 +184,10 @@ class MessagesState {
 		thread.newestLoad = undefined;
 		if (hasNewer) {
 			thread.newestServerId = newer.at(-1)?.id ?? thread.newestServerId;
+			if (thread.heldBack) {
+				const loaded = new Set(newer.map((m) => m.id));
+				thread.heldBack = thread.heldBack.filter((m) => !loaded.has(m.id));
+			}
 		} else {
 			thread.newerExists = false;
 			thread.heldBack = undefined;
@@ -270,6 +278,9 @@ class MessagesState {
 			for (const list of listsOf(thread)) {
 				const i = list.findIndex((m) => m.id === id);
 				if (i !== -1) {
+					if (list === thread.messages && thread.newestServerId === id) {
+						thread.newestServerId = list[i - 1]?.id;
+					}
 					list.splice(i, 1);
 					return;
 				}

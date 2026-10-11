@@ -454,7 +454,7 @@
 			try {
 				return await fetchPage({ after: messagesState.newerAnchor(key)! });
 			} catch (e) {
-				if (token === loadToken) messagesState.endNewestLoad(key);
+				if (token === loadToken && !pendingWindow) messagesState.endNewestLoad(key);
 				throw e;
 			}
 		},
@@ -496,12 +496,14 @@
 
 	/** Catch up on what may have been missed while the socket was down or the page frozen. */
 	async function resyncThread() {
-		await pendingWindow?.catch(() => {});
 		const key = threadKey;
+		do {
+			await pendingWindow?.catch(() => {});
+			await older.idle();
+			await newer.idle();
+		} while (pendingWindow);
+		if (destroyed || key !== threadKey) return;
 		if (loadState !== 'ready' || fromCache) return loadMessages(key);
-		await older.idle();
-		await newer.idle();
-		if (key !== threadKey) return;
 
 		const token = ++loadToken;
 		const loaded = messagesState.messages(key);
@@ -601,15 +603,15 @@
 	// The window being fetched for a jump, so a resync waits for it instead of making it stale.
 	let pendingWindow: Promise<unknown> | null = null;
 	let windowRequest = 0;
+	// Bumped when the user goes back to the present, which supersedes a window still being fetched.
+	let presentRequest = 0;
 
 	async function openWindow(id: string): Promise<'shown' | 'stale' | JumpFailure> {
-		const run = loadWindow(id);
-		pendingWindow = run;
-		try {
-			return await run;
-		} finally {
+		const run: Promise<'shown' | 'stale' | JumpFailure> = loadWindow(id).finally(() => {
 			if (pendingWindow === run) pendingWindow = null;
-		}
+		});
+		pendingWindow = run;
+		return run;
 	}
 
 	/** Replaces the loaded messages with a window around `id`, which the API serves. */
@@ -617,8 +619,14 @@
 		const key = threadKey;
 		const token = loadToken;
 		const request = ++windowRequest;
+		const present = presentRequest;
 		const superseded = () =>
-			request !== windowRequest || token !== loadToken || key !== threadKey || destroyed;
+			request !== windowRequest ||
+			present !== presentRequest ||
+			token !== loadToken ||
+			key !== threadKey ||
+			destroyed;
+		messagesState.beginNewestLoad(key);
 
 		let pageData: MessagePage;
 		try {
@@ -773,6 +781,7 @@
 
 		autoScrollAnchorId = newest.id;
 		untrack(() => {
+			if (loadedKey === threadKey && isOwnUnsent(newest)) presentRequest++;
 			if (stickToBottom) tick().then(scrollToBottom);
 			else if (loadedKey === threadKey && isOwnUnsent(newest)) void jumpToLatest();
 			else tick().then(measureFar);
@@ -805,6 +814,7 @@
 	);
 
 	async function jumpToLatest() {
+		presentRequest++;
 		if (messagesState.newerExists(threadKey)) {
 			await loadMessages(threadKey);
 			return;
