@@ -146,6 +146,7 @@ class VoiceState {
 	private generation = 0;
 	private swappingScreen = false;
 	private screenRepublishQueued = false;
+	private screenStopQueued = false;
 	// Removal of a remote screen tile is delayed so a republished track can replace it in place.
 	private screenRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 	// The saved device is unplugged and the call is on the default one instead.
@@ -599,6 +600,11 @@ class VoiceState {
 	}
 
 	async stopScreenShare() {
+		// Mid-republish there is no publication to stop yet, so stop once it is back.
+		if (this.swappingScreen) {
+			this.screenStopQueued = true;
+			return;
+		}
 		try {
 			await this.room?.localParticipant.setScreenShareEnabled(false);
 		} catch {
@@ -613,19 +619,24 @@ class VoiceState {
 	}
 
 	private async republishScreenWithSettings() {
-		if (!this.localScreenTrack) return;
+		// While republishing, the old publication is already gone, so check for a swap first.
 		if (this.swappingScreen) {
 			this.screenRepublishQueued = true;
 			return;
 		}
+		if (!this.localScreenTrack) return;
 		this.swappingScreen = true;
 		do {
 			this.screenRepublishQueued = false;
 			const { screenPreset, screenContent } = voiceSettingsState;
 			if (!(await this.republishScreen(screenPreset, screenContent))) break;
-		} while (this.screenRepublishQueued);
+		} while (this.screenRepublishQueued && !this.screenStopQueued);
 		this.screenRepublishQueued = false;
 		this.swappingScreen = false;
+		if (this.screenStopQueued) {
+			this.screenStopQueued = false;
+			await this.stopScreenShare();
+		}
 	}
 
 	private async republishScreen(id: ScreenPresetId, content: ScreenContent): Promise<boolean> {
@@ -641,6 +652,7 @@ class VoiceState {
 				height: { ideal: preset.height },
 				frameRate: { ideal: preset.encoding.maxFramerate }
 			});
+			mst.contentHint = content;
 			const next = new LocalVideoTrack(mst, undefined, true);
 			next.source = Track.Source.ScreenShare;
 			await lp.publishTrack(next, {
@@ -666,8 +678,6 @@ class VoiceState {
 	/** The degradation preference and bottom layer are publish options, so a live share is republished. */
 	async setScreenContent(content: ScreenContent) {
 		voiceSettingsState.save({ screenContent: content });
-		const track = this.localScreenTrack;
-		if (track) track.mediaStreamTrack.contentHint = content;
 		await this.republishScreenWithSettings();
 	}
 
@@ -740,6 +750,7 @@ class VoiceState {
 		this.screenRemovals.clear();
 		this.swappingScreen = false;
 		this.screenRepublishQueued = false;
+		this.screenStopQueued = false;
 		this.screens = new SvelteMap();
 		this.departed = new SvelteSet();
 		this.sharing = false;
