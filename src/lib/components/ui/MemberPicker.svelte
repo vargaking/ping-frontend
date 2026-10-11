@@ -38,14 +38,12 @@
 			members.find((m) => m.id === value)?.username ??
 			''
 	);
-	const result = $derived(open ? filterEntries(entries, query) : { shown: [], hidden: 0 });
+	const result = $derived(filterEntries(entries, query));
 
 	$effect(() => {
-		if (!open) {
-			query = '';
-			return;
-		}
+		if (!open) return;
 		untrack(() => {
+			query = '';
 			active = Math.max(
 				filterEntries(entries, '').shown.findIndex((e) => e.value === value),
 				0
