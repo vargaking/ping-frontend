@@ -4,6 +4,7 @@ import { markConversationRead } from '$lib/requests/conversations/markConversati
 import type { Channel } from '$lib/types/channel.types';
 import { channelThreadKey, directThreadKey } from '$lib/utils/threadKeys';
 import { conversationsState } from './conversationsState.svelte';
+import { friendsState } from './friendsState.svelte';
 
 /** A thread with its own read marker. A MessageTarget without a post fits. */
 export type ReadTarget =
@@ -116,7 +117,9 @@ class UnreadState {
 
 	readonly dmUnreadTotal: number = $derived(conversationsState.unreadTotal);
 
-	readonly badgeTotal: number = $derived(this.channelMentionsTotal + this.dmUnreadTotal);
+	readonly badgeTotal: number = $derived(
+		this.channelMentionsTotal + this.dmUnreadTotal + friendsState.incomingCount
+	);
 
 	readonly anyUnread: boolean = $derived(
 		this.badgeTotal > 0 ||

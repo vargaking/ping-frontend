@@ -3,6 +3,7 @@ import type { JSONContent } from '@tiptap/core';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { serverRequestState } from './serverRequestState.svelte';
+import { friendsState } from './friendsState.svelte';
 import { voiceState } from './voiceState.svelte';
 import { connectionState, serverHost } from './connectionState.svelte';
 import {
@@ -42,6 +43,8 @@ import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import type { Server } from '$lib/types/server.types';
 import type { ServerRequest } from '$lib/types/serverRequest.types';
+import type { FriendshipFrame } from '$lib/types/friend.types';
+import { friendToast } from '$lib/utils/friends';
 import type {
 	ServerImportFinishedFrame,
 	ServerImportUpdatedFrame
@@ -663,6 +666,18 @@ class SocketState {
 		}
 	}
 
+	handleFriendshipUpdated(frame: FriendshipFrame) {
+		if (!friendsState.applyFrame(frame)) return;
+		const shown = friendToast(frame, usersState.loggedInUser?.id ?? null);
+		if (!shown) return;
+		toast(
+			shown.message,
+			shown.viewRequests
+				? { action: { label: 'View', onClick: () => goto('/app/direct/friends/') } }
+				: undefined
+		);
+	}
+
 	/** Every member sees what an import added; the owner's tab also shows the outcome. */
 	handleServerImportFinished(frame: ServerImportFinishedFrame) {
 		void refreshAfterImport(frame);
@@ -850,6 +865,9 @@ class SocketState {
 				break;
 			case 'server_request_updated':
 				this.handleServerRequestUpdated(message.request);
+				break;
+			case 'friendship_updated':
+				this.handleFriendshipUpdated(message);
 				break;
 			case 'member_joined':
 				usersState.users[message.member.id] = message.member;

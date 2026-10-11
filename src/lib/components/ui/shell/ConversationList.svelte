@@ -3,6 +3,7 @@
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
+	import FriendsEntryRow from '$lib/components/friends/FriendsEntryRow.svelte';
 	import ConversationRow from './ConversationRow.svelte';
 
 	const activeId = $derived(
@@ -16,6 +17,7 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3 scrollbar-stable">
+		<FriendsEntryRow />
 		{#if !conversationsState.loaded}
 			<div class="px-2">
 				<LoadingList rows={4} avatar />
