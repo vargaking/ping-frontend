@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { newUser, registerUser } from './helpers';
+import { WHATS_NEW } from '../src/lib/whatsNew/entries';
 
-const NEWEST_TITLE = 'Catching up is quicker';
+const [NEWEST] = WHATS_NEW;
 
 function newPills(page: Page) {
 	return page.getByText('New', { exact: true });
@@ -27,7 +28,7 @@ test('unseen entries carry New until the panel was opened', async ({ browser }) 
 
 	await page.getByRole('button', { name: "What's new", exact: true }).click();
 	await expect(page.getByRole('heading', { name: "What's new", level: 1 })).toBeVisible();
-	await expect(page.getByRole('heading', { name: NEWEST_TITLE })).toBeVisible();
+	await expect(page.getByRole('heading', { name: NEWEST.title })).toBeVisible();
 	await expect(newPills(page).first()).toBeVisible();
 
 	await page.getByRole('button', { name: "Close what's new", exact: true }).click();
@@ -35,11 +36,11 @@ test('unseen entries carry New until the panel was opened', async ({ browser }) 
 	await expect(page.getByRole('button', { name: "What's new", exact: true })).toBeVisible();
 
 	expect((await (await context.request.get('/whats-new/state')).json()).last_seen_id).toBe(
-		'2026-10-10-2'
+		NEWEST.id
 	);
 	await Promise.all([stateLoaded(page), page.reload()]);
 	await page.getByRole('button', { name: "What's new", exact: true }).click();
-	await expect(page.getByRole('heading', { name: NEWEST_TITLE })).toBeVisible();
+	await expect(page.getByRole('heading', { name: NEWEST.title })).toBeVisible();
 	await expect(newPills(page)).toHaveCount(0);
 
 	const other = await browser.newContext();
@@ -50,7 +51,7 @@ test('unseen entries carry New until the panel was opened', async ({ browser }) 
 	const otherPage = await other.newPage();
 	await Promise.all([stateLoaded(otherPage), otherPage.goto('/app/')]);
 	await otherPage.getByRole('button', { name: "What's new", exact: true }).click();
-	await expect(otherPage.getByRole('heading', { name: NEWEST_TITLE })).toBeVisible();
+	await expect(otherPage.getByRole('heading', { name: NEWEST.title })).toBeVisible();
 	await expect(newPills(otherPage)).toHaveCount(0);
 	await other.close();
 });
