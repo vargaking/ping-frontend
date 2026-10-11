@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Search } from 'lucide-svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
+	import MemberPicker from '$lib/components/ui/MemberPicker.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import type { ServerMember } from '$lib/types/server.types';
@@ -43,8 +44,7 @@
 
 	const SEARCH_FROM = 8;
 	const FIRST_ROWS = 50;
-	const selectClass =
-		'h-9 w-48 shrink-0 rounded-[10px] border border-input bg-surface-input px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
+	const NOT_MATCHED = { value: null, label: 'Not matched' };
 
 	let query = $state('');
 	let showAll = $state(false);
@@ -70,8 +70,14 @@
 	const mapped = $derived(mappedCount(authors, mapping));
 	const dirty = $derived(mappingChanged(authors, mapping));
 
-	function pick(authorId: string, value: string) {
-		mapping = { ...mapping, [authorId]: value === '' ? null : Number(value) };
+	function choicesFor(userId: number | null) {
+		return userId !== null && !knownIds.has(userId)
+			? [NOT_MATCHED, { value: userId, label: 'Unknown member' }]
+			: [NOT_MATCHED];
+	}
+
+	function pick(authorId: string, value: number | null) {
+		mapping = { ...mapping, [authorId]: value };
 	}
 
 	async function loadFile(event: Event & { currentTarget: HTMLInputElement }) {
@@ -180,20 +186,14 @@
 					<span class="shrink-0 font-mono text-[11px] text-text-subtle">
 						{count(author.messages, 'message')}
 					</span>
-					<select
-						aria-label="Member for {author.name}"
-						value={userId === null ? '' : String(userId)}
-						onchange={(e) => pick(author.id, e.currentTarget.value)}
-						class={selectClass}
-					>
-						<option value="">Not matched</option>
-						{#if userId !== null && !knownIds.has(userId)}
-							<option value={String(userId)}>Unknown member</option>
-						{/if}
-						{#each roster as user (user.id)}
-							<option value={String(user.id)}>{user.username}</option>
-						{/each}
-					</select>
+					<MemberPicker
+						label="Member for {author.name}"
+						members={roster}
+						value={userId}
+						options={choicesFor(userId)}
+						onchange={(value) => pick(author.id, value)}
+						class="w-48 shrink-0"
+					/>
 				</li>
 			{:else}
 				<li class="px-3 py-4 text-sm text-text-subtle">No authors match “{query.trim()}”.</li>

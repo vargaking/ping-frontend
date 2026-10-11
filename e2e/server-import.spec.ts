@@ -118,9 +118,9 @@ test('the owner imports an export, matches an author and everyone sees the chann
 	await expect(owner.page.getByText('New channel')).toBeVisible();
 	await expect(owner.page.getByText('0 of 2 matched')).toBeVisible();
 
-	await owner.page
-		.getByRole('combobox', { name: 'Member for Maple' })
-		.selectOption({ label: owner.user.username });
+	await owner.page.getByRole('button', { name: 'Member for Maple' }).click();
+	await owner.page.getByRole('combobox', { name: 'Search members' }).fill(owner.user.username);
+	await owner.page.getByRole('option', { name: owner.user.username, exact: true }).click();
 	await start.click();
 
 	await expect(
