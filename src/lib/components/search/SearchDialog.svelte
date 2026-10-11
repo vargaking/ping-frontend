@@ -78,7 +78,9 @@
 	const nothingFound = $derived(searchState.status === 'ready' && items.length === 0);
 	const downloading = $derived(storage === 'ready' && historySyncState.status !== 'done');
 	const countLabel = $derived(
-		`${searchState.total.toLocaleString()} ${searchState.total === 1 ? 'message' : 'messages'}`
+		searchState.total === null
+			? 'Messages'
+			: `${searchState.total.toLocaleString()} ${searchState.total === 1 ? 'message' : 'messages'}`
 	);
 
 	onMount(() => {

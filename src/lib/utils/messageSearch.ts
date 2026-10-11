@@ -82,33 +82,34 @@ type TimeIndex =
 	| '[fromKey+ts]'
 	| `[${HasField}+ts]`;
 
-/** Primary keys under one index value within the date window, oldest first (ties by id). */
-function keysAscending(index: TimeIndex, value: string | number, f: MessageFilters) {
+/** One slice of an index in time order: all rows under `key` of a `[x+ts]` index, or the whole `ts` index. */
+type Range = { index: TimeIndex; key: string | number } | { index: 'ts' };
+
+type Cursor = { ts: number; id: string };
+
+/** The range within the date window; with `after`, up to and including that time. */
+function rangeCollection(range: Range, f: MessageFilters, after: Cursor | null) {
+	const lower = f.since ?? Dexie.minKey;
+	const upper = after ? after.ts : (f.until ?? Dexie.maxKey);
+	const inclusive = after !== null;
+	if (range.index === 'ts') return db.messages.where('ts').between(lower, upper, true, inclusive);
 	return db.messages
-		.where(index)
-		.between([value, f.since ?? Dexie.minKey], [value, f.until ?? Dexie.maxKey], true, false)
-		.primaryKeys();
+		.where(range.index)
+		.between([range.key, lower], [range.key, upper], true, inclusive);
 }
 
-function allKeysAscending(f: MessageFilters) {
-	return db.messages
-		.where('ts')
-		.between(f.since ?? Dexie.minKey, f.until ?? Dexie.maxKey, true, false)
-		.primaryKeys();
-}
-
-function scopeRange(scope: SearchScope): [TimeIndex, number] | null {
+function scopeRange(scope: SearchScope): Range {
 	switch (scope.kind) {
 		case 'everywhere':
-			return null;
+			return { index: 'ts' };
 		case 'server':
-			return ['[server_id+ts]', scope.serverId];
+			return { index: '[server_id+ts]', key: scope.serverId };
 		case 'channel':
-			return ['[channel_id+ts]', scope.channelId];
+			return { index: '[channel_id+ts]', key: scope.channelId };
 		case 'post':
-			return ['[post_id+ts]', scope.postId];
+			return { index: '[post_id+ts]', key: scope.postId };
 		case 'direct':
-			return ['[conversation_id+ts]', scope.conversationId];
+			return { index: '[conversation_id+ts]', key: scope.conversationId };
 	}
 }
 
@@ -127,17 +128,20 @@ function matchesRow(
 	return words === null || words.has(row.id);
 }
 
+function newestFirst(a: StoredMessage, b: StoredMessage): number {
+	return (b.ts ?? 0) - (a.ts ?? 0) || (a.id < b.id ? 1 : -1);
+}
+
 async function rowsNewestFirst(
 	ids: Iterable<string>,
 	scope: SearchScope,
 	f: MessageFilters,
 	words: Set<string> | null
-): Promise<string[]> {
+): Promise<StoredMessage[]> {
 	const rows = await db.messages.bulkGet([...ids]);
 	return rows
 		.filter((row): row is StoredMessage => row != null && matchesRow(row, scope, f, words))
-		.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0) || (a.id < b.id ? 1 : -1))
-		.map((row) => row.id);
+		.sort(newestFirst);
 }
 
 /** Ids of every account with a stored message, including the shared account imported rows belong to. */
@@ -155,58 +159,138 @@ export function fromKeysForName(name: string, users: Iterable<User>): string[] {
 	return keys;
 }
 
-/** Ids of every stored message matching all tokens and filters within scope, newest first. */
-export async function findMessageIds(
+/** Ids of every stored message matching all tokens within scope, newest first. */
+export async function findMessageIds(tokens: string[], scope: SearchScope): Promise<string[]> {
+	if (tokens.length === 0) return [];
+	const words = (await intersectPrefixes('messages', tokens)) as Set<string>;
+	if (words.size === 0) return [];
+	if (words.size <= SMALL_MATCH_SET) {
+		const rows = await rowsNewestFirst(words, scope, NO_FILTERS, words);
+		return rows.map((row) => row.id);
+	}
+	const inScope = await rangeCollection(scopeRange(scope), NO_FILTERS, null).primaryKeys();
+	return inScope.reverse().filter((id) => words.has(id));
+}
+
+export type MessagePager = {
+	/** Up to n more matching rows, newest first; [] when done. */
+	next(n: number): Promise<StoredMessage[]>;
+};
+
+/** Loads up to `count` more matching rows from one source, newest first. */
+type Load = (count: number) => Promise<StoredMessage[]>;
+
+/** Walks one range with a reverse cursor, resuming strictly older than the last row it gave. */
+function walkRange(
+	range: Range,
+	filters: MessageFilters,
+	matches: (row: StoredMessage) => boolean
+): Load {
+	let after: Cursor | null = null;
+	return async (count) => {
+		const from = after;
+		const rows = await rangeCollection(range, filters, from)
+			.reverse()
+			.filter((row) => {
+				// Rows sharing the cursor's time come back id descending, so skip the ones already given.
+				const seen = from && row.ts === from.ts && row.id >= from.id;
+				return !seen && matches(row);
+			})
+			.limit(count)
+			.toArray();
+		const last = rows.at(-1);
+		if (last) after = { ts: last.ts ?? 0, id: last.id };
+		return rows;
+	};
+}
+
+function serveRows(rows: StoredMessage[]): Load {
+	let served = 0;
+	return async (count) => rows.slice(served, (served += count));
+}
+
+/** Merges sources that are each newest first into one stream of the same order. */
+function mergeSources(loads: Load[]): MessagePager {
+	const buffers: StoredMessage[][] = loads.map(() => []);
+	const done = loads.map(() => false);
+	return {
+		async next(n) {
+			const out: StoredMessage[] = [];
+			while (out.length < n) {
+				await Promise.all(
+					loads.map(async (load, i) => {
+						if (buffers[i].length > 0 || done[i]) return;
+						buffers[i] = await load(n);
+						done[i] = buffers[i].length < n;
+					})
+				);
+				let best = -1;
+				for (let i = 0; i < buffers.length; i++) {
+					if (buffers[i].length === 0) continue;
+					if (best < 0 || newestFirst(buffers[i][0], buffers[best][0]) < 0) best = i;
+				}
+				if (best < 0) break;
+				out.push(buffers[best].shift()!);
+			}
+			return out;
+		}
+	};
+}
+
+const EMPTY_PAGER: MessagePager = { next: async () => [] };
+
+/** Ranges that each hold every match, so any one of them can drive the search. The ranges of
+ *  several `from:` keys form one candidate, merged. */
+function driverCandidates(scope: SearchScope, f: MessageFilters): Range[][] {
+	const candidates: Range[][] = f.has.map((kind) => [
+		{ index: `[${HAS_FIELD[kind]}+ts]` as TimeIndex, key: 1 }
+	]);
+	if (f.fromKeys) {
+		candidates.push(f.fromKeys.map((key) => ({ index: '[fromKey+ts]', key })));
+	}
+	if (scope.kind !== 'everywhere' || candidates.length === 0) candidates.push([scopeRange(scope)]);
+	return candidates;
+}
+
+/** Messages matching all tokens and filters within scope, newest first, read as they are asked
+ *  for. Walks the smallest index range that must contain every match and checks the rest per
+ *  row, so a query with a big range doesn't read all of it up front. */
+export async function pageMessages(
 	tokens: string[],
 	scope: SearchScope,
-	filters: MessageFilters = NO_FILTERS
-): Promise<string[]> {
-	if (tokens.length === 0 && !isFiltered(filters)) return [];
-	if (filters.fromKeys?.length === 0) return [];
-	if (filters.since !== null && filters.until !== null && filters.since >= filters.until) return [];
+	filters: MessageFilters
+): Promise<MessagePager> {
+	if (tokens.length === 0 && !isFiltered(filters)) return EMPTY_PAGER;
+	if (filters.fromKeys?.length === 0) return EMPTY_PAGER;
+	if (filters.since !== null && filters.until !== null && filters.since >= filters.until) {
+		return EMPTY_PAGER;
+	}
 
 	let words: Set<string> | null = null;
 	if (tokens.length > 0) {
 		words = (await intersectPrefixes('messages', tokens)) as Set<string>;
-		if (words.size === 0) return [];
-		if (words.size <= SMALL_MATCH_SET) return rowsNewestFirst(words, scope, filters, words);
+		if (words.size === 0) return EMPTY_PAGER;
 	}
 
-	const [hasLists, fromLists] = await Promise.all([
-		Promise.all(filters.has.map((kind) => keysAscending(`[${HAS_FIELD[kind]}+ts]`, 1, filters))),
-		Promise.all((filters.fromKeys ?? []).map((key) => keysAscending('[fromKey+ts]', key, filters)))
-	]);
-	if (hasLists.some((list) => list.length === 0)) return [];
-	const fromNonEmpty = fromLists.filter((list) => list.length > 0);
-	if (filters.fromKeys && fromNonEmpty.length === 0) return [];
+	const candidates = await Promise.all(
+		driverCandidates(scope, filters).map(async (ranges) => {
+			const counts = await Promise.all(
+				ranges.map((range) => rangeCollection(range, filters, null).count())
+			);
+			return {
+				ranges: ranges.filter((_, i) => counts[i] > 0),
+				size: counts.reduce((sum, count) => sum + count, 0)
+			};
+		})
+	);
+	const driver = candidates.reduce((a, b) => (b.size < a.size ? b : a));
+	if (driver.size === 0) return EMPTY_PAGER;
 
-	const ordered = [...hasLists];
-	let fromUnion: Set<string> | null = null;
-	if (fromNonEmpty.length === 1) ordered.push(fromNonEmpty[0]);
-	else if (fromNonEmpty.length > 1) fromUnion = new Set(fromNonEmpty.flat());
-
-	const candidates: (string[] | Set<string>)[] = [...ordered];
-	if (fromUnion) candidates.push(fromUnion);
-	if (words) candidates.push(words);
-	if (candidates.length > 0) {
-		const smallest = candidates.reduce((a, b) => (sizeOf(b) < sizeOf(a) ? b : a));
-		if (sizeOf(smallest) <= SMALL_MATCH_SET)
-			return rowsNewestFirst(smallest, scope, filters, words);
+	if (words && words.size <= SMALL_MATCH_SET && words.size < driver.size) {
+		return mergeSources([serveRows(await rowsNewestFirst(words, scope, filters, words))]);
 	}
-
-	const range = scopeRange(scope);
-	if (range) ordered.push(await keysAscending(range[0], range[1], filters));
-	else if (ordered.length === 0) ordered.push(await allKeysAscending(filters));
-
-	const source = ordered.reduce((a, b) => (b.length < a.length ? b : a));
-	const others: Set<string>[] = ordered.filter((list) => list !== source).map((l) => new Set(l));
-	if (fromUnion) others.push(fromUnion);
-	if (words) others.push(words);
-	return source.reverse().filter((id) => others.every((set) => set.has(id)));
-}
-
-function sizeOf(list: string[] | Set<string>): number {
-	return Array.isArray(list) ? list.length : list.size;
+	const matches = (row: StoredMessage) => matchesRow(row, scope, filters, words);
+	return mergeSources(driver.ranges.map((range) => walkRange(range, filters, matches)));
 }
 
 /** Rows for ids, in the same order; ids no longer stored are skipped. */

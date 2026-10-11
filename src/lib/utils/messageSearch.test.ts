@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '$lib/types/auth.types';
-import type { StoredPost } from '$lib/types/localHistory.types';
+import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { clearLocalCache, db } from './db';
 import {
@@ -11,6 +11,9 @@ import {
 	loadMessages,
 	markWords,
 	NO_FILTERS,
+	pageMessages,
+	type MessageFilters,
+	type MessagePager,
 	searchableText,
 	snippet,
 	storedUserIds,
@@ -57,6 +60,17 @@ function post(id: number, title: string, extra: Partial<StoredPost> = {}): Store
 		thumbnail: null,
 		...extra
 	};
+}
+
+/** Every id the pager gives, asking for `size` at a time. */
+async function drain(pager: MessagePager, size: number): Promise<string[]> {
+	const ids: string[] = [];
+	for (;;) {
+		const page = await pager.next(size);
+		expect(page.length).toBeLessThanOrEqual(size);
+		ids.push(...page.map((row) => row.id));
+		if (page.length < size) return ids;
+	}
 }
 
 async function find(query: string, scope: SearchScope = { kind: 'everywhere' }) {
@@ -240,14 +254,19 @@ describe('filters', () => {
 	const dani = { id: 2, username: 'Dáni' } as User;
 	const importer = { id: 1, username: 'importer' } as User;
 
-	async function search(input: string, scope: SearchScope = EVERYWHERE, users = [dani, importer]) {
+	function filtersOf(input: string, users: User[]): MessageFilters {
 		const query = parseSearchQuery(input);
-		return findMessageIds(query.words, scope, {
+		return {
 			fromKeys: query.from ? fromKeysForName(query.from, users) : null,
 			has: query.has,
 			since: query.since,
 			until: query.until
-		});
+		};
+	}
+
+	async function search(input: string, scope: SearchScope = EVERYWHERE, users = [dani, importer]) {
+		const pager = await pageMessages(parseSearchQuery(input).words, scope, filtersOf(input, users));
+		return drain(pager, 50);
 	}
 
 	const attachment = (extra: Record<string, unknown>) =>
@@ -318,7 +337,8 @@ describe('filters', () => {
 
 		it('finds nothing for no author keys', async () => {
 			await db.messages.put(message('a', 'one'));
-			expect(await findMessageIds([], EVERYWHERE, { ...NO_FILTERS, fromKeys: [] })).toEqual([]);
+			const pager = await pageMessages([], EVERYWHERE, { ...NO_FILTERS, fromKeys: [] });
+			expect(await pager.next(10)).toEqual([]);
 		});
 	});
 
@@ -440,7 +460,7 @@ describe('filters', () => {
 		});
 	});
 
-	describe('more than 500 candidates', () => {
+	describe('big result sets', () => {
 		const COUNT = 1200;
 		const id = (i: number) => `m${String(i).padStart(4, '0')}`;
 		const isImage = (i: number) => i % 2 === 0;
@@ -473,10 +493,10 @@ describe('filters', () => {
 			expect(await search('has:image', { kind: 'server', serverId: 1 })).toEqual(expected);
 		});
 
-		it('walks the time index for a date window alone', async () => {
+		it('reads a date window alone', async () => {
 			const since = (await db.messages.get(id(100)))?.ts ?? 0;
-			const found = await findMessageIds([], EVERYWHERE, { ...NO_FILTERS, since });
-			expect(found).toEqual(newestFirst(all.filter((i) => i >= 100)));
+			const pager = await pageMessages([], EVERYWHERE, { ...NO_FILTERS, since });
+			expect(await drain(pager, 50)).toEqual(newestFirst(all.filter((i) => i >= 100)));
 		});
 
 		it('joins a user and several imported authors that share a name', async () => {
@@ -491,6 +511,166 @@ describe('filters', () => {
 				...newestFirst(all.filter((i) => userOf(i) === 2))
 			];
 			expect(await search('from:dani')).toEqual(expected);
+		});
+	});
+
+	describe('paging', () => {
+		type Spec = { id: string; group: number; server: number; image: boolean; who: string };
+		const specs: Spec[] = Array.from({ length: 45 }, (_, i) => ({
+			// Ids are not in time order, and four rows at a time share a time.
+			id: `r${String((i * 7) % 45).padStart(2, '0')}`,
+			group: Math.floor(i / 4),
+			server: i % 2 === 0 ? 1 : 2,
+			image: i % 3 !== 1,
+			who: i % 5 === 0 ? 'imported' : i % 3 === 0 ? 'dani' : 'other'
+		}));
+		const base = Date.parse('2026-01-10T08:00:00Z');
+		const newestFirstOf = (rows: Spec[]) =>
+			rows.sort((a, b) => b.group - a.group || (a.id < b.id ? 1 : -1)).map((row) => row.id);
+
+		beforeEach(async () => {
+			await db.messages.bulkPut(
+				specs.map((spec) =>
+					message(spec.id, 'x1', {
+						timestamp: new Date(base + spec.group * 60_000).toISOString(),
+						server_id: spec.server,
+						user_id: spec.who === 'dani' ? 2 : 1,
+						...(spec.who === 'imported' ? imported('x1', 'Dani') : {}),
+						...(spec.image ? withImage : {})
+					})
+				)
+			);
+		});
+
+		const server1: SearchScope = { kind: 'server', serverId: 1 };
+		const cases: [string, SearchScope, (spec: Spec) => boolean][] = [
+			['has:image', EVERYWHERE, (s) => s.image],
+			['has:image', server1, (s) => s.image && s.server === 1],
+			['from:dani', EVERYWHERE, (s) => s.who !== 'other'],
+			['from:dani has:image', server1, (s) => s.who !== 'other' && s.image && s.server === 1],
+			['x1 from:dani', EVERYWHERE, (s) => s.who !== 'other']
+		];
+
+		it.each(
+			cases.flatMap(([input, scope, wanted]) =>
+				[1, 6].map((size) => [input, size, scope, wanted] as const)
+			)
+		)(
+			'%s, %i at a time, in %j: newest first, no gaps, no repeats',
+			async (input, size, scope, wanted) => {
+				const expected = newestFirstOf(specs.filter(wanted));
+				expect(expected.length).toBeGreaterThan(size);
+				expect(await search(input, scope)).toEqual(expected);
+
+				const pager = await pageMessages(
+					parseSearchQuery(input).words,
+					scope,
+					filtersOf(input, [dani, importer])
+				);
+				expect(await drain(pager, size)).toEqual(expected);
+				expect(await pager.next(size)).toEqual([]);
+			}
+		);
+	});
+
+	describe('driver', () => {
+		const rows = (count: number, extra: (i: number) => Partial<MessageType>) =>
+			Array.from({ length: count }, (_, i) =>
+				message(`s${extra(i).server_id}-${i}`, 'common', extra(i))
+			);
+
+		beforeEach(async () => {
+			await db.messages.bulkPut([
+				...rows(6, (i) => ({
+					server_id: 1,
+					user_id: i === 1 ? 2 : 1,
+					...(i < 3 ? withImage : {})
+				})),
+				...rows(30, (i) => ({
+					server_id: 2,
+					user_id: i === 3 ? 2 : 1,
+					...(i === 4 ? imported('x1', 'Dani') : {}),
+					...(i < 2 ? withVideo : withImage)
+				})),
+				message('rare', 'common rare', { server_id: 2, ...withImage })
+			]);
+		});
+
+		const server = (serverId: number): SearchScope => ({ kind: 'server', serverId });
+		const walked = async (input: string, scope: SearchScope) => {
+			const pager = await pageMessages(
+				parseSearchQuery(input).words,
+				scope,
+				filtersOf(input, [dani, importer])
+			);
+			const where = vi.spyOn(db.messages, 'where');
+			const rows = await pager.next(5);
+			const indexes = where.mock.calls.map(([index]) => index);
+			where.mockRestore();
+			return { rows, indexes };
+		};
+		const everything = async (wanted: (row: StoredMessage) => boolean) =>
+			(await db.messages.toArray())
+				.filter(wanted)
+				.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0) || (a.id < b.id ? 1 : -1));
+
+		it.each([
+			['the scope when it is smaller than the flag', 'has:image', server(1), ['[server_id+ts]']],
+			['the flag when it is smaller than the scope', 'has:video', server(2), ['[hasVideo+ts]']],
+			['the flag when everywhere', 'has:image', EVERYWHERE, ['[hasImage+ts]']],
+			['every author key that has rows', 'from:dani', server(2), ['[fromKey+ts]', '[fromKey+ts]']],
+			['the time index for a date window alone', 'after:2000-01-01', EVERYWHERE, ['ts']],
+			['nothing when the words are fewer than the range', 'rare has:image', EVERYWHERE, []],
+			[
+				'the flag when the words are more than it',
+				'common has:video',
+				EVERYWHERE,
+				['[hasVideo+ts]']
+			]
+		] as [string, string, SearchScope, string[]][])(
+			'walks %s',
+			async (_, input, scope, indexes) => {
+				const { indexes: used } = await walked(input, scope);
+				expect(used).toEqual(indexes);
+			}
+		);
+
+		it.each([
+			['has:image', server(1), (r: StoredMessage) => r.server_id === 1 && r.hasImage === 1],
+			['has:video', server(2), (r: StoredMessage) => r.server_id === 2 && r.hasVideo === 1],
+			['from:dani', EVERYWHERE, (r: StoredMessage) => r.user_id === 2 || r.fromKey === 'name:dani'],
+			['rare has:image', EVERYWHERE, (r: StoredMessage) => r.id === 'rare'],
+			['common has:video', EVERYWHERE, (r: StoredMessage) => r.hasVideo === 1]
+		] as [string, SearchScope, (row: StoredMessage) => boolean][])(
+			'returns the same rows whichever range drives %s in %j',
+			async (input, scope, wanted) => {
+				const expected = (await everything(wanted)).map((row) => row.id);
+				expect(expected.length).toBeGreaterThan(0);
+				expect(await search(input, scope)).toEqual(expected);
+			}
+		);
+
+		it('reads nothing when a flag has no rows in the window', async () => {
+			const { rows, indexes } = await walked('has:link', EVERYWHERE);
+			expect(rows).toEqual([]);
+			expect(indexes).toEqual([]);
+		});
+	});
+
+	describe('nothing to read', () => {
+		beforeEach(async () => {
+			await db.messages.put(message('a', 'hello there', withImage));
+		});
+
+		it.each([
+			['no words and no filters', [], { ...NO_FILTERS }],
+			['no author keys', [], { ...NO_FILTERS, fromKeys: [] }],
+			['an empty date window', [], { ...NO_FILTERS, since: 5, until: 5 }],
+			['words nothing has', ['zzzz'], { ...NO_FILTERS, has: ['image'] }],
+			['an author nobody is', [], { ...NO_FILTERS, fromKeys: ['name:nobody'] }]
+		] as [string, string[], MessageFilters][])('%s', async (_, tokens, filters) => {
+			const pager = await pageMessages(tokens, EVERYWHERE, filters);
+			expect(await pager.next(10)).toEqual([]);
 		});
 	});
 });

@@ -4,8 +4,10 @@ import {
 	findPosts,
 	fromKeysForName,
 	loadMessages,
+	pageMessages,
 	storedUserIds,
 	type MessageFilters,
+	type MessagePager,
 	type SearchScope
 } from '$lib/utils/messageSearch';
 import type { HasKind } from '$lib/utils/searchFacets';
@@ -43,8 +45,9 @@ class SearchState {
 	query = $state('');
 	scope = $state<SearchScope>(EVERYWHERE);
 	status = $state<Status>('idle');
-	/** Matching messages not yet found hidden; shrinks as hidden ones are met while paging. */
-	total = $state(0);
+	/** Matching messages not yet found hidden; shrinks as hidden ones are met while paging.
+	 *  Null when the search reads lazily and the count isn't known. */
+	total = $state<number | null>(0);
 	hits = $state.raw<StoredMessage[]>([]);
 	posts = $state.raw<StoredPost[]>([]);
 	/** The words the shown results were found with. */
@@ -54,6 +57,7 @@ class SearchState {
 	hasMore = $state(false);
 
 	private ids: string[] = [];
+	private pager: MessagePager | null = null;
 	private cursor = 0;
 	private hidden = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
@@ -84,6 +88,13 @@ class SearchState {
 		if (this.status !== 'ready' || !this.hasMore || this.loadingToken === token) return;
 		this.loadingToken = token;
 		try {
+			if (this.pager) {
+				const page = await this.nextPagerPage(this.pager, token);
+				if (!page) return;
+				this.hits = [...this.hits, ...page.rows];
+				this.hasMore = !page.done;
+				return;
+			}
 			const page = await this.nextPage(this.ids, this.cursor, token);
 			if (!page) return;
 			this.hits = [...this.hits, ...page.rows];
@@ -109,6 +120,7 @@ class SearchState {
 
 	private clear() {
 		this.ids = [];
+		this.pager = null;
 		this.cursor = 0;
 		this.hidden = 0;
 		this.total = 0;
@@ -153,22 +165,34 @@ class SearchState {
 				since: query.since,
 				until: query.until
 			};
-			const [ids, posts] = await Promise.all([
-				findMessageIds(tokens, scope, filters),
+			const lazy = hasFilters(query);
+			const [source, posts] = await Promise.all([
+				lazy ? pageMessages(tokens, scope, filters) : findMessageIds(tokens, scope),
 				findPosts(tokens, scope, POST_CANDIDATES, filters)
 			]);
 			if (token !== this.token) return;
-			const page = await this.nextPage(ids, 0, token);
-			if (!page) return;
-			this.ids = ids;
-			this.hidden = page.hidden;
-			this.cursor = page.next;
-			this.total = ids.length - page.hidden;
-			this.hits = page.rows;
+			if (Array.isArray(source)) {
+				const page = await this.nextPage(source, 0, token);
+				if (!page) return;
+				this.ids = source;
+				this.pager = null;
+				this.hidden = page.hidden;
+				this.cursor = page.next;
+				this.total = source.length - page.hidden;
+				this.hits = page.rows;
+				this.hasMore = page.next < source.length;
+			} else {
+				const page = await this.nextPagerPage(source, token);
+				if (!page) return;
+				this.ids = [];
+				this.pager = source;
+				this.total = null;
+				this.hits = page.rows;
+				this.hasMore = !page.done;
+			}
 			this.posts = posts.filter((post) => channelVisible(post.channel_id)).slice(0, POST_LIMIT);
 			this.tokens = tokens;
 			this.has = query.has;
-			this.hasMore = page.next < ids.length;
 			this.status = 'ready';
 		} catch (e) {
 			console.warn('Search failed', e);
@@ -203,6 +227,20 @@ class SearchState {
 			this.authorFetches.set(id, pending);
 		}
 		return pending;
+	}
+
+	/** Up to one page of visible rows from the pager; null when a newer search has taken over. */
+	private async nextPagerPage(pager: MessagePager, token: number) {
+		const rows: StoredMessage[] = [];
+		let done = false;
+		while (rows.length < PAGE_SIZE && !done) {
+			const want = PAGE_SIZE - rows.length;
+			const chunk = await pager.next(want);
+			if (token !== this.token) return null;
+			done = chunk.length < want;
+			rows.push(...chunk.filter(messageVisible));
+		}
+		return { rows, done };
 	}
 
 	/** Up to one page of visible rows from `from`; null when a newer search has taken over. */
