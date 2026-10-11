@@ -11,7 +11,6 @@
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { getConversationMessages } from '$lib/requests/conversations/getConversationMessages';
-	import { db } from '$lib/utils/db';
 	import { clearJumpParam, JUMP_PARAM } from '$lib/utils/openSearchResult';
 
 	const conversationId = $derived.by(() => {
@@ -52,7 +51,7 @@
 			threadKey={directThreadKey(id)}
 			{target}
 			fetchPage={(query) => getConversationMessages(id, query)}
-			readCache={() => db.messages.where({ conversation_id: id }).sortBy('timestamp')}
+			cache={{ kind: 'direct', conversationId: id }}
 			emptyDescription="Send the first message."
 			errorDescription="There was a problem reading this conversation."
 			beginningLabel={otherUser

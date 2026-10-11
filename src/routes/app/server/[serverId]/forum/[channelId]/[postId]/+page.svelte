@@ -23,7 +23,6 @@
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
 	import { normalizeError } from '$lib/requests/errors';
 	import type { MessageTarget } from '$lib/types/messages.types';
-	import { db } from '$lib/utils/db';
 	import { channelPath } from '$lib/utils/channelRoutes';
 	import { clearJumpParam, JUMP_PARAM } from '$lib/utils/openSearchResult';
 	import { postActions } from '$lib/utils/menuActions';
@@ -206,7 +205,7 @@
 					{target}
 					trackRead={false}
 					fetchPage={(query) => getChannelMessages(channelId, query, 50, postId)}
-					readCache={() => db.messages.where({ post_id: postId }).sortBy('timestamp')}
+					cache={{ kind: 'post', postId }}
 					emptyDescription="Nothing here yet."
 					errorDescription="There was a problem reading this post."
 					beginningLabel={post ? `Beginning of “${post.title}”` : 'Beginning of this post'}

@@ -13,7 +13,6 @@
 	import { typingState } from '$lib/states/typingState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { getChannelMessages } from '$lib/requests/channels/getChannelMessages';
-	import { db } from '$lib/utils/db';
 	import { goto } from '$app/navigation';
 	import { channelPath } from '$lib/utils/channelRoutes';
 	import { clearJumpParam, JUMP_PARAM } from '$lib/utils/openSearchResult';
@@ -63,8 +62,7 @@
 				threadKey={channelThreadKey(channelId)}
 				{target}
 				fetchPage={(query) => getChannelMessages(channelId, query)}
-				readCache={() =>
-					db.messages.where({ server_id: serverId, channel_id: channelId }).sortBy('timestamp')}
+				cache={{ kind: 'channel', channelId }}
 				emptyDescription="Be the first to say something in this channel."
 				errorDescription="There was a problem reading this channel."
 				beginningLabel={channel ? `Beginning of #${channel.name}` : 'Beginning of this channel'}
