@@ -195,8 +195,8 @@ test('on a phone a swipe on a sideways scrolling code block does not reply', asy
 	await expect(page.getByRole('button', { name: 'Cancel reply' })).toHaveCount(0);
 });
 
-test('on a phone Members in the server menu opens the member sheet', async ({ context, page }) => {
-	await registerUser(context);
+test('on a phone Members in the server menu opens the member list', async ({ context, page }) => {
+	const user = await registerUser(context);
 	const serverName = uniqueName('Sheet Guild');
 	const server = await createServer(context, serverName);
 	const channel = await createChannel(context, server.id, 'general');
@@ -204,17 +204,16 @@ test('on a phone Members in the server menu opens the member sheet', async ({ co
 	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport({ timeout: 15_000 });
 
 	await page.getByRole('button', { name: 'Open navigation' }).tap();
-	await page
-		.getByRole('complementary', { name: 'Channels' })
-		.getByRole('button', { name: serverName })
-		.tap();
+	const channels = page.getByRole('complementary', { name: 'Channels' });
+	await channels.getByRole('button', { name: serverName }).tap();
 	await page.getByRole('menuitem', { name: 'Members' }).tap();
 
-	const sheet = page.getByRole('complementary', { name: 'Members' });
-	await expect(sheet).toBeInViewport();
-	await sheet.getByRole('button', { name: 'Close members' }).tap();
-	await expect(sheet).toBeHidden();
-	await expect(page.getByRole('heading', { name: 'general' })).toBeInViewport();
+	const settings = page.getByRole('dialog');
+	await expect(settings.getByRole('heading', { name: 'Members', level: 1 })).toBeInViewport();
+	await expect(settings.getByRole('row').filter({ hasText: user.username })).toBeInViewport();
+	await settings.getByRole('button', { name: 'Close settings' }).tap();
+	await expect(settings).toBeHidden();
+	await expect(channels).toBeInViewport();
 });
 
 test('on a phone the notification settings never say desktop', async ({ context, page }) => {

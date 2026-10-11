@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
 	channelPath,
 	createChannel,
@@ -8,6 +8,15 @@ import {
 	newUser,
 	uniqueName
 } from './helpers';
+
+const settings = (page: Page) => page.getByRole('dialog');
+const membersHeading = (page: Page) =>
+	settings(page).getByRole('heading', { name: 'Members', level: 1 });
+
+async function closeSettings(page: Page) {
+	await settings(page).getByRole('button', { name: 'Close settings' }).click();
+	await expect(settings(page)).toBeHidden();
+}
 
 test('Members in the server menu and the rail menu opens the member list', async ({ browser }) => {
 	const owner = await newUser(browser, 'owner');
@@ -19,11 +28,11 @@ test('Members in the server menu and the rail menu opens the member list', async
 
 	const { page } = owner;
 	await page.goto(channelPath(server.id, channel.id));
-	const panel = page.getByRole('complementary', { name: 'Members' });
-	const toggle = page.getByRole('button', { name: 'Toggle member list' });
-	await expect(toggle).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
-	await toggle.click();
-	await expect(panel).toBeHidden();
+	await expect(page.getByRole('button', { name: 'Toggle member list' })).toHaveAttribute(
+		'aria-pressed',
+		'true',
+		{ timeout: 15_000 }
+	);
 
 	await page
 		.getByRole('complementary', { name: 'Channels' })
@@ -36,17 +45,18 @@ test('Members in the server menu and the rail menu opens the member list', async
 		labels.findIndex((l) => l.includes('Server settings'))
 	);
 	await items.filter({ hasText: 'Members' }).click();
-	await expect(panel).toBeVisible();
-	await expect(panel.getByText(member.user.username)).toBeVisible();
+	await expect(membersHeading(page)).toBeVisible();
+	await expect(
+		settings(page).getByRole('row').filter({ hasText: member.user.username })
+	).toBeVisible();
+	await closeSettings(page);
 
-	await toggle.click();
-	await expect(panel).toBeHidden();
 	await page
 		.getByRole('navigation', { name: 'Servers' })
 		.getByRole('link', { name: serverName })
 		.click({ button: 'right' });
 	await page.getByRole('menuitem', { name: 'Members' }).click();
-	await expect(panel).toBeVisible();
+	await expect(membersHeading(page)).toBeVisible();
 
 	await member.page.goto(channelPath(server.id, channel.id));
 	await member.page
@@ -54,11 +64,13 @@ test('Members in the server menu and the rail menu opens the member list', async
 		.getByRole('button', { name: serverName })
 		.click();
 	await member.page.getByRole('menuitem', { name: 'Members' }).click();
-	const memberPanel = member.page.getByRole('complementary', { name: 'Members' });
-	await expect(memberPanel.getByText(owner.user.username)).toBeVisible();
+	await expect(
+		settings(member.page).getByRole('row').filter({ hasText: owner.user.username })
+	).toBeVisible();
+	await expect(settings(member.page).getByRole('button', { name: /^Actions for/ })).toHaveCount(0);
 });
 
-test('Members in the rail menu of another server switches to it and opens the list', async ({
+test('Members in the rail menu of another server switches to it and opens its list', async ({
 	browser
 }) => {
 	const owner = await newUser(browser, 'owner');
@@ -70,9 +82,7 @@ test('Members in the rail menu of another server switches to it and opens the li
 
 	const { page } = owner;
 	await page.goto(channelPath(first.id, firstChannel.id));
-	const toggle = page.getByRole('button', { name: 'Toggle member list' });
-	await expect(toggle).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
-	await toggle.click();
+	await expect(page.getByRole('heading', { name: 'general' })).toBeVisible({ timeout: 15_000 });
 	await page
 		.getByRole('navigation', { name: 'Servers' })
 		.getByRole('link', { name: secondName })
@@ -80,5 +90,31 @@ test('Members in the rail menu of another server switches to it and opens the li
 	await page.getByRole('menuitem', { name: 'Members' }).click();
 
 	await expect(page).toHaveURL(new RegExp(`/app/server/${second.id}/`));
-	await expect(page.getByRole('complementary', { name: 'Members' })).toBeVisible();
+	await expect(membersHeading(page)).toBeVisible();
+	await expect(settings(page).getByRole('heading', { name: secondName })).toBeVisible();
+});
+
+test('on a direct message page the rail menu opens Members for the server last visited', async ({
+	browser
+}) => {
+	const owner = await newUser(browser, 'owner');
+	const serverName = uniqueName('Lingering');
+	const server = await createServer(owner.context, serverName);
+	const channel = await createChannel(owner.context, server.id, 'general');
+
+	const { page } = owner;
+	await page.goto(channelPath(server.id, channel.id));
+	await expect(page.getByRole('heading', { name: 'general' })).toBeVisible({ timeout: 15_000 });
+	const rail = page.getByRole('navigation', { name: 'Servers' });
+	await rail.getByRole('link', { name: /^Direct messages/ }).click();
+	await expect(page).toHaveURL(/\/app\/direct\//);
+
+	await rail.getByRole('link', { name: serverName }).click({ button: 'right' });
+	const items = page.getByRole('menuitem');
+	await expect(items.filter({ hasText: 'Members' })).toBeVisible();
+	await expect(items.filter({ hasText: 'Server settings' })).toHaveCount(0);
+	await items.filter({ hasText: 'Members' }).click();
+
+	await expect(page).toHaveURL(new RegExp(`/app/server/${server.id}/`));
+	await expect(membersHeading(page)).toBeVisible();
 });
