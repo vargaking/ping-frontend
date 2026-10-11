@@ -11,6 +11,7 @@ import {
 	channelCounts,
 	existingLine,
 	importedTotals,
+	importView,
 	fileProblem,
 	isWorking,
 	listCapped,
@@ -23,12 +24,15 @@ import {
 	notImportedLines,
 	percent,
 	platformName,
+	POLL_MS,
+	pollInterval,
 	privateChoices,
 	setAllPrivate,
 	initialPicks,
 	setVisibility,
 	togglePrivate,
 	totalsLine,
+	WATCH_MS,
 	withPrivate
 } from './serverImport';
 
@@ -325,6 +329,63 @@ describe('isWorking', () => {
 		expect(
 			['uploading', 'ready', 'done', 'failed', undefined].map((s) => isWorking(s as never))
 		).toEqual(Array(5).fill(false));
+	});
+});
+
+describe('importView', () => {
+	const limits = { max_bytes: 1000, chunk_bytes: 10 };
+	type Entry = Parameters<typeof importView>[0];
+	const entry = (fields: Partial<Entry>): Entry => ({
+		loadStatus: 'ready',
+		limits,
+		import: null,
+		upload: null,
+		...fields
+	});
+	const imported = (status: Import['status'], upload_active?: boolean) => ({
+		status,
+		upload_active
+	});
+
+	it.each([
+		['loading', entry({ loadStatus: 'loading' }), 'loading'],
+		['a failed load', entry({ loadStatus: 'error' }), 'error'],
+		['imports turned off', entry({ limits: { ...limits, max_bytes: 0 } }), 'off'],
+		['no import', entry({}), 'empty'],
+		['sending from here', entry({ upload: { paused: false } }), 'sending'],
+		['paused here', entry({ upload: { paused: true } }), 'paused'],
+		['an active upload', entry({ import: imported('uploading', true) }), 'elsewhere'],
+		['a quiet upload', entry({ import: imported('uploading', false) }), 'interrupted'],
+		['an upload from an older server', entry({ import: imported('uploading') }), 'interrupted'],
+		[
+			'sending here while the server reports it active',
+			entry({ import: imported('uploading', true), upload: { paused: false } }),
+			'sending'
+		],
+		['a ready import', entry({ import: imported('ready', false) }), 'ready'],
+		['a finished import', entry({ import: imported('done') }), 'done']
+	])('shows %s', (_name, given, expected) => {
+		expect(importView(given)).toBe(expected);
+	});
+});
+
+describe('pollInterval', () => {
+	it.each([
+		['unpacking', 'unpacking', undefined, false, false, POLL_MS],
+		['importing while sending here', 'importing', undefined, true, true, POLL_MS],
+		['an active upload watched', 'uploading', true, false, true, WATCH_MS],
+		['a quiet upload watched', 'uploading', false, false, true, WATCH_MS],
+		['an active upload not watched', 'uploading', true, false, false, null],
+		['an upload sent from here', 'uploading', true, true, true, null],
+		['an upload from an older server', 'uploading', undefined, false, true, null],
+		['a ready import', 'ready', false, false, true, null],
+		['a failed import', 'failed', false, false, true, null]
+	] as const)('%s', (_name, status, active, sendingHere, watched, expected) => {
+		expect(pollInterval({ status, upload_active: active }, sendingHere, watched)).toBe(expected);
+	});
+
+	it('does not poll without an import', () => {
+		expect(pollInterval(null, false, true)).toBeNull();
 	});
 });
 

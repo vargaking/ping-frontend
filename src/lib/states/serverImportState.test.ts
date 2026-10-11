@@ -30,6 +30,7 @@ vi.mock('$lib/requests/attachments/uploadAttachment', () => ({
 	formatBytes: (n: number) => `${n} B`
 }));
 
+import { UPLOAD_DISCARDED } from '$lib/utils/serverImportUpload';
 import { serverImportState } from './serverImportState.svelte';
 
 const SERVER = 1;
@@ -177,6 +178,61 @@ describe('polling', () => {
 	});
 });
 
+describe('watching an upload from another device', () => {
+	const elsewhere = importWith({
+		status: 'uploading',
+		upload_active: true,
+		received: 10,
+		plan: null,
+		authors: []
+	});
+
+	it('refetches every 5 seconds while watched and the status is uploading', async () => {
+		vi.useFakeTimers();
+		requests.get.mockResolvedValue(serve(elsewhere));
+		await serverImportState.load(SERVER);
+		requests.get.mockClear();
+		const unwatch = serverImportState.watch(SERVER);
+
+		await vi.advanceTimersByTimeAsync(4_999);
+		expect(requests.get).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(requests.get).toHaveBeenCalledTimes(1);
+
+		unwatch();
+		requests.get.mockClear();
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(requests.get).not.toHaveBeenCalled();
+	});
+
+	it('goes back to the slow rate once the upload is handed to the server', async () => {
+		vi.useFakeTimers();
+		requests.get.mockResolvedValue(serve(elsewhere));
+		await serverImportState.load(SERVER);
+		serverImportState.watch(SERVER);
+
+		requests.get.mockResolvedValue(serve(importWith({ status: 'unpacking', plan: null })));
+		await vi.advanceTimersByTimeAsync(5_000);
+		requests.get.mockClear();
+
+		await vi.advanceTimersByTimeAsync(14_999);
+		expect(requests.get).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(requests.get).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not poll for a server that sends no upload_active', async () => {
+		vi.useFakeTimers();
+		requests.get.mockResolvedValue(serve({ ...elsewhere, upload_active: undefined }));
+		await serverImportState.load(SERVER);
+		requests.get.mockClear();
+		serverImportState.watch(SERVER);
+
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(requests.get).not.toHaveBeenCalled();
+	});
+});
+
 describe('upload', () => {
 	const created = importWith({ status: 'uploading', received: 0, plan: null, authors: [] });
 
@@ -224,6 +280,94 @@ describe('upload', () => {
 
 		expect(serverImportState.of(SERVER).error).toBe('An import is already running');
 		expect(serverImportState.of(SERVER).upload).toBeNull();
+	});
+
+	it('shows why a new upload was refused and refetches on a 409', async () => {
+		const { AxiosError } = await import('axios');
+		requests.create.mockRejectedValue(
+			new AxiosError('x', '409', undefined, undefined, {
+				status: 409,
+				data: { detail: 'An upload is already in progress' }
+			} as never)
+		);
+		requests.get.mockClear();
+		requests.get.mockResolvedValue(serve(importWith({ status: 'uploading', upload_active: true })));
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).error).toBe('An upload is already in progress');
+		expect(requests.get).toHaveBeenCalledTimes(1);
+		expect(serverImportState.of(SERVER).import?.upload_active).toBe(true);
+	});
+
+	it('stops with the discarded message when the import was removed elsewhere', async () => {
+		requests.create.mockResolvedValue(created);
+		const { AxiosError } = await import('axios');
+		requests.piece.mockRejectedValue(
+			new AxiosError('x', '404', undefined, undefined, {
+				status: 404,
+				data: { detail: 'Import not found' }
+			} as never)
+		);
+		requests.get.mockResolvedValue(serve(null));
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).error).toBe(UPLOAD_DISCARDED);
+		expect(serverImportState.of(SERVER).upload).toBeNull();
+		expect(requests.piece).toHaveBeenCalledTimes(1);
+	});
+
+	it('says so when a piece lands after the import was replaced', async () => {
+		requests.create.mockResolvedValue(created);
+		const { AxiosError } = await import('axios');
+		requests.piece.mockRejectedValue(
+			new AxiosError('x', '409', undefined, undefined, {
+				status: 409,
+				data: { detail: 'This import is not waiting for data' }
+			} as never)
+		);
+		requests.get.mockResolvedValue(serve(null));
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).error).toBe(UPLOAD_DISCARDED);
+		expect(serverImportState.of(SERVER).upload).toBeNull();
+	});
+
+	it('stops at once when a resync finds a different upload', async () => {
+		requests.create.mockResolvedValue(created);
+		const { AxiosError } = await import('axios');
+		requests.piece.mockRejectedValue(
+			new AxiosError('x', '409', undefined, undefined, {
+				status: 409,
+				data: { detail: 'This import is not waiting for data' }
+			} as never)
+		);
+		const other = { ...created, id: 'imp-2', received: 5, upload_active: true };
+		requests.get.mockResolvedValue(serve(other));
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).error).toBe(UPLOAD_DISCARDED);
+		expect(serverImportState.of(SERVER).import?.id).toBe('imp-2');
+		expect(requests.piece).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not take its own stopped upload for one from another device', async () => {
+		requests.create.mockResolvedValue(created);
+		requests.get.mockResolvedValue(serve({ ...created, upload_active: true }));
+		const { AxiosError } = await import('axios');
+		requests.piece.mockRejectedValue(
+			new AxiosError('x', '413', undefined, undefined, {
+				status: 413,
+				data: { detail: 'The piece is larger than the limit (1 KB)' }
+			} as never)
+		);
+
+		await serverImportState.upload(SERVER, zip());
+
+		expect(serverImportState.of(SERVER).import?.upload_active).toBe(false);
 	});
 
 	it('stops with the server message on a 413', async () => {

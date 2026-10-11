@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Import, ImportPiece } from '$lib/types/serverImport.types';
 import {
 	MAX_FAILURES,
+	UPLOAD_DISCARDED,
 	backoffDelay,
 	failureAction,
 	isSameUpload,
+	nextPieceSize,
 	runUpload,
 	type UploadDeps,
 	type UploadHooks
@@ -38,7 +40,12 @@ const failure = (status: number | null, message = `failed ${status}`) =>
 type Step = ImportPiece | Error | ((offset: number, piece: Blob) => Promise<ImportPiece>);
 
 /** Plays the given steps back, one per piece request, and records each request's offset. */
-function harness(file: Blob, steps: Step[], fetchImport?: () => Promise<Import | null>) {
+function harness(
+	file: Blob,
+	steps: Step[],
+	fetchImport?: () => Promise<Import | null>,
+	options: { chunk?: number; now?: () => number } = {}
+) {
 	const offsets: number[] = [];
 	const sleeps: number[] = [];
 	const progress: number[] = [];
@@ -57,11 +64,12 @@ function harness(file: Blob, steps: Step[], fetchImport?: () => Promise<Import |
 			status: (e as { status?: number | null }).status ?? null,
 			message: (e as Error).message
 		}),
-		sleep: async (ms) => void sleeps.push(ms)
+		sleep: async (ms) => void sleeps.push(ms),
+		now: options.now ?? (() => 0)
 	};
 	const hooks: UploadHooks = { onProgress: (received) => progress.push(received) };
 	const run = (from = 0, signal = new AbortController().signal) =>
-		runUpload(file, from, CHUNK, deps, hooks, signal);
+		runUpload(file, from, options.chunk ?? CHUNK, deps, hooks, signal);
 	return { run, offsets, sleeps, progress };
 }
 
@@ -80,6 +88,23 @@ describe('failureAction', () => {
 		expect([null, 500, 502, 503, 408, 429].map(failureAction)).toEqual(Array(6).fill('retry'));
 		expect(failureAction(409)).toBe('resync');
 		expect([403, 413, 422, 404, 401].map(failureAction)).toEqual(Array(5).fill('stop'));
+	});
+});
+
+describe('nextPieceSize', () => {
+	const KB = 1024;
+	const MB = 1024 ** 2;
+
+	it.each([
+		['doubles at most when the piece was quick', MB, 1000, 64 * MB, 2 * MB],
+		['aims at ten seconds of the last speed', MB, 5000, 64 * MB, 2 * MB],
+		['shrinks when the piece was slow', 4 * MB, 40_000, 64 * MB, MB],
+		['never goes below 256 KiB', MB, 600_000, 64 * MB, 256 * KB],
+		['never goes above the server limit', 8 * MB, 100, 10 * MB, 10 * MB],
+		['takes the limit when it is below the minimum', 5, 100, 10, 10],
+		['doubles when the time is not measurable', MB, 0, 64 * MB, 2 * MB]
+	])('%s', (_name, sent, elapsed, chunk, expected) => {
+		expect(nextPieceSize(sent, elapsed, chunk)).toBe(expected);
 	});
 });
 
@@ -194,6 +219,33 @@ describe('runUpload', () => {
 
 		await run();
 		expect(sleeps).toEqual([1000, 2000, 1000]);
+	});
+
+	it('says the import was discarded elsewhere on a 404', async () => {
+		const { run, offsets } = harness(file, [failure(404, 'Import not found')]);
+
+		expect(await run()).toEqual({ kind: 'stopped', error: UPLOAD_DISCARDED });
+		expect(offsets).toEqual([0]);
+	});
+
+	it('grows the pieces while they go through quickly', async () => {
+		const MB = 1024 ** 2;
+		const big = new Blob([new Uint8Array(10 * MB)]);
+		let clock = 0;
+		const sizes: number[] = [];
+		const accept = async (offset: number, piece: Blob): Promise<ImportPiece> => {
+			sizes.push(piece.size);
+			clock += 1000;
+			const received = offset + piece.size;
+			return { received, status: received >= big.size ? 'unpacking' : 'uploading' };
+		};
+		const { run } = harness(big, [accept, accept, accept, accept], undefined, {
+			chunk: 8 * MB,
+			now: () => clock
+		});
+
+		expect(await run()).toEqual({ kind: 'finished' });
+		expect(sizes).toEqual([MB, 2 * MB, 4 * MB, 3 * MB]);
 	});
 
 	it.each([403, 413, 422])('stops with the message on a %i', async (status) => {

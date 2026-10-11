@@ -3,6 +3,23 @@ import type { Import, ImportPiece } from '$lib/types/serverImport.types';
 export const MAX_FAILURES = 8;
 const BACKOFF_START_MS = 1000;
 const BACKOFF_CAP_MS = 30_000;
+const FIRST_PIECE_BYTES = 1024 ** 2;
+const MIN_PIECE_BYTES = 256 * 1024;
+const PIECE_TARGET_MS = 10_000;
+
+export const UPLOAD_DISCARDED = 'The upload was discarded from another tab or device.';
+
+/**
+ * The server only sees a piece once it has fully arrived, so pieces sized to take
+ * about ten seconds keep another device's view of the upload alive on slow links.
+ * About ten seconds' worth at the last piece's speed, at most double it, within
+ * [256 KiB, chunkBytes].
+ */
+export function nextPieceSize(sentBytes: number, elapsedMs: number, chunkBytes: number): number {
+	const wanted = elapsedMs > 0 ? (sentBytes * PIECE_TARGET_MS) / elapsedMs : Infinity;
+	const size = Math.floor(Math.min(wanted, sentBytes * 2));
+	return Math.min(chunkBytes, Math.max(MIN_PIECE_BYTES, size));
+}
 
 /** Wait before retrying after the given number of failures in a row (1 s, 2 s, 4 s, … up to 30 s). */
 export function backoffDelay(failures: number): number {
@@ -29,6 +46,7 @@ export type UploadDeps = {
 	fetchImport: () => Promise<Import | null>;
 	describeError: (error: unknown) => { status: number | null; message: string };
 	sleep: (ms: number, signal: AbortSignal) => Promise<void>;
+	now: () => number;
 };
 
 export type UploadHooks = {
@@ -46,7 +64,7 @@ export type UploadResult =
 	| { kind: 'cancelled' };
 
 /**
- * Send `file` to the server in pieces of `chunkBytes`, starting at `from`. A
+ * Send `file` to the server in pieces of at most `chunkBytes`, starting at `from`. A
  * network error or 5xx retries the same piece with growing waits and pauses
  * after MAX_FAILURES in a row; a 409 continues from what the server has.
  */
@@ -60,19 +78,22 @@ export async function runUpload(
 ): Promise<UploadResult> {
 	let received = from;
 	let failures = 0;
+	let pieceBytes = Math.min(chunkBytes, FIRST_PIECE_BYTES);
 
 	while (received < file.size) {
 		if (signal.aborted) return { kind: 'cancelled' };
 
 		const offset = received;
-		const piece = file.slice(offset, Math.min(offset + chunkBytes, file.size));
+		const piece = file.slice(offset, Math.min(offset + pieceBytes, file.size));
 		let failure: string | null = null;
 
 		try {
+			const startedAt = deps.now();
 			const result = await deps.uploadPiece(offset, piece, signal);
 			if (result.received > offset) {
 				received = result.received;
 				failures = 0;
+				pieceBytes = nextPieceSize(piece.size, deps.now() - startedAt, chunkBytes);
 				hooks.onProgress(received);
 				if (result.status !== 'uploading') return { kind: 'finished' };
 				continue;
@@ -82,7 +103,9 @@ export async function runUpload(
 			if (signal.aborted) return { kind: 'cancelled' };
 			const { status, message } = deps.describeError(error);
 			const action = failureAction(status);
-			if (action === 'stop') return { kind: 'stopped', error: message };
+			if (action === 'stop') {
+				return { kind: 'stopped', error: status === 404 ? UPLOAD_DISCARDED : message };
+			}
 			failure = message;
 
 			if (action === 'resync') {

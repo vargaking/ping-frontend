@@ -94,6 +94,8 @@ export type Import = {
 	filename: string;
 	size: number;
 	received: number;
+	/** The upload was created or took a piece in the last 30 seconds; only ever true while uploading. Absent on older servers. */
+	upload_active?: boolean;
 	/** Known from "ready" on. */
 	source: { platform: string; server_name: string } | null;
 	progress: ImportProgress | null;

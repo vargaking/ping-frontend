@@ -3,6 +3,7 @@ import type {
 	Import,
 	ImportAuthor,
 	ImportLimits,
+	ImportStatus,
 	Plan,
 	PlanChannel,
 	PlanTotals,
@@ -13,6 +14,55 @@ import type {
 /** An import still being worked on by the server. */
 export const isWorking = (status: Import['status'] | undefined): boolean =>
 	status === 'unpacking' || status === 'importing';
+
+export const POLL_MS = 15_000;
+export const WATCH_MS = 5_000;
+/** How long the server keeps calling an upload active after its last piece. */
+export const UPLOAD_ACTIVE_MS = 30_000;
+
+/**
+ * How often to refetch the import, or null for not at all. A tab that isn't sending
+ * the upload watches it while it is shown, since no frame reports the pieces arriving
+ * or stopping. An older server sends no `upload_active`, so there is nothing to watch.
+ */
+export function pollInterval(
+	imp: Pick<Import, 'status' | 'upload_active'> | null,
+	sendingHere: boolean,
+	watched: boolean
+): number | null {
+	if (isWorking(imp?.status)) return POLL_MS;
+	if (imp?.status === 'uploading' && imp.upload_active !== undefined && !sendingHere && watched) {
+		return WATCH_MS;
+	}
+	return null;
+}
+
+export type ImportView =
+	| 'loading'
+	| 'error'
+	| 'off'
+	| 'empty'
+	| 'sending'
+	| 'paused'
+	| 'elsewhere'
+	| 'interrupted'
+	| Exclude<ImportStatus, 'uploading'>;
+
+/** Which screen the Import tab shows. An upload sent from this tab wins over what the server reports. */
+export function importView(entry: {
+	loadStatus: 'loading' | 'ready' | 'error';
+	limits: ImportLimits | null;
+	import: Pick<Import, 'status' | 'upload_active'> | null;
+	upload: { paused: boolean } | null;
+}): ImportView {
+	if (entry.loadStatus === 'loading') return 'loading';
+	if (entry.loadStatus === 'error') return 'error';
+	if (entry.limits?.max_bytes === 0) return 'off';
+	if (entry.upload) return entry.upload.paused ? 'paused' : 'sending';
+	const status = entry.import?.status;
+	if (status === 'uploading') return entry.import?.upload_active ? 'elsewhere' : 'interrupted';
+	return status ?? 'empty';
+}
 
 /**
  * Fold a server_import_updated frame into what we know. The frame leaves out
