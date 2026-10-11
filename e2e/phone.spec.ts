@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { channelPath, createChannel, createServer, registerUser, uniqueName } from './helpers';
+import {
+	channelPath,
+	createChannel,
+	createServer,
+	expectSent,
+	registerUser,
+	uniqueName
+} from './helpers';
 
 const IPHONE_USER_AGENT =
 	'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
@@ -160,7 +167,7 @@ test('on a phone swiping a message left past the threshold replies to it', async
 	await composer.fill('swipe me');
 	await page.getByRole('button', { name: 'Send message' }).tap();
 	const message = page.locator('[data-message-id]', { hasText: 'swipe me' });
-	await expect(message).toBeVisible();
+	await expectSent(page, 'swipe me');
 	await composer.blur();
 
 	const box = (await message.boundingBox())!;
@@ -242,7 +249,7 @@ test('on a phone a swipe on a sideways scrolling code block does not reply', asy
 	await composer.pressSequentially('x'.repeat(200));
 	await page.getByRole('button', { name: 'Send message' }).tap();
 	const code = page.locator('[data-message-id] pre');
-	await expect(code).toBeVisible();
+	await expectSent(page, 'x'.repeat(200));
 	expect(await code.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
 	await composer.blur();
 

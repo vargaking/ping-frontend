@@ -149,10 +149,19 @@ export async function sendMessageViaUi(page: Page, text: string) {
 	const composer = page.getByRole('group', { name: 'Message composer' }).getByRole('textbox');
 	await composer.fill(text);
 	await composer.press('Enter');
+	await expectSent(page, text);
+}
+
+/** Waits until the message with this exact text is shown and the server has acknowledged it. */
+export async function expectSent(page: Page, text: string) {
+	const row = page
+		.locator('[data-message-id]')
+		.filter({ has: page.getByText(text, { exact: true }) });
+	await expect(row.first(), `"${text}" should render after sending`).toBeVisible();
 	await expect(
-		page.getByText(text, { exact: true }),
-		`"${text}" should render after sending`
-	).toBeVisible();
+		row.filter({ has: page.locator('.sr-only', { hasText: /^Sending$/ }) }),
+		`"${text}" should be acknowledged by the server`
+	).toHaveCount(0);
 }
 
 export type SeedThread =
