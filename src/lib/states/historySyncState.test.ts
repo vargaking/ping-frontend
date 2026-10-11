@@ -57,6 +57,7 @@ beforeEach(() => {
 	vi.stubGlobal('navigator', { locks: undefined });
 	serversState.servers = { 1: { id: 1, name: 'one' }, 2: { id: 2, name: 'two' } };
 	serversState.selectedServerId = 2;
+	serversState.loaded = true;
 });
 
 afterEach(async () => {
@@ -370,6 +371,16 @@ describe('forgetChannels', () => {
 
 		expect(forgetMock).toHaveBeenCalledExactlyOnceWith(1, null);
 		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('leaves the run to the layout while the server list has not loaded', async () => {
+		serversState.loaded = false;
+
+		await historySyncState.forgetChannels(1, [4]);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(forgetMock).toHaveBeenCalledExactlyOnceWith(1, [4]);
+		expect(runMock).not.toHaveBeenCalled();
 	});
 
 	it('goes from done back to idle', async () => {

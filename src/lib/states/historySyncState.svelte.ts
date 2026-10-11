@@ -68,7 +68,8 @@ class HistorySyncState {
 		this.lastStartedAt = null;
 		this.queued = false;
 		if (this.status === 'done') this.status = 'idle';
-		this.scheduleStart(START_DELAY_MS);
+		// A run before the server list loads would purge every server's local history.
+		if (serversState.loaded) this.scheduleStart(START_DELAY_MS);
 	}
 
 	/** Starts a run after `minDelay`, and never sooner than RUN_GAP_MS after the last run began. */
