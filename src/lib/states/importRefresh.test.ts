@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
 	fetchChannels: vi.fn(),
 	refreshForums: vi.fn(),
 	forget: vi.fn(),
-	resync: vi.fn()
+	resync: vi.fn(),
+	usersState: { loggedInUser: null as { id: number } | null }
 }));
 
 vi.mock('./serverImportState.svelte', () => ({
@@ -19,6 +20,7 @@ vi.mock('./forumState.svelte', () => ({ forumState: { refreshChannels: mocks.ref
 vi.mock('./historySyncState.svelte', () => ({
 	historySyncState: { forgetChannels: mocks.forget }
 }));
+vi.mock('./usersState.svelte', () => ({ usersState: mocks.usersState }));
 vi.mock('./resyncState.svelte', () => ({ resyncState: { request: mocks.resync } }));
 
 import { refreshAfterImport } from './importRefresh';
@@ -26,7 +28,12 @@ import { refreshAfterImport } from './importRefresh';
 beforeEach(() => {
 	mocks.order.length = 0;
 	mocks.refreshImport.mockReset();
-	mocks.fetchChannels.mockReset().mockResolvedValue([]);
+	mocks.usersState.loggedInUser = { id: 7 };
+	mocks.fetchChannels.mockReset().mockImplementation(async () => {
+		await Promise.resolve();
+		mocks.order.push('channels');
+		return [];
+	});
 	mocks.refreshForums.mockReset().mockImplementation(() => mocks.order.push('forums'));
 	mocks.forget.mockReset().mockImplementation(async () => {
 		await Promise.resolve();
@@ -44,15 +51,15 @@ const frame = (channel_ids?: number[]) => ({
 });
 
 describe('refreshAfterImport', () => {
-	it('refreshes forums, forgets the sync rows, then resyncs, in that order', async () => {
+	it('refetches the channels, refreshes forums, forgets the sync rows, then resyncs', async () => {
 		await refreshAfterImport(frame([301, 305]));
 
 		expect(mocks.refreshImport).toHaveBeenCalledWith(12);
 		expect(mocks.refreshForums).toHaveBeenCalledWith([301, 305]);
 		expect(mocks.forget).toHaveBeenCalledWith(12, [301, 305]);
 		expect(mocks.resync).toHaveBeenCalledWith('import');
-		expect(mocks.order).toEqual(['forums', 'forgot', 'resync']);
-		expect(mocks.fetchChannels).not.toHaveBeenCalled();
+		expect(mocks.fetchChannels).toHaveBeenCalledExactlyOnceWith(12);
+		expect(mocks.order).toEqual(['channels', 'forums', 'forgot', 'resync']);
 	});
 
 	it('only refetches the channels when the run wrote to none', async () => {
@@ -68,9 +75,45 @@ describe('refreshAfterImport', () => {
 	it('treats a missing list as every channel of the server', async () => {
 		await refreshAfterImport(frame());
 
+		expect(mocks.fetchChannels).toHaveBeenCalledWith(12);
 		expect(mocks.refreshForums).toHaveBeenCalledWith(null);
 		expect(mocks.forget).toHaveBeenCalledWith(12, null);
 		expect(mocks.resync).toHaveBeenCalledWith('import');
+	});
+
+	it('carries on when the channel refetch fails', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		mocks.fetchChannels.mockRejectedValue(new Error('offline'));
+
+		await refreshAfterImport(frame([301]));
+
+		expect(warn).toHaveBeenCalled();
+		expect(mocks.forget).toHaveBeenCalledWith(12, [301]);
+		expect(mocks.resync).toHaveBeenCalledWith('import');
+		warn.mockRestore();
+	});
+
+	it('stops once the session ended during the channel refetch', async () => {
+		mocks.fetchChannels.mockImplementation(async () => {
+			mocks.usersState.loggedInUser = null;
+			return [];
+		});
+
+		await refreshAfterImport(frame([301]));
+
+		expect(mocks.forget).not.toHaveBeenCalled();
+		expect(mocks.resync).not.toHaveBeenCalled();
+	});
+
+	it('does not resync when the session ended while forgetting', async () => {
+		mocks.forget.mockImplementation(async () => {
+			mocks.usersState.loggedInUser = null;
+		});
+
+		await refreshAfterImport(frame([301]));
+
+		expect(mocks.forget).toHaveBeenCalled();
+		expect(mocks.resync).not.toHaveBeenCalled();
 	});
 
 	it('warns instead of throwing when the channel refetch fails', async () => {

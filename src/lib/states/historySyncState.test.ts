@@ -385,6 +385,39 @@ describe('forgetChannels', () => {
 		expect(historySyncState.status).toBe('idle');
 	});
 
+	it('starts nothing when stopped while waiting for the run in flight', async () => {
+		runMock.mockImplementationOnce(
+			(options) =>
+				new Promise<void>((resolve) =>
+					options.signal.addEventListener('abort', () => resolve(), { once: true })
+				)
+		);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		const forgetting = historySyncState.forgetChannels(1, [4]);
+		await historySyncState.stop();
+		await forgetting;
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(forgetMock).not.toHaveBeenCalled();
+		expect(runMock).toHaveBeenCalledTimes(1);
+		expect(historySyncState.status).toBe('idle');
+	});
+
+	it('starts nothing when stopped while deleting the sync rows', async () => {
+		let finishForget!: () => void;
+		forgetMock.mockImplementation(() => new Promise<void>((resolve) => (finishForget = resolve)));
+
+		const forgetting = historySyncState.forgetChannels(1, [4]);
+		await historySyncState.stop();
+		finishForget();
+		await forgetting;
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(runMock).not.toHaveBeenCalled();
+	});
+
 	it('still starts a run when deleting fails', async () => {
 		forgetMock.mockRejectedValue(new Error('quota'));
 

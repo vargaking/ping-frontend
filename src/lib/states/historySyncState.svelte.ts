@@ -37,6 +37,7 @@ class HistorySyncState {
 	private lastStartedAt: number | null = null;
 	private pages = 0;
 	private listingFailed = false;
+	private stops = 0;
 
 	/** Ask for a run. Requests made while one is waiting or running share a single run. */
 	request(): void {
@@ -51,15 +52,18 @@ class HistorySyncState {
 	/** An import added older messages to these channels (all of the server when null): walk them again. */
 	async forgetChannels(serverId: number, channelIds: number[] | null): Promise<void> {
 		if (!localHistoryAvailable || this.blocked) return;
+		const stops = this.stops;
 		if (this.running) {
 			this.controller?.abort();
 			await this.running;
 		}
+		if (stops !== this.stops) return;
 		try {
 			await forgetSyncedChannels(serverId, channelIds);
 		} catch (e) {
 			console.warn('Failed to reset local sync progress', e);
 		}
+		if (stops !== this.stops) return;
 		this.clearTimers();
 		this.lastStartedAt = null;
 		this.queued = false;
@@ -80,6 +84,7 @@ class HistorySyncState {
 	}
 
 	async stop(): Promise<void> {
+		this.stops++;
 		this.queued = false;
 		this.clearTimers();
 		this.controller?.abort();
