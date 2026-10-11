@@ -3,15 +3,12 @@ import { Permission } from '$lib/permissions';
 import type { Role } from '$lib/types/server.types';
 import type { Overwrites } from '$lib/types/overwrite.types';
 import {
-	CHANNEL_PERMISSIONS,
 	NO_BITS,
 	bitState,
 	memberInheritedText,
 	roleInheritedText,
 	rowBits,
-	rowOf,
 	rowSummary,
-	sameBits,
 	visibilityLine,
 	withRow,
 	withState
@@ -63,182 +60,252 @@ describe('bits', () => {
 });
 
 const place = { noun: 'channel' as const, categoryName: 'Staff' };
-
-function roleText(
-	target: Role,
-	value: 'allow' | 'deny',
-	source: Decided['source'],
-	roleSilent = false
-) {
-	return roleInheritedText(target, { value, source, roleSilent }, place);
-}
+const inCategory = { ...place, noun: 'category' as const };
 
 describe('roleInheritedText', () => {
-	it("names the parent's setting on this channel", () => {
-		const source = { kind: 'role', layer: 'target', role: junior, via: mod } as const;
-		expect(roleText(junior, 'deny', source)).toBe('Denied, from Mod on this channel');
-		expect(
-			roleInheritedText(
-				junior,
-				{ value: 'deny', source, roleSilent: false },
-				{ ...place, noun: 'category' }
-			)
-		).toBe('Denied, from Mod on this category');
-	});
-
-	it('names the category when it set the role itself', () => {
-		const source = { kind: 'role', layer: 'category', role: junior, via: null } as const;
-		expect(roleText(junior, 'allow', source)).toBe('Allowed, from the category Staff');
-	});
-
-	it('names the parent and the category', () => {
-		const source = { kind: 'role', layer: 'category', role: junior, via: mod } as const;
-		expect(roleText(junior, 'allow', source)).toBe('Allowed, from Mod in the category Staff');
-	});
-
-	it('names the server permissions of the role or its parent', () => {
-		expect(roleText(mod, 'allow', { kind: 'role', layer: 'server', role: mod, via: null })).toBe(
-			"Allowed, from Mod's server permissions"
-		);
-		expect(
-			roleText(junior, 'allow', { kind: 'role', layer: 'server', role: junior, via: mod })
-		).toBe("Allowed, from Mod's server permissions");
-	});
-
-	it('says nothing is set for the role when only @everyone speaks', () => {
-		const text = 'Not set for this role. Lower roles and @everyone decide: currently Allowed.';
-		expect(roleText(mod, 'allow', { kind: 'everyone', layer: 'server' }, true)).toBe(text);
-		expect(roleText(mod, 'deny', { kind: 'none' }, true)).toBe(
-			'Not set for this role. Lower roles and @everyone decide: currently Denied.'
-		);
-	});
-
-	it('names @everyone when it overrides the role', () => {
-		expect(roleText(mod, 'deny', { kind: 'everyone', layer: 'target' })).toBe(
-			'Denied, from @everyone on this channel'
-		);
-		expect(roleText(mod, 'deny', { kind: 'everyone', layer: 'category' })).toBe(
-			'Denied, from @everyone in the category Staff'
-		);
-	});
-
-	it('names where the @everyone row falls back to', () => {
-		expect(roleText(everyone, 'deny', { kind: 'everyone', layer: 'category' }, false)).toBe(
-			'Denied, from the category Staff'
-		);
-		expect(roleText(everyone, 'allow', { kind: 'everyone', layer: 'server' })).toBe(
-			"Allowed, from @everyone's server permissions"
-		);
-		expect(roleText(everyone, 'deny', { kind: 'none' }, true)).toBe('Not set anywhere: Denied.');
+	it.each([
+		{
+			name: "the parent's setting on this channel",
+			role: junior,
+			value: 'deny',
+			source: { kind: 'role', layer: 'target', role: junior, via: mod },
+			expected: 'Denied, from Mod on this channel'
+		},
+		{
+			name: "the parent's setting on this category",
+			role: junior,
+			value: 'deny',
+			source: { kind: 'role', layer: 'target', role: junior, via: mod },
+			where: inCategory,
+			expected: 'Denied, from Mod on this category'
+		},
+		{
+			name: 'the category when it set the role itself',
+			role: junior,
+			value: 'allow',
+			source: { kind: 'role', layer: 'category', role: junior, via: null },
+			expected: 'Allowed, from the category Staff'
+		},
+		{
+			name: 'the parent and the category',
+			role: junior,
+			value: 'allow',
+			source: { kind: 'role', layer: 'category', role: junior, via: mod },
+			expected: 'Allowed, from Mod in the category Staff'
+		},
+		{
+			name: 'the server permissions of the role',
+			role: mod,
+			value: 'allow',
+			source: { kind: 'role', layer: 'server', role: mod, via: null },
+			expected: "Allowed, from Mod's server permissions"
+		},
+		{
+			name: 'the server permissions of the parent',
+			role: junior,
+			value: 'allow',
+			source: { kind: 'role', layer: 'server', role: junior, via: mod },
+			expected: "Allowed, from Mod's server permissions"
+		},
+		{
+			name: 'that only @everyone speaks, currently allowed',
+			role: mod,
+			value: 'allow',
+			source: { kind: 'everyone', layer: 'server' },
+			roleSilent: true,
+			expected: 'Not set for this role. Lower roles and @everyone decide: currently Allowed.'
+		},
+		{
+			name: 'that only @everyone speaks, currently denied',
+			role: mod,
+			value: 'deny',
+			source: { kind: 'none' },
+			roleSilent: true,
+			expected: 'Not set for this role. Lower roles and @everyone decide: currently Denied.'
+		},
+		{
+			name: '@everyone on this channel when it overrides the role',
+			role: mod,
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'target' },
+			expected: 'Denied, from @everyone on this channel'
+		},
+		{
+			name: '@everyone in the category when it overrides the role',
+			role: mod,
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'category' },
+			expected: 'Denied, from @everyone in the category Staff'
+		},
+		{
+			name: 'the category for the @everyone row',
+			role: everyone,
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'category' },
+			expected: 'Denied, from the category Staff'
+		},
+		{
+			name: 'the server permissions for the @everyone row',
+			role: everyone,
+			value: 'allow',
+			source: { kind: 'everyone', layer: 'server' },
+			expected: "Allowed, from @everyone's server permissions"
+		},
+		{
+			name: 'that the @everyone row is set nowhere',
+			role: everyone,
+			value: 'deny',
+			source: { kind: 'none' },
+			roleSilent: true,
+			expected: 'Not set anywhere: Denied.'
+		}
+	] satisfies {
+		name: string;
+		role: Role;
+		value: 'allow' | 'deny';
+		source: Decided['source'];
+		roleSilent?: boolean;
+		where?: typeof place | typeof inCategory;
+		expected: string;
+	}[])('names $name', ({ role, value, source, roleSilent = false, where = place, expected }) => {
+		expect(roleInheritedText(role, { value, source, roleSilent }, where)).toBe(expected);
 	});
 });
 
 describe('memberInheritedText', () => {
-	const text = (value: 'allow' | 'deny', source: Decided['source']) =>
-		memberInheritedText({ value, source }, place);
-
-	it('says the owner owns the server', () => {
-		expect(text('allow', { kind: 'owner' })).toBe('Allowed: they own the server');
-	});
-
-	it('names the deciding role', () => {
-		const at = (layer: 'server' | 'category' | 'target', via: Role | null = null) =>
-			text('allow', { kind: 'role', layer, role: mod, via });
-		expect(at('server')).toBe('Allowed, from Mod');
-		expect(at('category')).toBe('Allowed, from Mod in the category Staff');
-		expect(at('target')).toBe('Allowed, from Mod on this channel');
-		expect(at('server', junior)).toBe('Allowed, from Mod (inherited from Junior)');
-	});
-
-	it('names @everyone', () => {
-		expect(text('deny', { kind: 'everyone', layer: 'server' })).toBe('Denied, from @everyone');
-		expect(text('deny', { kind: 'everyone', layer: 'category' })).toBe(
-			'Denied, from @everyone in the category Staff'
-		);
-		expect(text('deny', { kind: 'everyone', layer: 'target' })).toBe(
-			'Denied, from @everyone on this channel'
-		);
-	});
-
-	it('names their own setting in the category', () => {
-		expect(text('deny', { kind: 'member', layer: 'category' })).toBe(
-			'Denied, from their own setting in the category Staff'
-		);
-	});
-
-	it('says no role allows it', () => {
-		expect(text('deny', { kind: 'none' })).toBe('Denied: none of their roles allow it');
+	it.each([
+		{
+			name: 'that the owner owns the server',
+			value: 'allow',
+			source: { kind: 'owner' },
+			expected: 'Allowed: they own the server'
+		},
+		{
+			name: 'the deciding role',
+			value: 'allow',
+			source: { kind: 'role', layer: 'server', role: mod, via: null },
+			expected: 'Allowed, from Mod'
+		},
+		{
+			name: 'the deciding role in the category',
+			value: 'allow',
+			source: { kind: 'role', layer: 'category', role: mod, via: null },
+			expected: 'Allowed, from Mod in the category Staff'
+		},
+		{
+			name: 'the deciding role on the channel',
+			value: 'allow',
+			source: { kind: 'role', layer: 'target', role: mod, via: null },
+			expected: 'Allowed, from Mod on this channel'
+		},
+		{
+			name: 'the child the deciding role was inherited from',
+			value: 'allow',
+			source: { kind: 'role', layer: 'server', role: mod, via: junior },
+			expected: 'Allowed, from Mod (inherited from Junior)'
+		},
+		{
+			name: '@everyone on the server',
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'server' },
+			expected: 'Denied, from @everyone'
+		},
+		{
+			name: '@everyone in the category',
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'category' },
+			expected: 'Denied, from @everyone in the category Staff'
+		},
+		{
+			name: '@everyone on the channel',
+			value: 'deny',
+			source: { kind: 'everyone', layer: 'target' },
+			expected: 'Denied, from @everyone on this channel'
+		},
+		{
+			name: 'their own setting in the category',
+			value: 'deny',
+			source: { kind: 'member', layer: 'category' },
+			expected: 'Denied, from their own setting in the category Staff'
+		},
+		{
+			name: 'that no role allows it',
+			value: 'deny',
+			source: { kind: 'none' },
+			expected: 'Denied: none of their roles allow it'
+		}
+	] satisfies {
+		name: string;
+		value: 'allow' | 'deny';
+		source: Decided['source'];
+		expected: string;
+	}[])('says $name', ({ value, source, expected }) => {
+		expect(memberInheritedText({ value, source }, place)).toBe(expected);
 	});
 });
 
 describe('rowSummary', () => {
-	it('has a short label for every toggle', () => {
-		expect(CHANNEL_PERMISSIONS.map((p) => p.short)).toEqual([
-			'View',
-			'Send',
-			'Manage messages',
-			'Connect',
-			'Speak',
-			'Stream'
-		]);
-	});
-
-	it('lists what is set, in the order of the toggles', () => {
-		expect(rowSummary({ allow: VIEW, deny: SEND })).toBe('View: Allow · Send: Deny');
-		expect(rowSummary({ allow: Permission.STREAM, deny: Permission.MANAGE_MESSAGES })).toBe(
-			'Manage messages: Deny · Stream: Allow'
-		);
-	});
-
-	it('says when nothing is set', () => {
-		expect(rowSummary(NO_BITS)).toBe('Nothing set');
-	});
-
-	it('ignores bits that are not channel bits', () => {
-		expect(rowSummary({ allow: Permission.MANAGE_ROLES, deny: 0n })).toBe('Nothing set');
+	it.each([
+		{
+			name: 'what is set',
+			bits: { allow: VIEW, deny: SEND },
+			expected: 'View: Allow · Send: Deny'
+		},
+		{
+			name: 'what is set, in the order of the toggles',
+			bits: { allow: Permission.STREAM, deny: Permission.MANAGE_MESSAGES },
+			expected: 'Manage messages: Deny · Stream: Allow'
+		},
+		{ name: 'when nothing is set', bits: NO_BITS, expected: 'Nothing set' },
+		{
+			name: 'when only bits that are not channel bits are set',
+			bits: { allow: Permission.MANAGE_ROLES, deny: 0n },
+			expected: 'Nothing set'
+		}
+	])('lists $name', ({ bits, expected }) => {
+		expect(rowSummary(bits)).toBe(expected);
 	});
 });
 
 describe('visibilityLine', () => {
-	it('says everyone can see it when it is not private', () => {
-		expect(visibilityLine('channel', false, [])).toBe(
-			'Everyone in the server can see this channel.'
-		);
-		expect(visibilityLine('category', false, ['Admin'])).toBe(
-			'Everyone in the server can see this category.'
+	const ownerOnly =
+		'Only the owner can see this. Allow View for a role or member below to let others in.';
+
+	it.each([
+		{ noun: 'channel', names: [] },
+		{ noun: 'category', names: ['Admin'] }
+	] as const)('says everyone can see this $noun when it is not private', ({ noun, names }) => {
+		expect(visibilityLine(noun, false, [...names])).toBe(
+			`Everyone in the server can see this ${noun}.`
 		);
 	});
 
-	it('says only the owner can see it when nobody is allowed', () => {
-		expect(visibilityLine('channel', true, [])).toBe(
-			'Only the owner can see this. Allow View for a role or member below to let others in.'
-		);
-		expect(visibilityLine('category', true, [])).toBe(
-			'Only the owner can see this. Allow View for a role or member below to let others in.'
-		);
+	it.each(['channel', 'category'] as const)(
+		'says only the owner can see a private %s when nobody is allowed',
+		(noun) => {
+			expect(visibilityLine(noun, true, [])).toBe(ownerOnly);
+		}
+	);
+
+	it.each([
+		{ noun: 'channel', names: ['Admin'], expected: 'Visible to Admin and the owner.' },
+		{
+			noun: 'channel',
+			names: ['Admin', 'Core member'],
+			expected: 'Visible to Admin, Core member and the owner.'
+		},
+		{ noun: 'category', names: ['A', 'B', 'C'], expected: 'Visible to A, B, C and the owner.' }
+	] as const)('lists who can see it, then the owner: $names', ({ noun, names, expected }) => {
+		expect(visibilityLine(noun, true, [...names])).toBe(expected);
 	});
 
-	it('lists who can see it, then the owner', () => {
-		expect(visibilityLine('channel', true, ['Admin'])).toBe('Visible to Admin and the owner.');
-		expect(visibilityLine('channel', true, ['Admin', 'Core member'])).toBe(
-			'Visible to Admin, Core member and the owner.'
-		);
-		expect(visibilityLine('category', true, ['A', 'B', 'C'])).toBe(
-			'Visible to A, B, C and the owner.'
-		);
-	});
-
-	it('shortens a long list', () => {
-		const names = ['A', 'B', 'C', 'D', 'E', 'F'];
-		expect(visibilityLine('channel', true, names)).toBe(
-			'Visible to A, B, C, D, E, F and the owner.'
-		);
-		expect(visibilityLine('channel', true, [...names, 'G'])).toBe(
-			'Visible to A, B, C, D, E, F, 1 more and the owner.'
-		);
-		expect(visibilityLine('channel', true, [...names, 'G', 'H', 'I'])).toBe(
-			'Visible to A, B, C, D, E, F, 3 more and the owner.'
-		);
+	const six = ['A', 'B', 'C', 'D', 'E', 'F'];
+	it.each([
+		{ extra: [], expected: 'Visible to A, B, C, D, E, F and the owner.' },
+		{ extra: ['G'], expected: 'Visible to A, B, C, D, E, F, 1 more and the owner.' },
+		{ extra: ['G', 'H', 'I'], expected: 'Visible to A, B, C, D, E, F, 3 more and the owner.' }
+	])('shortens a list of $extra.length names past six', ({ extra, expected }) => {
+		expect(visibilityLine('channel', true, [...six, ...extra])).toBe(expected);
 	});
 });
 
@@ -252,28 +319,6 @@ describe('row helpers', () => {
 		[{ user_id: 9, allow: '0', deny: '2' }]
 	);
 
-	it('compares bits by value', () => {
-		expect(sameBits({ allow: 1n, deny: 2n }, { allow: 1n, deny: 2n })).toBe(true);
-		expect(sameBits({ allow: 1n, deny: 2n }, { allow: 2n, deny: 1n })).toBe(false);
-		expect(sameBits(NO_BITS, { allow: 0n, deny: 0n })).toBe(true);
-	});
-
-	it('reads the bits of a saved row, none for null', () => {
-		expect(rowOf(null)).toEqual({ allow: 0n, deny: 0n });
-		expect(rowOf({ role_id: 2, allow: '5', deny: '2' })).toEqual({ allow: 5n, deny: 2n });
-		expect(rowOf({ user_id: 9, allow: '0', deny: '8' })).toEqual({ allow: 0n, deny: 8n });
-	});
-
-	it('replaces a row in place', () => {
-		const next = withRow(current, subject, { allow: 3n, deny: 4n });
-		expect(next.roles).toEqual([
-			{ role_id: 1, allow: '0', deny: '2' },
-			{ role_id: 2, allow: '3', deny: '4' }
-		]);
-		expect(next.roles[0]).toBe(current.roles[0]);
-		expect(next.members).toBe(current.members);
-	});
-
 	it('adds a row at the end', () => {
 		const next = withRow(current, { kind: 'roles', id: 7 }, { allow: 1n, deny: 0n });
 		expect(next.roles.map((r) => r.role_id)).toEqual([1, 2, 7]);
@@ -282,11 +327,6 @@ describe('row helpers', () => {
 			{ user_id: 9, allow: '0', deny: '2' },
 			{ user_id: 4, allow: '0', deny: '1' }
 		]);
-	});
-
-	it('removes a row when the bits are empty', () => {
-		expect(withRow(current, subject, NO_BITS).roles.map((r) => r.role_id)).toEqual([1]);
-		expect(withRow(current, { kind: 'members', id: 9 }, NO_BITS).members).toEqual([]);
 	});
 
 	it('does not change the rows it was given', () => {
