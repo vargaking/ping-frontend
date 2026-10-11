@@ -17,7 +17,7 @@
 	import { editMessage } from '$lib/requests/messages/editMessage';
 	import { db } from '$lib/utils/db';
 	import { refreshReplyQuotes } from '$lib/utils/replies';
-	import { mentionCandidates } from '$lib/utils/mentions';
+	import { mentionCandidates, refreshMentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
@@ -36,6 +36,11 @@
 		$props();
 
 	const parsedContent = $derived(parseMessageContent(message.content));
+	const mentionTarget = () => ({
+		serverId: message.server_id,
+		channelId: message.channel_id,
+		conversationId: message.conversation_id
+	});
 
 	const attachments = $derived(message.attachments ?? []);
 	const embeds = $derived(message.embeds ?? []);
@@ -113,11 +118,8 @@
 							content={parsedContent}
 							autofocus
 							allowEmpty={attachments.length > 0}
-							mentionCandidates={() =>
-								mentionCandidates({
-									serverId: message.server_id,
-									conversationId: message.conversation_id
-								})}
+							mentionCandidates={() => mentionCandidates(mentionTarget())}
+							onMentionStart={() => refreshMentionCandidates(mentionTarget())}
 							onSubmit={saveEdit}
 							onCancel={() => messageEditState.stop()}
 							editorClass="prose prose-sm max-w-none text-[15px] leading-[1.55] break-words whitespace-pre-wrap text-foreground prose-invert outline-none prose-headings:my-1 prose-p:my-0 prose-ol:my-1 prose-ul:my-1 prose-li:my-0"

@@ -42,15 +42,18 @@ export class ResyncState {
 	}
 }
 
-async function refreshLists() {
+export async function refreshLists() {
 	const syncedAt = Date.now();
 	await Promise.all([
 		conversationsState.fetch(),
-		...Object.keys(serversState.servers).map((id) =>
+		...Object.keys(serversState.servers).flatMap((id) => [
 			serversState
 				.loadServerChannels(Number(id), 0)
-				.catch((e) => console.warn('Resync failed to refresh channels', e))
-		)
+				.catch((e) => console.warn('Resync failed to refresh channels', e)),
+			serversState
+				.loadRoster(Number(id))
+				.catch((e) => console.warn('Resync failed to refresh members', e))
+		])
 	]);
 	void closeReadNotifications({ syncedAt });
 }

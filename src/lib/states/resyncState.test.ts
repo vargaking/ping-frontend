@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ResyncState } from './resyncState.svelte';
+
+const servers = vi.hoisted(() => ({
+	servers: { 3: {}, 8: {} } as Record<number, object>,
+	loadServerChannels: vi.fn(),
+	loadRoster: vi.fn()
+}));
+vi.mock('./serversState.svelte', () => ({ serversState: servers }));
+vi.mock('./conversationsState.svelte', () => ({ conversationsState: { fetch: vi.fn() } }));
+vi.mock('$lib/utils/notificationSweep', () => ({ closeReadNotifications: vi.fn() }));
+
+import { ResyncState, refreshLists } from './resyncState.svelte';
 
 function deferred() {
 	let resolve!: () => void;
@@ -50,5 +60,34 @@ describe('ResyncState', () => {
 		await state.request('reconnect');
 
 		expect(state.generation).toBe(1);
+	});
+});
+
+describe('refreshLists', () => {
+	it('reloads the channels and the member roster of every loaded server', async () => {
+		servers.loadServerChannels.mockReset().mockResolvedValue([]);
+		servers.loadRoster.mockReset().mockResolvedValue([]);
+
+		await refreshLists();
+
+		expect(servers.loadServerChannels.mock.calls).toEqual([
+			[3, 0],
+			[8, 0]
+		]);
+		expect(servers.loadRoster.mock.calls).toEqual([[3], [8]]);
+	});
+
+	it('still refreshes the other servers when one roster fails', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		servers.loadServerChannels.mockReset().mockResolvedValue([]);
+		servers.loadRoster.mockReset().mockImplementation(async (id: number) => {
+			if (id === 3) throw new Error('offline');
+			return [];
+		});
+
+		await expect(refreshLists()).resolves.toBeUndefined();
+
+		expect(servers.loadRoster).toHaveBeenCalledTimes(2);
+		expect(servers.loadServerChannels).toHaveBeenCalledTimes(2);
 	});
 });

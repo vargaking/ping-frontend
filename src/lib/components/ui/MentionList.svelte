@@ -1,16 +1,23 @@
 <script lang="ts">
 	import type { User } from '$lib/types/auth.types';
+	import { selectionIndex } from '$lib/utils/mentions';
 
-	let { items, command: cb }: { items: User[]; command: any } = $props();
-	let selectedIndex = $state(0);
+	let { items, query, command: cb }: { items: User[]; query: string; command: any } = $props();
+	let selectedId = $state<number | null>(null);
+	const selectedIndex = $derived(selectionIndex(items, selectedId));
+
+	function move(step: number) {
+		if (items.length === 0) return;
+		selectedId = items[(selectedIndex + step + items.length) % items.length].id;
+	}
 
 	export function onKeyDown(event: KeyboardEvent) {
 		if (event.key === 'ArrowUp') {
-			selectedIndex = (selectedIndex + items.length - 1) % items.length;
+			move(-1);
 			return true;
 		}
 		if (event.key === 'ArrowDown') {
-			selectedIndex = (selectedIndex + 1) % items.length;
+			move(1);
 			return true;
 		}
 		if (event.key === 'Enter') {
@@ -21,9 +28,8 @@
 	}
 
 	$effect(() => {
-		if (items.length >= 0) {
-			selectedIndex = 0;
-		}
+		void query;
+		selectedId = null;
 	});
 
 	function selectItem(index: number) {
@@ -43,7 +49,7 @@
 				class="w-full px-3 py-2 text-left text-sm transition-colors {index === selectedIndex
 					? 'bg-primary/15 text-primary'
 					: 'text-primary hover:bg-accent'}"
-				onmouseenter={() => (selectedIndex = index)}
+				onmouseenter={() => (selectedId = item.id)}
 				onclick={() => selectItem(index)}
 			>
 				@{item.username}
