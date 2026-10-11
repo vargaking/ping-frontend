@@ -1,6 +1,7 @@
 import { MAX_IDS_PER_REQUEST } from '$lib/requests/messages/getMessagesByIds';
 import type { MessageChange, MessageChangesPage } from '$lib/requests/messages/getMessageChanges';
 import type { MessageType } from '$lib/types/messages.types';
+import { normalizeError } from '$lib/requests/errors';
 import { db, localHistoryAvailable } from '$lib/utils/db';
 
 const CURSOR_KEY = 'historyChangesCursor:';
@@ -100,7 +101,11 @@ export async function applyMessageChanges(userId: number, source: ChangesSource)
 	}
 
 	while (true) {
-		const page = await source.page(since);
+		const page: MessageChangesPage = await source.page(since).catch((error) => {
+			// A cursor the server can't read would fail every run; the next run takes a fresh one.
+			if (normalizeError(error).status === 400) removeCursor(userId);
+			throw error;
+		});
 		if (page.reset) {
 			await resetLocalHistory();
 			writeCursor(userId, page.cursor);

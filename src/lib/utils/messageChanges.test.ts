@@ -1,3 +1,4 @@
+import { AxiosError, type AxiosResponse } from 'axios';
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessageChangesPage } from '$lib/requests/messages/getMessageChanges';
@@ -271,6 +272,18 @@ describe('with a cursor', () => {
 		await expect(applyMessageChanges(USER, source)).rejects.toThrow('handler failed');
 
 		expect(readCursor(USER)).toBe('c0');
+	});
+
+	it('forgets a cursor the server cannot read, so the next run takes a fresh one', async () => {
+		const rejected = new AxiosError('Bad Request', '400', undefined, undefined, {
+			status: 400,
+			data: { detail: 'Invalid cursor' }
+		} as AxiosResponse);
+		const { source } = feed([rejected]);
+
+		await expect(applyMessageChanges(USER, source)).rejects.toBe(rejected);
+
+		expect(readCursor(USER)).toBeNull();
 	});
 
 	it('gives up on a feed that claims more without moving', async () => {
