@@ -10,7 +10,7 @@ describe('canIn', () => {
 		const servers = new ServersState();
 		servers.setPermissions(
 			{ '7': mask(VIEW, SEND) },
-			{ '7': { '1': mask(VIEW), '2': mask(CONNECT) } }
+			{ '7': { '1': mask(VIEW), '2': mask(CONNECT), '3': '0' } }
 		);
 		return servers;
 	}
@@ -36,6 +36,7 @@ describe('canIn', () => {
 			expected: false
 		},
 		{ name: 'a bit only the channel mask holds', channel: 2, perm: CONNECT, expected: true },
+		{ name: 'an empty channel mask, not the server mask', channel: 3, perm: VIEW, expected: false },
 		{
 			name: 'a bit the channel mask lacks even if the server has it',
 			channel: 2,

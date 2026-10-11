@@ -316,7 +316,7 @@ test('one click sends one request and nothing else', async ({ browser }) => {
 	await owner.page.goto(channelPath(server.id, channel.id));
 	await openPermissions(owner.page);
 	const row = await addRow(owner.page, 'Mods');
-	await delayWrites(owner.page, 1500);
+	await delayWrites(owner.page, 2000);
 
 	const requests = recordRequests(owner.page);
 	const saved = owner.page.waitForResponse(
