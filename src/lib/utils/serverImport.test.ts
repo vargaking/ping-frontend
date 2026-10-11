@@ -23,7 +23,13 @@ import {
 	notImportedLines,
 	percent,
 	platformName,
-	totalsLine
+	privateChoices,
+	setAllPrivate,
+	initialPicks,
+	setVisibility,
+	togglePrivate,
+	totalsLine,
+	withPrivate
 } from './serverImport';
 
 const noLeftOut: PlanLeftOut = {
@@ -73,6 +79,22 @@ function channel(fields: Partial<PlanChannel> = {}): PlanChannel {
 		...fields
 	};
 }
+
+const choice = (id: string, fields: Partial<PlanChannel> = {}) =>
+	channel({
+		source_id: id,
+		name: `private-${id}`,
+		action: 'skipped',
+		reason: 'private',
+		private: true,
+		private_action: 'create',
+		messages: 10,
+		existing_messages: 1,
+		posts: 2,
+		attachments: 3,
+		attachment_bytes: 100,
+		...fields
+	});
 
 function importWith(fields: Partial<Import> = {}): Import {
 	return {
@@ -166,9 +188,131 @@ describe('importedTotals', () => {
 		expect(totals?.messages).toBe(102_500);
 	});
 
+	it('adds the private channels that were picked to the plan', () => {
+		const withChoice = plan({
+			channels: [choice('103')],
+			totals: total(5)
+		});
+		expect(
+			importedTotals({ plan: withChoice, result: null, private_channels: { '103': 'only_me' } })
+				?.messages
+		).toBe(15);
+		expect(importedTotals({ plan: withChoice, result: null })?.messages).toBe(5);
+		expect(importedTotals({ plan: withChoice, result: null, private_channels: {} })?.messages).toBe(
+			5
+		);
+	});
+
 	it('falls back to the result without a plan, and to nothing without either', () => {
 		expect(importedTotals({ plan: null, result: plan({ totals: total(7) }) })?.messages).toBe(7);
 		expect(importedTotals({ plan: null, result: null })).toBeNull();
+	});
+});
+
+function planWithPrivate(): Plan {
+	return plan({
+		channels: [
+			channel({ source_id: '1' }),
+			choice('103'),
+			choice('107', { private_action: 'existing', target_name: 'staff' }),
+			choice('109', { private_action: null, messages: 0 })
+		],
+		totals: { messages: 5, existing_messages: 0, posts: 0, attachments: 1, attachment_bytes: 50 },
+		left_out: { ...noLeftOut, private_channels: 3 }
+	});
+}
+
+describe('withPrivate', () => {
+	it('lists the rows that can be ticked', () => {
+		expect(privateChoices(planWithPrivate()).map((c) => c.source_id)).toEqual(['103', '107']);
+	});
+
+	it('turns picked rows into what they would do and adds their counts', () => {
+		const result = withPrivate(planWithPrivate(), { '103': 'everyone', '107': 'only_me' });
+
+		const rows = Object.fromEntries(result.channels.map((c) => [c.source_id, c]));
+		expect(rows['103']).toMatchObject({ action: 'create', reason: null, visibility: 'everyone' });
+		expect(rows['107']).toMatchObject({ action: 'existing', reason: null, visibility: null });
+		expect(rows['109']).toMatchObject({ action: 'skipped', reason: 'private' });
+		expect(result.totals).toEqual({
+			messages: 25,
+			existing_messages: 2,
+			posts: 4,
+			attachments: 7,
+			attachment_bytes: 250
+		});
+		expect(result.left_out.private_channels).toBe(1);
+	});
+
+	it('ignores ids that cannot be selected', () => {
+		const original = planWithPrivate();
+		const result = withPrivate(original, { '1': 'only_me', '109': 'only_me', '999': 'everyone' });
+
+		expect(result.channels).toEqual(original.channels);
+		expect(result.totals).toEqual(original.totals);
+		expect(result.left_out.private_channels).toBe(3);
+	});
+
+	it('leaves the plan it was given untouched', () => {
+		const original = planWithPrivate();
+		const before = structuredClone(original);
+
+		withPrivate(original, { '103': 'only_me' });
+
+		expect(original).toEqual(before);
+	});
+
+	it('shows a picked row with the lines the plan would give it', () => {
+		const result = withPrivate(planWithPrivate(), { '103': 'only_me' });
+		const row = result.channels.find((c) => c.source_id === '103')!;
+		expect(channelAction(row)).toBe('New channel, only you can see it');
+		expect(channelCounts(row)).toBe('10 messages');
+	});
+});
+
+describe('private picks', () => {
+	it('ticks a channel for only me unless it already has a pick', () => {
+		expect(togglePrivate({}, '103', true)).toEqual({ '103': 'only_me' });
+		expect(togglePrivate({ '103': 'everyone' }, '103', true)).toEqual({ '103': 'everyone' });
+	});
+
+	it('unticks by dropping the key and keeps the others', () => {
+		expect(togglePrivate({ '103': 'everyone', '107': 'only_me' }, '103', false)).toEqual({
+			'107': 'only_me'
+		});
+	});
+
+	it('selects every choice, keeping picks already made', () => {
+		expect(setAllPrivate(planWithPrivate(), { '103': 'everyone', '999': 'only_me' }, true)).toEqual(
+			{
+				'103': 'everyone',
+				'107': 'only_me'
+			}
+		);
+		expect(setAllPrivate(planWithPrivate(), { '103': 'everyone' }, false)).toEqual({});
+	});
+
+	it('starts with the private channels an earlier import brought in', () => {
+		const ready = { status: 'ready' as const, plan: planWithPrivate(), private_channels: {} };
+		expect(initialPicks(ready)).toEqual({ '107': 'only_me' });
+		expect(initialPicks({ ...ready, private_channels: undefined })).toEqual({ '107': 'only_me' });
+	});
+
+	it('starts with the stored selection once there is one', () => {
+		const stored = { '103': 'everyone' as const };
+		expect(
+			initialPicks({ status: 'ready', plan: planWithPrivate(), private_channels: stored })
+		).toEqual(stored);
+		expect(
+			initialPicks({ status: 'failed', plan: planWithPrivate(), private_channels: {} })
+		).toEqual({});
+	});
+
+	it('changes who sees a channel without touching the rest', () => {
+		expect(setVisibility({ '103': 'only_me', '107': 'only_me' }, '103', 'everyone')).toEqual({
+			'103': 'everyone',
+			'107': 'only_me'
+		});
 	});
 });
 
@@ -309,6 +453,38 @@ describe('plan formatting', () => {
 		);
 		expect(channelCounts(channel({ type: 'voice' }))).toBe('');
 		expect(channelCounts(channel({ action: 'skipped', messages: 4 }))).toBe('');
+	});
+
+	it('says who sees a private channel the run creates', () => {
+		expect(channelAction(channel({ visibility: 'only_me' }))).toBe(
+			'New channel, only you can see it'
+		);
+		expect(channelAction(channel({ visibility: 'everyone' }))).toBe(
+			'New channel, everyone can see it'
+		);
+		expect(channelAction(channel({ visibility: 'only_me', name_taken: true }))).toBe(
+			'New channel, only you can see it (#general already exists, this adds a second one)'
+		);
+	});
+
+	it('tells a private channel that can be ticked from one that cannot', () => {
+		const choice = channel({ action: 'skipped', reason: 'private', private: true });
+		expect(channelAction({ ...choice, private_action: 'create' })).toBe('Private, not selected');
+		expect(channelAction({ ...choice, private_action: 'existing' })).toBe('Private, not selected');
+		expect(channelAction({ ...choice, private_action: null })).toBe('Skipped: private');
+		expect(channelAction(choice)).toBe('Skipped: private');
+	});
+
+	it('counts what a selectable private channel would bring in', () => {
+		const choice = channel({
+			action: 'skipped',
+			reason: 'private',
+			private: true,
+			private_action: 'create',
+			messages: 8
+		});
+		expect(channelCounts(choice)).toBe('8 messages');
+		expect(channelCounts({ ...choice, private_action: null })).toBe('');
 	});
 
 	it('names the platform', () => {

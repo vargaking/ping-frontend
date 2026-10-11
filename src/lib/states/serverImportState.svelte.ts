@@ -6,7 +6,12 @@ import { startServerImport } from '$lib/requests/serverImport/startServerImport'
 import { uploadImportPiece } from '$lib/requests/serverImport/uploadImportPiece';
 import { getErrorMessage, normalizeError } from '$lib/requests/errors';
 import { formatBytes } from '$lib/requests/attachments/uploadAttachment';
-import type { AuthorMapping, Import, ImportLimits } from '$lib/types/serverImport.types';
+import type {
+	AuthorMapping,
+	Import,
+	ImportLimits,
+	PrivateSelection
+} from '$lib/types/serverImport.types';
 import { fileProblem, isWorking, mappingPayload, mergeImportFrame } from '$lib/utils/serverImport';
 import {
 	abortableSleep,
@@ -314,9 +319,13 @@ class ServerImportState {
 		return saved;
 	}
 
-	/** Run the import for the plan the owner has reviewed. */
-	async start(serverId: number): Promise<Import> {
-		const started = await startServerImport(serverId, this.requireImport(serverId).id);
+	/** Run the import for the plan the owner has reviewed; without picks the stored ones are used. */
+	async start(serverId: number, privateChannels?: PrivateSelection): Promise<Import> {
+		const started = await startServerImport(
+			serverId,
+			this.requireImport(serverId).id,
+			privateChannels
+		);
 		this.storeAnswer(serverId, started);
 		return started;
 	}

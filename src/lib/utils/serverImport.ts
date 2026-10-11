@@ -5,7 +5,9 @@ import type {
 	ImportLimits,
 	Plan,
 	PlanChannel,
-	PlanTotals
+	PlanTotals,
+	PrivateSelection,
+	PrivateVisibility
 } from '$lib/types/serverImport.types';
 
 /** An import still being worked on by the server. */
@@ -64,12 +66,90 @@ export function platformName(source: Import['source']): string {
 	return source ? (PLATFORMS[source.platform] ?? source.platform) : '';
 }
 
+/** Private channels the owner can tick: skipped for now, with a known outcome if selected. */
+export const privateChoices = (plan: Plan): PlanChannel[] =>
+	plan.channels.filter((c) => c.action === 'skipped' && c.private_action);
+
+/** The plan as it stands with `picks` ticked; the plan itself stays untouched. */
+export function withPrivate(plan: Plan, picks: PrivateSelection): Plan {
+	const chosen = privateChoices(plan).filter((c) => picks[c.source_id]);
+	if (chosen.length === 0) return plan;
+	const ids = new Set(chosen.map((c) => c.source_id));
+	const totals = { ...plan.totals };
+	for (const c of chosen) {
+		totals.messages += c.messages;
+		totals.existing_messages += c.existing_messages;
+		totals.posts += c.posts;
+		totals.attachments += c.attachments;
+		totals.attachment_bytes += c.attachment_bytes;
+	}
+	return {
+		...plan,
+		channels: plan.channels.map((c) => {
+			if (!ids.has(c.source_id) || !c.private_action) return c;
+			return {
+				...c,
+				action: c.private_action,
+				reason: null,
+				visibility: c.private_action === 'create' ? picks[c.source_id] : null
+			};
+		}),
+		totals,
+		left_out: {
+			...plan.left_out,
+			private_channels: Math.max(0, plan.left_out.private_channels - chosen.length)
+		}
+	};
+}
+
+export function togglePrivate(picks: PrivateSelection, id: string, on: boolean): PrivateSelection {
+	if (!on) {
+		return Object.fromEntries(Object.entries(picks).filter(([key]) => key !== id));
+	}
+	return { ...picks, [id]: picks[id] ?? 'only_me' };
+}
+
+/**
+ * What the plan starts with: the stored selection once a start has stored one, otherwise
+ * the private channels an earlier import already brought in, so a newer export keeps them
+ * up to date without ticking them again.
+ */
+export function initialPicks(
+	imp: Pick<Import, 'status' | 'plan' | 'private_channels'>
+): PrivateSelection {
+	const stored = imp.private_channels ?? {};
+	if (imp.status !== 'ready' || !imp.plan || Object.keys(stored).length) return { ...stored };
+	return Object.fromEntries(
+		privateChoices(imp.plan)
+			.filter((c) => c.private_action === 'existing')
+			.map((c) => [c.source_id, 'only_me' as const])
+	);
+}
+
+export function setAllPrivate(plan: Plan, picks: PrivateSelection, on: boolean): PrivateSelection {
+	if (!on) return {};
+	return Object.fromEntries(
+		privateChoices(plan).map((c) => [c.source_id, picks[c.source_id] ?? 'only_me'])
+	);
+}
+
+export function setVisibility(
+	picks: PrivateSelection,
+	id: string,
+	visibility: PrivateVisibility
+): PrivateSelection {
+	return { ...picks, [id]: visibility };
+}
+
 /**
  * The totals a finished import brought in. The plan covers the whole import, while the
  * result only reports the last run, which is partial after a resumed import.
  */
-export function importedTotals(imp: Pick<Import, 'plan' | 'result'>): PlanTotals | null {
-	return (imp.plan ?? imp.result)?.totals ?? null;
+export function importedTotals(
+	imp: Pick<Import, 'plan' | 'result' | 'private_channels'>
+): PlanTotals | null {
+	if (imp.plan) return withPrivate(imp.plan, imp.private_channels ?? {}).totals;
+	return imp.result?.totals ?? null;
 }
 
 /** "12 messages, 3 forum posts, 40 attachments (1.2 MB)". */
@@ -90,17 +170,26 @@ export function channelAction(channel: PlanChannel): string {
 	const prefix = channel.type === 'voice' ? '' : '#';
 	const name = `${prefix}${channel.target_name ?? channel.name}`;
 	if (channel.action === 'create') {
+		const who =
+			channel.visibility === 'only_me'
+				? ', only you can see it'
+				: channel.visibility === 'everyone'
+					? ', everyone can see it'
+					: '';
 		return channel.name_taken
-			? `New channel (${name} already exists, this adds a second one)`
-			: 'New channel';
+			? `New channel${who} (${name} already exists, this adds a second one)`
+			: `New channel${who}`;
 	}
 	if (channel.action === 'existing') return `Continue in ${name}`;
+	if (channel.private_action) return 'Private, not selected';
 	return channel.reason ? `Skipped: ${channel.reason}` : 'Skipped';
 }
 
 /** What a channel brings in, for the right-hand side of its row. */
 export function channelCounts(channel: PlanChannel): string {
-	if (channel.action === 'skipped' || channel.type === 'voice') return '';
+	if ((channel.action === 'skipped' && !channel.private_action) || channel.type === 'voice') {
+		return '';
+	}
 	const messages = count(channel.messages, 'message');
 	return channel.type === 'forum' ? `${count(channel.posts, 'post')}, ${messages}` : messages;
 }

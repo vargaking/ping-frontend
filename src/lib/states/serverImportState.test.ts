@@ -382,6 +382,22 @@ describe('answers to requests', () => {
 		expect(requests.get).toHaveBeenCalledTimes(1);
 	});
 
+	it('sends the private channel picks when given', async () => {
+		requests.start.mockResolvedValue(importWith({ status: 'importing' }));
+
+		await serverImportState.start(SERVER, { '103': 'only_me' });
+
+		expect(requests.start).toHaveBeenCalledWith(SERVER, 'imp-1', { '103': 'only_me' });
+	});
+
+	it('sends no picks when there are none, so the stored ones are reused', async () => {
+		requests.start.mockResolvedValue(importWith({ status: 'importing' }));
+
+		await serverImportState.start(SERVER);
+
+		expect(requests.start.mock.calls[0].slice(2)).toEqual([undefined]);
+	});
+
 	it('shows the previous import again after a discard', async () => {
 		requests.discard.mockResolvedValue(undefined);
 		requests.get.mockResolvedValue(serve(importWith({ id: 'older', status: 'done' })));

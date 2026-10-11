@@ -7,26 +7,27 @@
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { formatBytes } from '$lib/requests/attachments/uploadAttachment';
 	import type { ServerMember } from '$lib/types/server.types';
-	import type { AuthorMapping, Plan } from '$lib/types/serverImport.types';
+	import type { AuthorMapping, Plan, PrivateSelection } from '$lib/types/serverImport.types';
 	import {
-		channelAction,
-		channelCounts,
 		count,
 		existingLine,
 		importedTotals,
+		initialPicks,
 		fileProblem,
 		mappingChanged,
 		mappingOf,
 		notImportedLines,
 		percent,
 		platformName,
-		totalsLine
+		totalsLine,
+		withPrivate
 	} from '$lib/utils/serverImport';
 	import { isSameUpload } from '$lib/utils/serverImportUpload';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
 	import ServerImportAuthors from './ServerImportAuthors.svelte';
+	import ServerImportChannels from './ServerImportChannels.svelte';
 	import ServerImportProgress from './ServerImportProgress.svelte';
 
 	const EXPORTER_URL = 'https://github.com/vargaking/discord-export-bot#readme';
@@ -61,6 +62,8 @@
 	let membersFailed = $state(false);
 	let mapping = $state<AuthorMapping>({});
 	let syncedAuthors = '';
+	let privatePicks = $state<PrivateSelection>({});
+	let syncedPicksFor = '';
 
 	// load() reads the entry it fills in, so it runs untracked: only a new server id should refetch.
 	$effect(() => {
@@ -99,6 +102,12 @@
 		if (key === syncedAuthors) return;
 		syncedAuthors = key;
 		mapping = mappingOf(imp.authors);
+	});
+
+	$effect(() => {
+		if (!imp || imp.id === syncedPicksFor) return;
+		syncedPicksFor = imp.id;
+		privatePicks = initialPicks(imp);
 	});
 
 	// Move on from leftovers of one state when another takes over.
@@ -168,7 +177,7 @@
 		const dirty = mappingChanged(imp.authors, mapping);
 		await run('start', "Couldn't start the import", async () => {
 			if (dirty) await serverImportState.saveAuthors(id, mapping);
-			await serverImportState.start(id);
+			await serverImportState.start(id, privatePicks);
 		});
 	}
 
@@ -203,9 +212,8 @@
 		await run('cancel', "Couldn't cancel the upload", () => serverImportState.cancel(id));
 	}
 
-	const diskShort = $derived(
-		imp?.plan != null && imp.plan.totals.attachment_bytes > imp.plan.free_bytes
-	);
+	const shown = $derived(imp?.plan ? withPrivate(imp.plan, privatePicks) : null);
+	const diskShort = $derived(shown != null && shown.totals.attachment_bytes > shown.free_bytes);
 </script>
 
 <input
@@ -435,7 +443,7 @@
 			<p class="text-xs text-text-subtle">You can close this. It keeps running on the server.</p>
 		</section>
 	{:else if view === 'ready' && imp?.plan}
-		{@const plan = imp.plan}
+		{@const plan = shown ?? imp.plan}
 		{@const existing = existingLine(plan.totals.existing_messages)}
 		<section aria-label="Review" class="flex flex-col gap-1">
 			<h3 class="text-sm font-semibold">
@@ -464,35 +472,7 @@
 			</p>
 		{/if}
 
-		<section aria-labelledby="import-channels" class="flex flex-col gap-2">
-			<div class="flex items-baseline justify-between gap-3">
-				<h3 id="import-channels" class="text-sm font-semibold">Channels</h3>
-				<span class="font-mono text-[11px] text-text-subtle">{plan.channels.length}</span>
-			</div>
-			<ul aria-label="Channels" class="flex flex-col">
-				{#each plan.channels as channel (channel.source_id)}
-					{@const counts = channelCounts(channel)}
-					<li class="rounded-lg px-3 py-2 hover:bg-card">
-						<div class="flex items-baseline justify-between gap-3">
-							<span class="min-w-0 truncate text-sm">
-								{channel.name}
-								<span class="ml-1 text-xs text-text-subtle">{channel.type}</span>
-							</span>
-							{#if counts}
-								<span class="shrink-0 font-mono text-[11px] text-text-subtle">{counts}</span>
-							{/if}
-						</div>
-						<p
-							class="text-xs break-words {channel.action === 'skipped'
-								? 'text-text-subtle'
-								: 'text-muted-foreground'}"
-						>
-							{channelAction(channel)}{channel.category ? ` · ${channel.category}` : ''}
-						</p>
-					</li>
-				{/each}
-			</ul>
-		</section>
+		<ServerImportChannels plan={imp.plan} bind:picks={privatePicks} disabled={busy !== null} />
 
 		{@render notImported(plan)}
 		{@render authorsSection('Save', false)}
@@ -520,7 +500,8 @@
 			)}
 		</div>
 	{:else if view === 'done' && imp}
-		{@const result = imp.result ?? imp.plan}
+		{@const result =
+			imp.result ?? (imp.plan ? withPrivate(imp.plan, imp.private_channels ?? {}) : null)}
 		{@const totals = importedTotals(imp)}
 		<section aria-label="Result" class="flex flex-col gap-2">
 			{#if totals}
