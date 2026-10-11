@@ -40,17 +40,19 @@ function role({ allow = 0n, deny = 0n, ...rest }: Spec): Role {
 const everyone = (allow = MEMBER) => role({ id: 1, allow, is_default: true });
 
 describe('resolveRole', () => {
-	it('lets a child allow beat a parent deny', () => {
-		const roles = [role({ id: 2, deny: KICK }), role({ id: 3, allow: KICK, parent_id: 2 })];
-		expect(resolveRole(3, roles)).toEqual({ allow: KICK, deny: 0n });
-	});
-
-	it('lets a child deny beat a parent allow', () => {
-		const roles = [
-			role({ id: 2, allow: KICK | MANAGE }),
-			role({ id: 3, deny: KICK, parent_id: 2 })
-		];
-		expect(resolveRole(3, roles)).toEqual({ allow: MANAGE, deny: KICK });
+	it.each([
+		{
+			name: 'a child allow beats a parent deny',
+			roles: [role({ id: 2, deny: KICK }), role({ id: 3, allow: KICK, parent_id: 2 })],
+			expected: { allow: KICK, deny: 0n }
+		},
+		{
+			name: 'a child deny beats a parent allow',
+			roles: [role({ id: 2, allow: KICK | MANAGE }), role({ id: 3, deny: KICK, parent_id: 2 })],
+			expected: { allow: MANAGE, deny: KICK }
+		}
+	])('lets $name', ({ roles, expected }) => {
+		expect(resolveRole(3, roles)).toEqual(expected);
 	});
 
 	it('keeps a grandparent value that nothing nearer overrides', () => {
@@ -77,13 +79,16 @@ describe('resolveRole', () => {
 });
 
 describe('memberMask', () => {
-	it('denies the bit when Muted sits above a role that allows it', () => {
+	it.each([
+		{ name: 'a deny above an allow denies the bit', allowAt: 1, denyAt: 2, expected: 0n },
+		{ name: 'an allow above a deny allows the bit', allowAt: 2, denyAt: 1, expected: SEND }
+	])('$name', ({ allowAt, denyAt, expected }) => {
 		const roles = [
 			everyone(),
-			role({ id: 2, position: 1, allow: SEND }),
-			role({ id: 3, position: 2, deny: SEND })
+			role({ id: 2, position: allowAt, allow: SEND }),
+			role({ id: 3, position: denyAt, deny: SEND })
 		];
-		expect(memberMask(roles, [2, 3]) & SEND).toBe(0n);
+		expect(memberMask(roles, [2, 3]) & SEND).toBe(expected);
 	});
 
 	it('denies the bit when Muted sits below roles that say nothing about it', () => {
@@ -95,15 +100,6 @@ describe('memberMask', () => {
 		const mask = memberMask(roles, [2, 3]);
 		expect(mask & SEND).toBe(0n);
 		expect(mask & KICK).toBe(KICK);
-	});
-
-	it('lets a higher role that allows the bit beat a lower Muted', () => {
-		const roles = [
-			everyone(),
-			role({ id: 2, position: 2, allow: SEND }),
-			role({ id: 3, position: 1, deny: SEND })
-		];
-		expect(memberMask(roles, [2, 3]) & SEND).toBe(SEND);
 	});
 
 	it('adds up unrelated roles', () => {
@@ -162,24 +158,25 @@ describe('rankOf', () => {
 		role({ id: 4, position: 2 })
 	];
 
-	it('is the highest position among the assigned roles', () => {
-		expect(rankOf(roles, [2, 4])).toBe(2);
-		expect(rankOf(roles, [4, 3, 2])).toBe(3);
-	});
-
-	it('is 0 without roles', () => {
-		expect(rankOf(roles, [])).toBe(0);
-		expect(rankOf(roles, [999])).toBe(0);
+	it.each([
+		{ assigned: [2, 4], expected: 2 },
+		{ assigned: [4, 3, 2], expected: 3 },
+		{ assigned: [], expected: 0 },
+		{ assigned: [999], expected: 0 }
+	])('is $expected for the assigned roles $assigned', ({ assigned, expected }) => {
+		expect(rankOf(roles, assigned)).toBe(expected);
 	});
 });
 
 describe('canTouchRole', () => {
 	const mod = role({ id: 2, position: 2 });
 
-	it('allows only roles strictly below the rank', () => {
-		expect(canTouchRole(mod, 3, false)).toBe(true);
-		expect(canTouchRole(mod, 2, false)).toBe(false);
-		expect(canTouchRole(mod, 1, false)).toBe(false);
+	it.each([
+		{ rank: 3, expected: true },
+		{ rank: 2, expected: false },
+		{ rank: 1, expected: false }
+	])('allows only roles strictly below the rank: rank $rank is $expected', ({ rank, expected }) => {
+		expect(canTouchRole(mod, rank, false)).toBe(expected);
 	});
 
 	it('lets the owner touch anything', () => {
@@ -197,10 +194,9 @@ describe('canAssignRole', () => {
 		).toBe(true);
 	});
 
-	it('refuses a role at or above the actor rank', () => {
-		const roles = [role({ id: 2, position: 3 }), role({ id: 3, position: 4 })];
+	it.each([3, 4])('refuses a role at position %i, at or above the actor rank', (position) => {
+		const roles = [role({ id: 2, position })];
 		expect(canAssignRole(roles[0], roles, actor)).toBe(false);
-		expect(canAssignRole(roles[1], roles, actor)).toBe(false);
 	});
 
 	it('allows a role below the rank that stays inside the mask', () => {
@@ -225,14 +221,13 @@ describe('canAssignRole', () => {
 describe('wouldCycle', () => {
 	const roles = [role({ id: 2 }), role({ id: 3, parent_id: 2 }), role({ id: 4, parent_id: 3 })];
 
-	it('detects a loop through descendants and itself', () => {
-		expect(wouldCycle(2, 4, roles)).toBe(true);
-		expect(wouldCycle(2, 2, roles)).toBe(true);
-	});
-
-	it('allows unrelated or clearing parents', () => {
-		expect(wouldCycle(4, 2, roles)).toBe(false);
-		expect(wouldCycle(3, null, roles)).toBe(false);
+	it.each([
+		{ name: 'a descendant', id: 2, parent: 4, expected: true },
+		{ name: 'itself', id: 2, parent: 2, expected: true },
+		{ name: 'an ancestor', id: 4, parent: 2, expected: false },
+		{ name: 'nothing', id: 3, parent: null, expected: false }
+	])('wouldCycle is $expected for a parent of $name', ({ id, parent, expected }) => {
+		expect(wouldCycle(id, parent, roles)).toBe(expected);
 	});
 });
 
@@ -243,15 +238,11 @@ describe('inheritedSource', () => {
 		role({ id: 4, name: 'Intern', parent_id: 3 })
 	];
 
-	it('finds the nearest role in the chain that sets the bit', () => {
-		expect(inheritedSource(roles[2], KICK, roles)).toMatchObject({
-			role: { name: 'Mod' },
-			state: 'allow'
-		});
-		expect(inheritedSource(roles[2], MANAGE, roles)).toMatchObject({
-			role: { name: 'Helper' },
-			state: 'deny'
-		});
+	it.each([
+		{ bit: KICK, name: 'Mod', state: 'allow' },
+		{ bit: MANAGE, name: 'Helper', state: 'deny' }
+	])('finds $name as the nearest role in the chain that sets the bit', ({ bit, name, state }) => {
+		expect(inheritedSource(roles[2], bit, roles)).toMatchObject({ role: { name }, state });
 	});
 
 	it('prefers the nearer role over a farther one', () => {
@@ -259,9 +250,11 @@ describe('inheritedSource', () => {
 		expect(inheritedSource(chain[3], MANAGE, chain)).toMatchObject({ role: { name: 'Helper' } });
 	});
 
-	it('is null when nothing in the chain sets it, or there is no parent', () => {
-		expect(inheritedSource(roles[2], SEND, roles)).toBeNull();
-		expect(inheritedSource(roles[0], KICK, roles)).toBeNull();
+	it.each([
+		{ name: 'nothing in the chain sets it', index: 2, bit: SEND },
+		{ name: 'there is no parent', index: 0, bit: KICK }
+	])('is null when $name', ({ index, bit }) => {
+		expect(inheritedSource(roles[index], bit, roles)).toBeNull();
 	});
 
 	it('does not loop on a cycle', () => {
@@ -271,11 +264,13 @@ describe('inheritedSource', () => {
 });
 
 describe('ownState', () => {
-	it('reads deny before allow, and inherit when neither is set', () => {
-		expect(ownState(role({ id: 2, allow: KICK }), KICK)).toBe('allow');
-		expect(ownState(role({ id: 2, deny: KICK }), KICK)).toBe('deny');
-		expect(ownState(role({ id: 2, allow: KICK, deny: KICK }), KICK)).toBe('deny');
-		expect(ownState(role({ id: 2 }), KICK)).toBe('inherit');
+	it.each([
+		{ allow: KICK, deny: 0n, expected: 'allow' },
+		{ allow: 0n, deny: KICK, expected: 'deny' },
+		{ allow: KICK, deny: KICK, expected: 'deny' },
+		{ allow: 0n, deny: 0n, expected: 'inherit' }
+	])('reads allow $allow and deny $deny as $expected', ({ allow, deny, expected }) => {
+		expect(ownState(role({ id: 2, allow, deny }), KICK)).toBe(expected);
 	});
 });
 
@@ -287,14 +282,13 @@ describe('nameColor', () => {
 		role({ id: 4, position: 2, color: '#444444' })
 	];
 
-	it('takes the colour of the highest assigned role that has one', () => {
-		expect(nameColor(roles, [2, 3, 4])).toBe('#444444');
-		expect(nameColor(roles, [2])).toBe('#111111');
-	});
-
-	it('is null without a coloured role', () => {
-		expect(nameColor(roles, [3])).toBeNull();
-		expect(nameColor(roles, [])).toBeNull();
+	it.each([
+		{ assigned: [2, 3, 4], expected: '#444444' },
+		{ assigned: [2], expected: '#111111' },
+		{ assigned: [3], expected: null },
+		{ assigned: [], expected: null }
+	])('is $expected for the assigned roles $assigned', ({ assigned, expected }) => {
+		expect(nameColor(roles, assigned)).toBe(expected);
 	});
 });
 
@@ -306,10 +300,12 @@ describe('assignedRoles', () => {
 });
 
 describe('ordering', () => {
-	it('moves a role next to another', () => {
-		expect(moveRole([5, 4, 3, 2], 2, 5, 'before')).toEqual([2, 5, 4, 3]);
-		expect(moveRole([5, 4, 3, 2], 5, 3, 'after')).toEqual([4, 3, 5, 2]);
-		expect(moveRole([5, 4, 3, 2], 4, 4, 'after')).toEqual([5, 4, 3, 2]);
+	it.each([
+		{ id: 2, target: 5, side: 'before', expected: [2, 5, 4, 3] },
+		{ id: 5, target: 3, side: 'after', expected: [4, 3, 5, 2] },
+		{ id: 4, target: 4, side: 'after', expected: [5, 4, 3, 2] }
+	] as const)('moves $id $side $target', ({ id, target, side, expected }) => {
+		expect(moveRole([5, 4, 3, 2], id, target, side)).toEqual(expected);
 	});
 
 	it('numbers positions from the bottom', () => {

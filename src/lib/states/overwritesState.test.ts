@@ -176,15 +176,13 @@ describe('save', () => {
 		await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
 	});
 
-	it('sends nothing for the value the row already shows', async () => {
+	it.each([
+		{ name: 'a row that holds it', subject: everyone, bits: { allow: SEND, deny: 0n } },
+		{ name: 'a missing row asked to stay empty', subject: mod, bits: { allow: 0n, deny: 0n } }
+	])('sends nothing for the value $name already shows', async ({ subject, bits }) => {
 		await loaded({ roles: [roleRow(10, SEND, 0n)], members: [] });
 
-		await expect(
-			overwritesState.save(channel, everyone, { allow: SEND, deny: 0n }, SEND)
-		).resolves.toBe(true);
-		await expect(overwritesState.save(channel, mod, { allow: 0n, deny: 0n }, SEND)).resolves.toBe(
-			true
-		);
+		await expect(overwritesState.save(channel, subject, bits, SEND)).resolves.toBe(true);
 		expect(setOverwrite).not.toHaveBeenCalled();
 	});
 
@@ -208,6 +206,18 @@ describe('save', () => {
 			expect.stringContaining("Couldn't save permissions"),
 			expect.objectContaining({ id: 'overwrite-save' })
 		);
+	});
+
+	it('reuses one toast id when several rows fail', async () => {
+		await loaded();
+		setOverwrite.mockRejectedValue(new Error('offline'));
+
+		const a = overwritesState.save(channel, mod, { allow: SEND, deny: 0n }, SEND);
+		const b = overwritesState.save(channel, everyone, { allow: VIEW, deny: 0n }, VIEW);
+		await expect(Promise.all([a, b])).resolves.toEqual([false, false]);
+
+		const ids = toastError.mock.calls.map((call) => call[1].id);
+		expect(ids).toEqual(['overwrite-save', 'overwrite-save']);
 	});
 
 	it('goes back to the earlier success when the second write fails', async () => {
