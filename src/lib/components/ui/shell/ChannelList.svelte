@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { Permission } from '$lib/permissions';
@@ -18,6 +19,7 @@
 	import SidebarRow from './SidebarRow.svelte';
 	import PresenceParticipant from './PresenceParticipant.svelte';
 	import CreateChannelDialog from '$lib/components/servers/CreateChannelDialog.svelte';
+	import VoiceJoinSheet from '$lib/components/voice/VoiceJoinSheet.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import InviteDialog from '$lib/components/servers/InviteDialog.svelte';
@@ -32,6 +34,7 @@
 	} from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
 	import { channelPath } from '$lib/utils/channelRoutes';
+	import { decideVoiceTap, setSavedMute } from '$lib/utils/voiceJoin';
 	import {
 		Hash,
 		MessagesSquare,
@@ -46,6 +49,11 @@
 	let createOpen = $state(false);
 	let createGroupId: number | null | undefined = $state(undefined);
 	let inviteOpen = $state(false);
+	let joinAsk: { serverId: number; channel: Channel } | null = $state.raw(null);
+
+	$effect(() => {
+		if (!phoneState.phone) joinAsk = null;
+	});
 
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
 	// HTML drag fights the long-press menu, so reordering stays a desktop action.
@@ -162,6 +170,18 @@
 	function channelHref(channel: Channel) {
 		return channelPath(serversState.selectedServer?.id ?? 0, channel);
 	}
+
+	async function joinFromSheet(muted: boolean) {
+		const ask = joinAsk;
+		if (!ask) return;
+		joinAsk = null;
+		phoneState.closeNav();
+		void goto(channelPath(ask.serverId, ask.channel));
+		// Leaving first clears the old call's mic error and moderator mute, which would block the toggle.
+		if (voiceState.channelId != null) await voiceState.leaveVoice();
+		await setSavedMute(voiceState, muted);
+		await voiceState.joinVoice(ask.serverId, ask.channel.id);
+	}
 </script>
 
 {#snippet settingsButton(channel: Channel)}
@@ -208,15 +228,22 @@
 		{...mergeProps(triggerProps, {
 			// Screen readers get the topic even though the tooltip is visual.
 			'aria-description': channel.topic?.trim() || undefined,
-			onclick: (e: MouseEvent) => {
+			// Captured, so the sheet case stops the click before the sidebar closes the navigation.
+			onclickcapture: (e: MouseEvent) => {
 				// Opening the link in a new tab shouldn't join from this one.
 				if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
 				const serverId = serversState.selectedServerId;
-				if (
-					serverId != null &&
-					voiceState.channelId !== channel.id &&
-					serversState.canIn(Permission.CONNECT, channel.id, serverId)
-				) {
+				if (serverId == null) return;
+				const outcome = decideVoiceTap({
+					phone: phoneState.phone,
+					inChannel: voiceState.channelId === channel.id,
+					canConnect: serversState.canIn(Permission.CONNECT, channel.id, serverId)
+				});
+				if (outcome === 'sheet') {
+					e.preventDefault();
+					e.stopPropagation();
+					joinAsk = { serverId, channel };
+				} else if (outcome === 'join') {
 					voiceState.joinVoice(serverId, channel.id);
 				}
 			}
@@ -433,4 +460,9 @@
 </div>
 
 <CreateChannelDialog bind:open={createOpen} groupId={createGroupId} />
+<VoiceJoinSheet
+	channel={joinAsk?.channel ?? null}
+	onjoin={joinFromSheet}
+	oncancel={() => (joinAsk = null)}
+/>
 <InviteDialog bind:open={inviteOpen} />
