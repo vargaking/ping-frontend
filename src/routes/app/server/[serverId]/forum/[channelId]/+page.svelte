@@ -12,11 +12,13 @@
 	import Input from '$lib/components/ui/input/input.svelte';
 	import ForumPostItem from '$lib/components/forum/ForumPostItem.svelte';
 	import ForumTagChip from '$lib/components/forum/ForumTagChip.svelte';
+	import NewTagButton from '$lib/components/forum/NewTagButton.svelte';
 	import NewPostDialog from '$lib/components/forum/NewPostDialog.svelte';
 	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { forumState, type ForumSort } from '$lib/states/forumState.svelte';
+	import { TAGS_PER_CHANNEL_MAX } from '$lib/types/forum.types';
 	import { Permission } from '$lib/permissions';
 	import { postActions } from '$lib/utils/menuActions';
 	import { channelPath } from '$lib/utils/channelRoutes';
@@ -38,6 +40,7 @@
 	const canPost = $derived(
 		serversState.canIn(Permission.SEND_MESSAGES, channelId, serversState.selectedServerId)
 	);
+	const canManageTags = $derived(serversState.can(Permission.MANAGE_CHANNELS, serverId));
 	const filtering = $derived((index?.tagIds.length ?? 0) > 0 || index?.query.trim() !== '');
 
 	let scroller = $state<HTMLDivElement>();
@@ -174,15 +177,22 @@
 						</Button>
 					{/if}
 				</div>
-				{#if tags.length > 0}
-					<div class="flex flex-wrap gap-1.5" role="group" aria-label="Filter by tag">
-						{#each tags as tag (tag.id)}
-							<ForumTagChip
-								{tag}
-								selected={index?.tagIds.includes(tag.id) ?? false}
-								onclick={() => toggleTag(tag.id)}
-							/>
-						{/each}
+				{#if tags.length > 0 || canManageTags}
+					<div class="flex flex-wrap items-center gap-1.5">
+						{#if tags.length > 0}
+							<div class="contents" role="group" aria-label="Filter by tag">
+								{#each tags as tag (tag.id)}
+									<ForumTagChip
+										{tag}
+										selected={index?.tagIds.includes(tag.id) ?? false}
+										onclick={() => toggleTag(tag.id)}
+									/>
+								{/each}
+							</div>
+						{/if}
+						{#if canManageTags}
+							<NewTagButton {channelId} disabled={tags.length >= TAGS_PER_CHANNEL_MAX} />
+						{/if}
 					</div>
 				{/if}
 			</div>
