@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { profileCardState } from '$lib/states/profileCardState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import type { VoiceMember } from '$lib/states/voiceRoster.svelte';
 	import { voiceParticipantActions } from '$lib/utils/menuActions';
@@ -32,4 +33,15 @@
 	localMuted={member.localMuted}
 	{actions}
 	streaming={member.streaming}
+	onNameClick={(anchor) =>
+		profileCardState.toggle(
+			anchor,
+			{
+				kind: 'user',
+				userId: member.userId,
+				serverId: member.serverId,
+				fallbackName: member.fallbackName
+			},
+			{ side: 'top', align: 'start' }
+		)}
 />

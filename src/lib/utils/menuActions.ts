@@ -117,7 +117,7 @@ async function copyToClipboard(text: string, what: string) {
 	}
 }
 
-async function openDirectMessage(userId: number) {
+export async function openDirectMessage(userId: number) {
 	try {
 		const conversation = await conversationsState.openWith(userId);
 		await goto(`/app/direct/${conversation.id}/`);
@@ -538,6 +538,11 @@ export function memberActions(serverId: number | null | undefined, user: User): 
 		});
 	}
 	return actions;
+}
+
+/** The member actions that a profile card keeps behind its overflow; Message is a button there. */
+export function profileCardActions(serverId: number | null, user: User): MenuEntry[] {
+	return memberActions(serverId, user).filter((action) => action.id !== 'message');
 }
 
 export function voiceParticipantActions(member: VoiceMember): MenuAction[] {

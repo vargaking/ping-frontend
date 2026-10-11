@@ -192,6 +192,22 @@ describe('loadRoster', () => {
 		expect(state.memberRoles[7]).toEqual({ 1: [4, 5] });
 	});
 
+	it('remembers when members joined until they leave or the server goes', async () => {
+		const state = withServer([]);
+		getMembers.mockResolvedValue([member(user(1, 'ann')), member(user(2, 'bo'))]);
+
+		await state.loadRoster(7);
+		expect(state.joinedAtOf(7, 1)).toBe('2026-01-01T00:00:00Z');
+		expect(state.joinedAtOf(7, 3)).toBeNull();
+
+		state.removeMember(7, 1);
+		expect(state.joinedAtOf(7, 1)).toBeNull();
+		expect(state.joinedAtOf(7, 2)).toBe('2026-01-01T00:00:00Z');
+
+		state.removeServer(7);
+		expect(state.joinedAtOf(7, 2)).toBeNull();
+	});
+
 	it.each([
 		['joins', [1], (state: ServersState) => state.addMember(7, user(2, 'bo')), [1], [1, 2]],
 		['leaves', [1, 2], (state: ServersState) => state.removeMember(7, 2), [1, 2], [1]]
@@ -210,6 +226,19 @@ describe('loadRoster', () => {
 			expect(state.servers[7].members?.map((m) => m.id)).toEqual(expected);
 		}
 	);
+
+	it('does not restore the join date of a member who left while the roster loads', async () => {
+		const state = withServer([user(1, 'ann'), user(2, 'bo')]);
+		getMembers.mockImplementation(async () => {
+			const response = [member(user(1, 'ann')), member(user(2, 'bo'))];
+			state.removeMember(7, 2);
+			return response;
+		});
+
+		await state.loadRoster(7);
+
+		expect(state.joinedAtOf(7, 2)).toBeNull();
+	});
 
 	it('ignores a roster that arrives after a newer one', async () => {
 		const state = withServer([]);

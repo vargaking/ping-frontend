@@ -2,6 +2,7 @@
 	import type { JSONContent } from '@tiptap/core';
 	import MessageNode from './MessageNode.svelte';
 	import CodeBlock from './CodeBlock.svelte';
+	import { profileCardServer, profileCardState } from '$lib/states/profileCardState.svelte';
 	import {
 		effectiveMarks,
 		linkLabel,
@@ -13,6 +14,20 @@
 
 	// A run of link nodes is judged as a whole by its parent, so its parts are not judged again.
 	let { node, guarded = true }: { node: JSONContent | string; guarded?: boolean } = $props();
+
+	const serverOf = profileCardServer();
+	let mentionButton = $state<HTMLElement | null>(null);
+
+	function openMention(anchor: HTMLElement, mention: JSONContent | string) {
+		if (typeof mention === 'string') return;
+		const userId = Number(mention.attrs?.id);
+		if (!Number.isInteger(userId) || userId <= 0) return;
+		profileCardState.toggle(
+			anchor,
+			{ kind: 'user', userId, serverId: serverOf(), fallbackName: mention.attrs?.label },
+			{ side: 'bottom', align: 'start' }
+		);
+	}
 
 	function headingLevel(value: unknown): number {
 		const level = Math.trunc(Number(value));
@@ -116,12 +131,17 @@
 		!marks.some((mark) => mark.type === 'code' || mark.type === 'link')
 	)}
 {:else if node.type === 'mention'}
-	<span
-		class="rounded-md bg-primary/15 px-1.5 py-0.5 font-semibold text-primary"
+	<button
+		type="button"
+		class="inline rounded-md bg-primary/15 px-1.5 py-0.5 font-semibold text-primary hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		bind:this={mentionButton}
 		data-user-id={node.attrs?.id}
+		aria-haspopup="dialog"
+		aria-expanded={profileCardState.anchor === mentionButton}
+		onclick={(e) => openMention(e.currentTarget, node)}
 	>
 		@{node.attrs?.label || node.attrs?.id}
-	</span>
+	</button>
 {:else if node.type === 'bulletList'}
 	<ul class="my-2 list-inside list-disc pl-2">
 		{@render inline(node.content || [])}

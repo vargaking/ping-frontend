@@ -7,6 +7,7 @@
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import VoiceDock from '$lib/components/ui/shell/VoiceDock.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
+	import ProfileCardHost from '$lib/components/profile/ProfileCardHost.svelte';
 	import SearchDialog from '$lib/components/search/SearchDialog.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
@@ -282,6 +283,7 @@
 
 {#if phoneState.touch && shellViewportState.showInfo}<LayoutInfo />{/if}
 <Overlay />
+<ProfileCardHost />
 <UpdateNotice />
 <InstallPrompt />
 <PushPrompt />

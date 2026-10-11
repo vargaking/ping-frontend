@@ -75,6 +75,6 @@ test('the top bar search bar opens the search dialog', async ({ browser }) => {
 	const general = await createChannel(context, server.id, 'general');
 
 	await page.goto(channelPath(server.id, general.id));
-	await page.getByRole('button', { name: 'Search' }).click();
+	await page.getByRole('button', { name: 'Search', exact: true }).click();
 	await expect(page.getByRole('combobox', { name: 'Search messages' })).toBeFocused();
 });

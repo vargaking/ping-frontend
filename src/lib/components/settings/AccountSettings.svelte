@@ -6,6 +6,8 @@
 	import { updateUser } from '$lib/requests/users/updateUser';
 	import { usernameProblem } from '$lib/utils/username';
 	import { uploadAvatar } from '$lib/requests/users/uploadAvatar';
+	import { uploadBanner } from '$lib/requests/users/uploadBanner';
+	import { removeBanner } from '$lib/requests/users/removeBanner';
 	import { deleteUser } from '$lib/requests/users/deleteUser';
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
 	import { toast } from 'svelte-sonner';
@@ -15,9 +17,9 @@
 	import SettingsForm from './SettingsForm.svelte';
 	import SettingsTextField from './SettingsTextField.svelte';
 	import DangerZone from './DangerZone.svelte';
-
-	const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-	const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+	import BannerEditor from './BannerEditor.svelte';
+	import { bannerOf, bannerRequest, IMAGE_TYPES, imageProblem } from '$lib/utils/profileCard';
+	import type { BannerDraft } from '$lib/utils/profileCard';
 
 	const savedUsername = $derived(usersState.loggedInUser?.username ?? '');
 
@@ -25,13 +27,16 @@
 	let baselineUsername = $state<string | null>(null);
 	let avatarFile: File | null = $state(null);
 	let avatarPreview: string | null = $state(null);
-	let errors = $state<{ username?: string; avatar?: string }>({});
+	let bannerDraft = $state<BannerDraft | null>(null);
+	let errors = $state<{ username?: string; avatar?: string; banner?: string }>({});
 	let saving = $state(false);
 	let loggingOut = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
 
 	const usernameChanged = $derived(baselineUsername !== null && username !== baselineUsername);
-	const dirty = $derived(usernameChanged || avatarFile !== null);
+	const savedBanner = $derived(bannerOf(usersState.loggedInUser?.profile));
+	const pendingBanner = $derived(bannerRequest(savedBanner, bannerDraft));
+	const dirty = $derived(usernameChanged || avatarFile !== null || pendingBanner !== null);
 
 	$effect(() => {
 		const next = savedUsername;
@@ -57,12 +62,9 @@
 		input.value = '';
 		if (!file) return;
 
-		if (!AVATAR_TYPES.includes(file.type)) {
-			errors = { ...errors, avatar: 'Use a PNG, JPG, WebP or GIF image.' };
-			return;
-		}
-		if (file.size > AVATAR_MAX_BYTES) {
-			errors = { ...errors, avatar: 'That image is over 5 MB.' };
+		const problem = imageProblem(file);
+		if (problem) {
+			errors = { ...errors, avatar: problem };
 			return;
 		}
 		errors = { ...errors, avatar: undefined };
@@ -73,6 +75,7 @@
 		username = savedUsername;
 		baselineUsername = savedUsername;
 		setAvatar(null);
+		bannerDraft = null;
 		errors = {};
 	}
 
@@ -87,6 +90,7 @@
 			return;
 		}
 
+		const bannerChange = pendingBanner;
 		errors = {};
 		saving = true;
 
@@ -114,6 +118,23 @@
 				failed = true;
 				errors.avatar = getErrorMessage(e);
 				toast.error(`Couldn't upload your avatar: ${getErrorMessage(e)}`);
+			}
+		}
+
+		if (bannerChange) {
+			try {
+				const updated =
+					bannerChange.kind === 'remove'
+						? await removeBanner(user.id)
+						: bannerChange.kind === 'color'
+							? await updateUser(user.id, { banner_color: bannerChange.color })
+							: await uploadBanner(user.id, bannerChange.file);
+				usersState.setLoggedInUser(updated);
+				bannerDraft = null;
+			} catch (e) {
+				failed = true;
+				errors.banner = fieldErrorsFrom(e).banner_color ?? getErrorMessage(e);
+				toast.error(`Couldn't save your banner: ${getErrorMessage(e)}`);
 			}
 		}
 
@@ -165,7 +186,7 @@
 				<input
 					bind:this={fileInput}
 					type="file"
-					accept={AVATAR_TYPES.join(',')}
+					accept={IMAGE_TYPES.join(',')}
 					class="hidden"
 					tabindex="-1"
 					aria-hidden="true"
@@ -183,6 +204,14 @@
 			{/if}
 		</div>
 	</div>
+
+	<BannerEditor
+		saved={savedBanner}
+		draft={bannerDraft}
+		onchange={(draft) => (bannerDraft = draft)}
+		error={errors.banner}
+		onerror={(message) => (errors.banner = message)}
+	/>
 
 	<SettingsTextField
 		id="account-username"

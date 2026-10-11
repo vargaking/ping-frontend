@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { profileCardState } from '$lib/states/profileCardState.svelte';
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
-	import type { HTMLAttributes } from 'svelte/elements';
+	import type { HTMLButtonAttributes } from 'svelte/elements';
 	import { MicOff, HeadphoneOff, VolumeX } from 'lucide-svelte';
 
 	type Props = {
@@ -16,7 +17,7 @@
 		serverMuted?: boolean;
 		localMuted?: boolean;
 		streaming?: boolean;
-	} & HTMLAttributes<HTMLDivElement>;
+	} & HTMLButtonAttributes;
 
 	let {
 		name,
@@ -31,6 +32,7 @@
 		streaming = false,
 		...rest
 	}: Props = $props();
+	let button = $state<HTMLElement | null>(null);
 
 	const stateLabel = $derived(
 		(serverMuted ? ', server muted' : deafened ? ', deafened' : muted ? ', muted' : '') +
@@ -38,7 +40,14 @@
 	);
 </script>
 
-<div class="flex h-7 items-center gap-2 pl-[34px]" {...rest}>
+<button
+	bind:this={button}
+	type="button"
+	aria-haspopup="dialog"
+	aria-expanded={profileCardState.anchor === button}
+	class="flex h-7 w-full items-center gap-2 rounded-md pl-[34px] text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+	{...rest}
+>
 	<span
 		class="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold {avatar
 			? 'bg-accent'
@@ -78,4 +87,4 @@
 			aria-hidden="true"
 		/>
 	{/if}
-</div>
+</button>

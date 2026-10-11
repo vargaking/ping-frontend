@@ -237,3 +237,11 @@ describe('link rendering, continued', () => {
 		expect(body).toContain('>https://evil.test/</a>');
 	});
 });
+
+describe('mention rendering', () => {
+	it('renders a mention as a button that opens a profile', () => {
+		const body = html({ type: 'mention', attrs: { id: '7', label: 'ada' } });
+		expect(body).toMatch(/<button[^>]*data-user-id="7"[^>]*aria-haspopup="dialog"/);
+		expect(body).toContain('@ada');
+	});
+});
