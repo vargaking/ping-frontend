@@ -184,6 +184,7 @@ test('the owner picks which private channels come along and who sees them', asyn
 
 	const settingsTabs = await openServerSettings(owner.page, serverName);
 	await settingsTabs.getByRole('button', { name: 'Import' }).click();
+	await expect(owner.page.getByRole('button', { name: 'Choose zip' })).toBeVisible();
 	await owner.page.locator('input[type="file"][accept*=".zip"]').setInputFiles({
 		name: 'export.zip',
 		mimeType: 'application/zip',
@@ -265,6 +266,7 @@ test('a second tab sees an upload running elsewhere and can discard it', async (
 	await owner.page.goto(`/app/server/${server.id}/`);
 	const tabs = await openServerSettings(owner.page, serverName);
 	await tabs.getByRole('button', { name: 'Import' }).click();
+	await expect(owner.page.getByRole('button', { name: 'Choose zip' })).toBeVisible();
 	await owner.page.locator('input[type="file"][accept*=".zip"]').setInputFiles({
 		name: 'export.zip',
 		mimeType: 'application/zip',
