@@ -47,10 +47,16 @@ describe('parseSearchQuery', () => {
 			expect(query.words).toEqual(['from', 'alex']);
 		});
 
-		it.each(['from:', 'from:""', 'from:" "'])('turns %j into a word', (input) => {
+		it.each(['from: ', 'from:""', 'from:" "'])('turns %j into a word', (input) => {
 			const query = parseSearchQuery(input);
 			expect(query.from).toBeNull();
 			expect(query.words).toEqual(['from']);
+		});
+
+		it.each(['from:', 'mirage before:'])('ignores %j while its value is being typed', (input) => {
+			const query = parseSearchQuery(input);
+			expect(query.words).toEqual(input.startsWith('mirage') ? ['mirage'] : []);
+			expect([query.from, query.since, query.until]).toEqual([null, null, null]);
 		});
 	});
 
@@ -116,7 +122,7 @@ describe('parseSearchQuery', () => {
 			'during:2026-00-10',
 			'after:0999-01-01',
 			'before:notadate',
-			'after:'
+			'after: x'
 		])('turns %s into words', (input) => {
 			const query = parseSearchQuery(input);
 			expect(query.since).toBeNull();

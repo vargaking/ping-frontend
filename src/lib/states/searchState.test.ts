@@ -193,19 +193,40 @@ describe('searchState', () => {
 			expect(findIds.mock.calls[1][2]?.fromKeys).toEqual(['name:nobody']);
 		});
 
-		it('does not retry a profile that failed to load', async () => {
+		it('tries a profile that failed to load again on the next search', async () => {
 			storedIds.mockResolvedValue([9]);
 			const fetchUser = vi
 				.spyOn(usersState, 'getOrFetchUser')
-				.mockRejectedValue(new Error('deleted'));
+				.mockRejectedValue(new Error('offline'));
 
 			searchState.setQuery('from:ghost');
 			await vi.advanceTimersByTimeAsync(120);
 			searchState.setQuery('from:ghost x1');
 			await vi.advanceTimersByTimeAsync(120);
 
-			expect(fetchUser).toHaveBeenCalledTimes(1);
+			expect(fetchUser).toHaveBeenCalledTimes(2);
 			expect(searchState.status).toBe('ready');
+		});
+
+		it('waits for profiles an earlier search is still fetching', async () => {
+			storedIds.mockResolvedValue([5]);
+			const profile = deferred<null>();
+			const fetchUser = vi.spyOn(usersState, 'getOrFetchUser').mockImplementation(async () => {
+				await profile.promise;
+				usersState.applyUser(user(5, 'Dani'));
+				return usersState.users[5];
+			});
+
+			searchState.setQuery('from:d');
+			await vi.advanceTimersByTimeAsync(120);
+			searchState.setQuery('from:dani');
+			await vi.advanceTimersByTimeAsync(120);
+			profile.resolve(null);
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(fetchUser).toHaveBeenCalledTimes(1);
+			expect(findIds).toHaveBeenCalledTimes(1);
+			expect(findIds.mock.calls[0][2]?.fromKeys).toEqual(['name:dani', 'user:5']);
 		});
 
 		it('lets a newer query win while an author is still being resolved', async () => {

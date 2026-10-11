@@ -109,9 +109,14 @@ export function parseSearchQuery(input: string): SearchQuery {
 	const query: SearchQuery = { words: [], from: null, has: [], since: null, until: null };
 	const wordTerms: string[] = [];
 
-	for (const { raw, filter, value } of splitTerms(input)) {
-		if (!applyFilter(query, filter, value)) wordTerms.push(raw);
-	}
+	const terms = splitTerms(input);
+	terms.forEach(({ raw, filter, value }, i) => {
+		if (applyFilter(query, filter, value)) return;
+		// A filter whose value is still being typed searches for nothing yet.
+		const typing =
+			filter !== null && raw.endsWith(':') && i === terms.length - 1 && !/\s$/.test(input);
+		if (!typing) wordTerms.push(raw);
+	});
 	query.words = tokenize(wordTerms.join(' '));
 	return query;
 }

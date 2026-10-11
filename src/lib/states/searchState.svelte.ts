@@ -15,6 +15,7 @@ import { unreadState } from './unreadState.svelte';
 import { usersState } from './usersState.svelte';
 
 const DEBOUNCE_MS = 120;
+const AUTHOR_FETCHES = 4;
 const PAGE_SIZE = 30;
 const POST_LIMIT = 5;
 /** Posts are filtered by what the person can still see, so ask for more than are shown. */
@@ -60,7 +61,7 @@ class SearchState {
 	private token = 0;
 	private loadingToken: number | null = null;
 	/** Stored authors whose profile was already asked for, so a name with no match isn't refetched. */
-	private triedAuthors = new Set<number>();
+	private authorFetches = new Map<number, Promise<unknown>>();
 
 	setQuery(query: string) {
 		this.query = query;
@@ -102,7 +103,7 @@ class SearchState {
 		this.clearTimer();
 		this.query = '';
 		this.scope = EVERYWHERE;
-		this.triedAuthors.clear();
+		this.authorFetches.clear();
 		this.clear();
 	}
 
@@ -179,16 +180,29 @@ class SearchState {
 	}
 
 	/** The author keys a `from:` name can mean. Profiles of stored authors that aren't loaded
-	 *  are fetched only when no loaded user has the name, once per author. */
+	 *  are fetched only when no loaded user has the name. */
 	private async resolveFrom(name: string): Promise<string[]> {
 		const known = fromKeysForName(name, Object.values(usersState.users));
 		if (known.some((key) => key.startsWith('user:'))) return known;
-		const missing = (await storedUserIds()).filter(
-			(id) => !usersState.users[id] && !this.triedAuthors.has(id)
-		);
-		missing.forEach((id) => this.triedAuthors.add(id));
-		await Promise.allSettled(missing.map((id) => usersState.getOrFetchUser(id)));
+		const missing = (await storedUserIds()).filter((id) => !usersState.users[id]);
+		const queue = [...missing];
+		const worker = async () => {
+			for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+				await this.fetchAuthor(id);
+			}
+		};
+		await Promise.all(Array.from({ length: AUTHOR_FETCHES }, worker));
 		return fromKeysForName(name, Object.values(usersState.users));
+	}
+
+	/** One request per author; a later search waits for it, and one that failed is tried again. */
+	private fetchAuthor(id: number): Promise<unknown> {
+		let pending = this.authorFetches.get(id);
+		if (!pending) {
+			pending = usersState.getOrFetchUser(id).catch(() => this.authorFetches.delete(id));
+			this.authorFetches.set(id, pending);
+		}
+		return pending;
 	}
 
 	/** Up to one page of visible rows from `from`; null when a newer search has taken over. */
