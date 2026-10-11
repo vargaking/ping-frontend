@@ -1,7 +1,7 @@
 import { historyApi } from '$lib/requests/history';
 import { normalizeError } from '$lib/requests/errors';
 import { db, localHistoryAvailable, localHistoryReady } from '$lib/utils/db';
-import { runHistorySync, type HistoryApi } from '$lib/utils/historySync';
+import { forgetSyncedChannels, runHistorySync, type HistoryApi } from '$lib/utils/historySync';
 import { serversState } from './serversState.svelte';
 
 const START_DELAY_MS = 3000;
@@ -37,6 +37,7 @@ class HistorySyncState {
 	private lastStartedAt: number | null = null;
 	private pages = 0;
 	private listingFailed = false;
+	private stops = 0;
 
 	/** Ask for a run. Requests made while one is waiting or running share a single run. */
 	request(): void {
@@ -46,6 +47,29 @@ class HistorySyncState {
 			return;
 		}
 		this.scheduleStart(START_DELAY_MS);
+	}
+
+	/** An import added older messages to these channels (all of the server when null): walk them again. */
+	async forgetChannels(serverId: number, channelIds: number[] | null): Promise<void> {
+		if (!localHistoryAvailable || this.blocked) return;
+		const stops = this.stops;
+		if (this.running) {
+			this.controller?.abort();
+			await this.running;
+		}
+		if (stops !== this.stops) return;
+		try {
+			await forgetSyncedChannels(serverId, channelIds);
+		} catch (e) {
+			console.warn('Failed to reset local sync progress', e);
+		}
+		if (stops !== this.stops) return;
+		this.clearTimers();
+		this.lastStartedAt = null;
+		this.queued = false;
+		if (this.status === 'done') this.status = 'idle';
+		// A run before the server list loads would purge every server's local history.
+		if (serversState.loaded) this.scheduleStart(START_DELAY_MS);
 	}
 
 	/** Starts a run after `minDelay`, and never sooner than RUN_GAP_MS after the last run began. */
@@ -61,6 +85,7 @@ class HistorySyncState {
 	}
 
 	async stop(): Promise<void> {
+		this.stops++;
 		this.queued = false;
 		this.clearTimers();
 		this.controller?.abort();

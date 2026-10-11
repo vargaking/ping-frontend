@@ -254,6 +254,18 @@ class ForumState {
 		this.tagsLoaded = {};
 	}
 
+	/** An import changed these channels (all when null): reload the ones we have loaded. */
+	refreshChannels(channelIds: number[] | null) {
+		const wanted = channelIds && new Set(channelIds);
+		for (const key of Object.keys(this.indexes)) {
+			const channelId = Number(key);
+			if (wanted && !wanted.has(channelId)) continue;
+			this.tagsLoaded[channelId] = false;
+			void this.loadTags(channelId);
+			void this.reload(channelId);
+		}
+	}
+
 	/** Forget a deleted channel. */
 	forgetChannel(channelId: number) {
 		delete this.indexes[channelId];
