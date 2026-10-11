@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { createInvite, createServer, joinInvite, newUser, uniqueName } from './helpers';
 import { storedZip } from './zip';
 
@@ -250,4 +250,49 @@ test('the owner picks which private channels come along and who sees them', asyn
 		channels(member.page).getByRole('link', { name: PRIVATE_CHANNEL }),
 		'a member should not see an only-me channel'
 	).toHaveCount(0);
+});
+
+test('a second tab sees an upload running elsewhere and can discard it', async ({ browser }) => {
+	const owner = await newUser(browser, 'owner');
+	const serverName = uniqueName('Guild');
+	const server = await createServer(owner.context, serverName);
+
+	// The first piece never reaches the server, so the upload stays in progress.
+	let heldPiece: (route: Route) => void;
+	const held = new Promise<Route>((resolve) => (heldPiece = resolve));
+	await owner.page.route('**/import/*/data*', (route) => heldPiece(route));
+
+	await owner.page.goto(`/app/server/${server.id}/`);
+	const tabs = await openServerSettings(owner.page, serverName);
+	await tabs.getByRole('button', { name: 'Import' }).click();
+	await owner.page.locator('input[type="file"][accept*=".zip"]').setInputFiles({
+		name: 'export.zip',
+		mimeType: 'application/zip',
+		buffer: exportZip(uniqueName('src'))
+	});
+	const piece = await held;
+
+	const tabB = await owner.context.newPage();
+	await tabB.goto(`/app/server/${server.id}/`);
+	const tabsB = await openServerSettings(tabB, serverName);
+	await tabsB.getByRole('button', { name: 'Import' }).click();
+
+	await expect(
+		tabB.getByText('This file is being uploaded from another tab or device.')
+	).toBeVisible();
+	await expect(
+		tabB.getByRole('button', { name: 'Choose file' }),
+		'a second writer must not be offered'
+	).toHaveCount(0);
+
+	await tabB.getByRole('button', { name: 'Discard' }).click();
+	await expect(tabB.getByText('Discard this upload?')).toBeVisible();
+	await tabB.getByRole('button', { name: 'Discard' }).click();
+	await expect(tabB.getByRole('button', { name: 'Choose zip' })).toBeVisible();
+
+	await piece.continue();
+	await expect(
+		owner.page.getByText('The upload was discarded from another tab or device.'),
+		'the uploading tab should stop and say why'
+	).toBeVisible();
 });

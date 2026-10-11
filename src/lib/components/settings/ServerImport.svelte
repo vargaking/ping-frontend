@@ -10,6 +10,7 @@
 	import type { AuthorMapping, Plan, PrivateSelection } from '$lib/types/serverImport.types';
 	import {
 		count,
+		importView,
 		existingLine,
 		importedTotals,
 		initialPicks,
@@ -41,14 +42,7 @@
 	const upload = $derived(entry?.upload ?? null);
 	const source = $derived(imp?.source?.server_name ?? 'the export');
 
-	const view = $derived.by(() => {
-		if (!entry || entry.loadStatus === 'loading') return 'loading';
-		if (entry.loadStatus === 'error') return 'error';
-		if (limits?.max_bytes === 0) return 'off';
-		if (upload) return upload.paused ? 'paused' : 'sending';
-		if (imp?.status === 'uploading') return 'interrupted';
-		return imp?.status ?? 'empty';
-	});
+	const view = $derived(entry ? importView(entry) : 'loading');
 
 	let zipInput: HTMLInputElement | undefined = $state();
 	let fileError = $state<string | null>(null);
@@ -69,6 +63,11 @@
 	$effect(() => {
 		const id = serverId;
 		if (id != null) untrack(() => void serverImportState.load(id));
+	});
+
+	$effect(() => {
+		const id = serverId;
+		if (id != null) return serverImportState.watch(id);
 	});
 
 	const needsMembers = $derived(view === 'ready' || view === 'done');
@@ -367,6 +366,28 @@
 					Cancel
 				</Button>
 			</div>
+		</section>
+	{:else if view === 'elsewhere' && imp}
+		<section aria-label="Upload in another tab or device" class="flex flex-col gap-3">
+			<p class="truncate text-sm font-medium">{imp.filename}</p>
+			{@render progress(`Uploading ${imp.filename}`, imp.received, imp.size)}
+			<p aria-live="polite" class="font-mono text-xs text-text-subtle">
+				{formatBytes(imp.received)} of {formatBytes(imp.size)} ({percent(imp.received, imp.size)}%)
+			</p>
+			<p class="text-sm">This file is being uploaded from another tab or device.</p>
+			<p class="text-xs text-text-subtle">If that upload stops, you can continue it here.</p>
+			{@render uploadErrors()}
+			{#if confirming !== 'discard'}
+				<div>
+					<Button variant="secondary" onclick={() => (confirming = 'discard')}>Discard</Button>
+				</div>
+			{/if}
+			{@render inlineConfirm(
+				'Discard this upload? It stops the upload in the other tab or device.',
+				'Discard',
+				'discard'
+			)}
+			{@render actionErrorLine()}
 		</section>
 	{:else if view === 'interrupted' && imp}
 		<section aria-label="Interrupted upload" class="flex flex-col gap-3">

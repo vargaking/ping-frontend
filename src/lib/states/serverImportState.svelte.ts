@@ -12,15 +12,19 @@ import type {
 	ImportLimits,
 	PrivateSelection
 } from '$lib/types/serverImport.types';
-import { fileProblem, isWorking, mappingPayload, mergeImportFrame } from '$lib/utils/serverImport';
+import {
+	fileProblem,
+	mappingPayload,
+	mergeImportFrame,
+	pollInterval
+} from '$lib/utils/serverImport';
 import {
 	abortableSleep,
 	isSameUpload,
 	runUpload,
+	UPLOAD_DISCARDED,
 	type UploadResult
 } from '$lib/utils/serverImportUpload';
-
-const POLL_MS = 15_000;
 
 export type UploadView = {
 	filename: string;
@@ -67,7 +71,8 @@ class ServerImportState {
 	private entries: Record<number, ServerImportEntry> = $state({});
 	private sessions = new Map<number, Session>();
 	private loadSeq = new Map<number, number>();
-	private polls = new Map<number, ReturnType<typeof setInterval>>();
+	private polls = new Map<number, { timer: ReturnType<typeof setInterval>; ms: number }>();
+	private watchers = new Map<number, number>();
 	private guarding = false;
 
 	of(serverId: number): ServerImportEntry {
@@ -140,17 +145,33 @@ class ServerImportState {
 		this.store(serverId, value);
 	}
 
+	/** Keeps the import fresh while the Import tab shows it; call the returned function when it goes away. */
+	watch(serverId: number): () => void {
+		this.watchers.set(serverId, (this.watchers.get(serverId) ?? 0) + 1);
+		this.syncPolling(serverId);
+		return () => {
+			const left = (this.watchers.get(serverId) ?? 0) - 1;
+			if (left > 0) this.watchers.set(serverId, left);
+			else this.watchers.delete(serverId);
+			this.syncPolling(serverId);
+		};
+	}
+
 	private syncPolling(serverId: number) {
-		const working = isWorking(this.entries[serverId]?.import?.status);
-		const timer = this.polls.get(serverId);
-		if (working && timer === undefined) {
-			this.polls.set(
-				serverId,
-				setInterval(() => void this.load(serverId), POLL_MS)
-			);
-		} else if (!working && timer !== undefined) {
-			clearInterval(timer);
-			this.polls.delete(serverId);
+		const ms = pollInterval(
+			this.entries[serverId]?.import ?? null,
+			this.sessions.has(serverId),
+			this.watchers.has(serverId)
+		);
+		const poll = this.polls.get(serverId);
+		if (poll?.ms === ms) return;
+		if (poll) clearInterval(poll.timer);
+		this.polls.delete(serverId);
+		if (ms !== null) {
+			this.polls.set(serverId, {
+				timer: setInterval(() => void this.load(serverId), ms),
+				ms
+			});
 		}
 	}
 
@@ -169,6 +190,7 @@ class ServerImportState {
 			created = await createServerImport(serverId, file.name, file.size);
 		} catch (e) {
 			entry.error = getErrorMessage(e);
+			if (normalizeError(e).status === 409) void this.load(serverId);
 			return;
 		}
 		this.storeAnswer(serverId, created);
@@ -217,6 +239,7 @@ class ServerImportState {
 
 		const controller = new AbortController();
 		this.sessions.set(serverId, { controller, importId: target.id, file });
+		this.syncPolling(serverId);
 		const view: UploadView = {
 			filename: file.name,
 			size: file.size,
@@ -238,7 +261,8 @@ class ServerImportState {
 					uploadImportPiece(serverId, target.id, offset, piece, signal),
 				fetchImport: async () => (await getServerImport(serverId)).import,
 				describeError: normalizeError,
-				sleep: abortableSleep
+				sleep: abortableSleep,
+				now: () => performance.now()
 			},
 			{
 				onProgress: (received) => {
@@ -280,6 +304,7 @@ class ServerImportState {
 			}
 			void this.load(serverId);
 		} else if (result.kind === 'superseded') {
+			if (result.import?.id !== target.id) entry.error = UPLOAD_DISCARDED;
 			this.storeAnswer(serverId, result.import);
 		} else {
 			if (result.kind === 'stopped') entry.error = result.error;
@@ -292,6 +317,7 @@ class ServerImportState {
 		this.sessions.delete(serverId);
 		const entry = this.entries[serverId];
 		if (entry) entry.upload = null;
+		this.syncPolling(serverId);
 		this.syncUnloadGuard();
 	}
 
@@ -353,9 +379,10 @@ class ServerImportState {
 	forget(serverId: number) {
 		this.sessions.get(serverId)?.controller.abort();
 		this.sessions.delete(serverId);
-		const timer = this.polls.get(serverId);
-		if (timer !== undefined) clearInterval(timer);
+		const poll = this.polls.get(serverId);
+		if (poll) clearInterval(poll.timer);
 		this.polls.delete(serverId);
+		this.watchers.delete(serverId);
 		this.loadSeq.delete(serverId);
 		delete this.entries[serverId];
 		this.syncUnloadGuard();
