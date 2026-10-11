@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { channelPath, createChannel, createServer, registerUser, uniqueName } from './helpers';
 
 const PIXEL = Buffer.from(
-	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+	'iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAAH0lEQVR4nGM4YWNDFcQwatCoQaMGjRo0atCoQQNvEACSR9AfWEHUdAAAAABJRU5ErkJggg==',
 	'base64'
 );
 
