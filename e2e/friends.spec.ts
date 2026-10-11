@@ -99,7 +99,7 @@ test('friends with no server in common see each other online and offline, and re
 
 	await friendRow(a.page, b.user.username, 'online').click();
 	await expect(a.page).toHaveURL(/\/app\/direct\/\d+/);
-	await a.page.getByRole('button', { name: b.user.username, exact: true }).click();
+	await a.page.getByRole('button', { name: b.user.username }).click();
 	const card = a.page.getByRole('dialog');
 	await expect(card.getByRole('button', { name: 'Friends', exact: true })).toBeDisabled();
 	await card.getByRole('button', { name: 'More actions' }).click();
