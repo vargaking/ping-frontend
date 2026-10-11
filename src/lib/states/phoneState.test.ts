@@ -68,7 +68,7 @@ describe('navigation drag', () => {
 });
 
 describe('closeNavOnPageLink', () => {
-	function click(closest: (selector: string) => unknown) {
+	function click(closest: (selector: string) => unknown, defaultPrevented = false) {
 		let handler: (event: MouseEvent) => void = () => {};
 		const node = {
 			addEventListener: (_type: string, fn: (event: MouseEvent) => void) => (handler = fn),
@@ -76,13 +76,19 @@ describe('closeNavOnPageLink', () => {
 		} as unknown as HTMLElement;
 		closeNavOnPageLink(node);
 		const target = Object.assign(new Element(), { closest });
-		handler({ target } as unknown as MouseEvent);
+		handler({ target, defaultPrevented } as unknown as MouseEvent);
 	}
 
 	it('closes the navigation when a link into the app is followed', () => {
 		phoneState.navOpen = true;
 		click((selector) => (selector === 'a[href^="/app/"]' ? {} : null));
 		expect(phoneState.navOpen).toBe(false);
+	});
+
+	it('keeps it open for a link click that was already prevented', () => {
+		phoneState.navOpen = true;
+		click(() => ({}), true);
+		expect(phoneState.navOpen).toBe(true);
 	});
 
 	it('keeps it open for taps that are not page links', () => {

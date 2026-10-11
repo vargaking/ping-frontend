@@ -55,6 +55,7 @@ export const phoneState = new PhoneState();
 /** Svelte action for the sidebars: following a link to a page closes the phone navigation. */
 export function closeNavOnPageLink(node: HTMLElement) {
 	const onClick = (event: MouseEvent) => {
+		if (event.defaultPrevented) return;
 		if (event.target instanceof Element && event.target.closest('a[href^="/app/"]')) {
 			phoneState.closeNav();
 		}

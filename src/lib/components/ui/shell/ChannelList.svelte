@@ -34,7 +34,7 @@
 	} from '$lib/utils/menuActions';
 	import { mergeProps } from 'bits-ui';
 	import { channelPath } from '$lib/utils/channelRoutes';
-	import { decideVoiceTap, setSavedMute } from '$lib/utils/voiceJoin';
+	import { decideVoiceTap } from '$lib/utils/voiceJoin';
 	import {
 		Hash,
 		MessagesSquare,
@@ -177,10 +177,7 @@
 		joinAsk = null;
 		phoneState.closeNav();
 		void goto(channelPath(ask.serverId, ask.channel));
-		// Leaving first clears the old call's mic error and moderator mute, which would block the toggle.
-		if (voiceState.channelId != null) await voiceState.leaveVoice();
-		await setSavedMute(voiceState, muted);
-		await voiceState.joinVoice(ask.serverId, ask.channel.id);
+		await voiceState.joinVoice(ask.serverId, ask.channel.id, { muted, deafened: false });
 	}
 </script>
 
@@ -228,7 +225,8 @@
 		{...mergeProps(triggerProps, {
 			// Screen readers get the topic even though the tooltip is visual.
 			'aria-description': channel.topic?.trim() || undefined,
-			// Captured, so the sheet case stops the click before the sidebar closes the navigation.
+			// Captured: the sidebar's native click listener runs before Svelte's delegated handlers,
+			// so a bubbling handler would only prevent the click after the navigation had closed.
 			onclickcapture: (e: MouseEvent) => {
 				// A long-press that opened the context menu has its click swallowed already.
 				if (e.defaultPrevented) return;
@@ -243,7 +241,6 @@
 				});
 				if (outcome === 'sheet') {
 					e.preventDefault();
-					e.stopPropagation();
 					joinAsk = { serverId, channel };
 				} else if (outcome === 'join') {
 					voiceState.joinVoice(serverId, channel.id);

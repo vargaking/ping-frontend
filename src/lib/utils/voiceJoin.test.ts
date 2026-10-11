@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideVoiceTap, movingNotice, setSavedMute, type SelfStateControls } from './voiceJoin';
+import { decideVoiceTap, movingNotice } from './voiceJoin';
 
 describe('decideVoiceTap', () => {
 	it.each([
@@ -66,41 +66,5 @@ describe('movingNotice', () => {
 		}
 	])('$name', ({ current, want }) => {
 		expect(movingNotice(current, 7)).toBe(want);
-	});
-});
-
-/** Behaves like the real toggles: unmuting while deafened also undeafens. */
-function fakeVoice(start: { muted: boolean; deafened: boolean }) {
-	const calls: string[] = [];
-	const voice: SelfStateControls = {
-		...start,
-		async toggleMute() {
-			calls.push('mute');
-			this.muted = this.deafened ? false : !this.muted;
-			this.deafened = false;
-		},
-		async toggleDeafen() {
-			calls.push('deafen');
-			this.deafened = !this.deafened;
-		}
-	};
-	return { voice, calls };
-}
-
-describe('setSavedMute', () => {
-	it.each([
-		{ from: { muted: false, deafened: false }, to: true, calls: ['mute'] },
-		{ from: { muted: true, deafened: false }, to: false, calls: ['mute'] },
-		{ from: { muted: true, deafened: false }, to: true, calls: [] },
-		{ from: { muted: false, deafened: false }, to: false, calls: [] },
-		{ from: { muted: false, deafened: true }, to: true, calls: ['deafen', 'mute', 'deafen'] },
-		{ from: { muted: true, deafened: true }, to: false, calls: ['deafen', 'mute', 'deafen'] },
-		{ from: { muted: true, deafened: true }, to: true, calls: [] }
-	])('$from -> muted $to', async ({ from, to, calls }) => {
-		const fake = fakeVoice(from);
-		await setSavedMute(fake.voice, to);
-		expect(fake.voice.muted).toBe(to);
-		expect(fake.voice.deafened).toBe(from.deafened);
-		expect(fake.calls).toEqual(calls);
 	});
 });
