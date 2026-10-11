@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { profileCardState } from '$lib/states/profileCardState.svelte';
+
 	let {
 		name,
 		imported = false,
@@ -11,12 +13,15 @@
 		/** Makes the name a button that hands over itself, for anchoring what it opens. */
 		onclick?: (anchor: HTMLElement) => void;
 	} = $props();
+	let button = $state<HTMLElement | null>(null);
 </script>
 
 {#if onclick}
 	<button
+		bind:this={button}
 		type="button"
 		aria-haspopup="dialog"
+		aria-expanded={profileCardState.anchor === button}
 		class="min-w-0 truncate rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 		style:color
 		onclick={(e) => onclick?.(e.currentTarget)}>{name}</button

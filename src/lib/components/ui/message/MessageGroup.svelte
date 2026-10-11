@@ -54,6 +54,8 @@
 			: ''
 	);
 
+	let avatarButton = $state<HTMLElement | null>(null);
+
 	function openCard(anchor: HTMLElement) {
 		profileCardState.toggle(
 			anchor,
@@ -67,9 +69,11 @@
 
 {#snippet avatar()}
 	<button
+		bind:this={avatarButton}
 		type="button"
 		aria-label="Show profile of {imported?.name ?? user?.username ?? 'this author'}"
 		aria-haspopup="dialog"
+		aria-expanded={profileCardState.anchor === avatarButton}
 		class="mt-0.5 block rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 		onclick={(e) => openCard(e.currentTarget)}
 	>

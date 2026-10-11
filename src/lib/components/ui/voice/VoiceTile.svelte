@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { profileCardState } from '$lib/states/profileCardState.svelte';
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
 	import type { Snippet } from 'svelte';
 	import { MicOff, HeadphoneOff, VolumeX, Ellipsis } from 'lucide-svelte';
@@ -42,6 +43,7 @@
 		media,
 		onNameClick
 	}: Props = $props();
+	let nameButton = $state<HTMLElement | null>(null);
 
 	const stateLabel = $derived(
 		(serverMuted ? ', server muted' : deafened ? ', deafened' : muted ? ', muted' : '') +
@@ -89,9 +91,11 @@
 		<span class="flex min-w-0 items-center gap-1.5">
 			{#if onNameClick}
 				<button
+					bind:this={nameButton}
 					type="button"
 					aria-label="Show profile of {name}"
 					aria-haspopup="dialog"
+					aria-expanded={profileCardState.anchor === nameButton}
 					class="min-w-0 truncate rounded-md bg-background/80 px-2 py-0.5 text-[13px] text-foreground hover:bg-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					onclick={(e) => onNameClick?.(e.currentTarget)}
 				>

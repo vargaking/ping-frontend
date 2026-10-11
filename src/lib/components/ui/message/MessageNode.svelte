@@ -16,6 +16,7 @@
 	let { node, guarded = true }: { node: JSONContent | string; guarded?: boolean } = $props();
 
 	const serverOf = profileCardServer();
+	let mentionButton = $state<HTMLElement | null>(null);
 
 	function openMention(anchor: HTMLElement, mention: JSONContent | string) {
 		if (typeof mention === 'string') return;
@@ -133,8 +134,10 @@
 	<button
 		type="button"
 		class="inline rounded-md bg-primary/15 px-1.5 py-0.5 font-semibold text-primary hover:bg-primary/25 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		bind:this={mentionButton}
 		data-user-id={node.attrs?.id}
 		aria-haspopup="dialog"
+		aria-expanded={profileCardState.anchor === mentionButton}
 		onclick={(e) => openMention(e.currentTarget, node)}
 	>
 		@{node.attrs?.label || node.attrs?.id}

@@ -227,6 +227,19 @@ describe('loadRoster', () => {
 		}
 	);
 
+	it('does not restore the join date of a member who left while the roster loads', async () => {
+		const state = withServer([user(1, 'ann'), user(2, 'bo')]);
+		getMembers.mockImplementation(async () => {
+			const response = [member(user(1, 'ann')), member(user(2, 'bo'))];
+			state.removeMember(7, 2);
+			return response;
+		});
+
+		await state.loadRoster(7);
+
+		expect(state.joinedAtOf(7, 2)).toBeNull();
+	});
+
 	it('ignores a roster that arrives after a newer one', async () => {
 		const state = withServer([]);
 		const pending: ((members: ServerMember[]) => void)[] = [];

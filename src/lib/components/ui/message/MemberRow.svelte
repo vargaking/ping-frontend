@@ -50,6 +50,7 @@
 			bind:this={button}
 			type="button"
 			aria-haspopup="dialog"
+			aria-expanded={profileCardState.anchor === button}
 			data-state={profileCardState.anchor === button
 				? 'open'
 				: (menuProps['data-state'] ?? 'closed')}

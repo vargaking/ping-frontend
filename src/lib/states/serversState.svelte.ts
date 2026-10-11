@@ -240,11 +240,11 @@ export class ServersState {
 
 		this.setRoles(serverId, roles);
 		this.memberRoles[serverId] = Object.fromEntries(members.map((m) => [m.user.id, m.role_ids]));
-		this.memberJoinedAt[serverId] = Object.fromEntries(
-			members.map((m) => [m.user.id, m.joined_at])
-		);
 		members.forEach((m) => usersState.applyUser(m.user));
 		if ((this.memberEvents[serverId] ?? 0) === eventsBefore) {
+			this.memberJoinedAt[serverId] = Object.fromEntries(
+				members.map((m) => [m.user.id, m.joined_at])
+			);
 			this.patchServer(serverId, { members: members.map((m) => m.user) });
 		}
 		return members;

@@ -4,6 +4,7 @@
 	import type { User } from '$lib/types/auth.types';
 
 	let { user }: { user: User | null } = $props();
+	let card = $state<HTMLElement | null>(null);
 </script>
 
 <header
@@ -13,8 +14,10 @@
 		{@const person = user}
 		<h1 class="min-w-0 text-[15px] font-semibold">
 			<button
+				bind:this={card}
 				type="button"
 				aria-haspopup="dialog"
+				aria-expanded={profileCardState.anchor === card}
 				class="flex max-w-full items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				onclick={(e) =>
 					profileCardState.toggle(
