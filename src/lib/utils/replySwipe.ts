@@ -1,12 +1,12 @@
 import { phoneState } from '$lib/states/phoneState.svelte';
 import { HOLD_CANCEL_EVENT } from './longPress';
 import { inEdgeZone, lockDirection, startsOnSomethingElse, type Lock } from './navSwipe';
+import { swallowTrailingClick } from './trailingClick';
 
 /** The row never follows the finger further than this. */
 export const MAX_OFFSET = 64;
 /** Letting go from here on starts the reply. */
 export const REPLY_THRESHOLD = 56;
-const CLICK_SUPPRESS_MS = 400;
 
 /** How far the finger has moved to the left, never negative. */
 function leftwards(dx: number): number {
@@ -45,7 +45,6 @@ type Gesture = {
  *  rightward drag, which the navigation swipe owns, so one drag never does both. */
 export function attachReplySwipe(row: HTMLElement, onReply: () => void): () => void {
 	let gesture: Gesture | null = null;
-	let suppressClickUntil = 0;
 	const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 	function blocked(target: EventTarget | null): boolean {
@@ -105,7 +104,7 @@ export function attachReplySwipe(row: HTMLElement, onReply: () => void): () => v
 		gesture = null;
 		if (!g || g.lock !== 'swipe') return;
 		event.preventDefault();
-		suppressClickUntil = event.timeStamp + CLICK_SUPPRESS_MS;
+		swallowTrailingClick();
 		const dx = (event.changedTouches[0]?.clientX ?? g.startX) - g.startX;
 		if (g.dragging) reset();
 		if (reachesThreshold(dx)) onReply();
@@ -126,23 +125,15 @@ export function attachReplySwipe(row: HTMLElement, onReply: () => void): () => v
 		row.removeAttribute('data-armed');
 	}
 
-	function onClick(event: MouseEvent) {
-		if (event.timeStamp > suppressClickUntil) return;
-		event.preventDefault();
-		event.stopPropagation();
-	}
-
 	row.addEventListener('touchstart', onStart, { passive: true });
 	row.addEventListener('touchmove', onMove, { passive: false });
 	row.addEventListener('touchend', onEnd, { passive: false });
 	row.addEventListener('touchcancel', cancel);
-	row.addEventListener('click', onClick, true);
 	return () => {
 		row.removeEventListener('touchstart', onStart);
 		row.removeEventListener('touchmove', onMove);
 		row.removeEventListener('touchend', onEnd);
 		row.removeEventListener('touchcancel', cancel);
-		row.removeEventListener('click', onClick, true);
 		reset();
 	};
 }
