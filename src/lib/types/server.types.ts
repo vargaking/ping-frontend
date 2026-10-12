@@ -9,6 +9,8 @@ export type ServerSettings = {
 export type ServerProfile = {
 	icon?: string;
 	welcome_message?: string | null;
+	/** Lowercase `#rrggbb`; absent uses the base theme. */
+	accent?: string | null;
 	[key: string]: any;
 };
 
