@@ -175,76 +175,43 @@ test('the switch and the @everyone row are the same setting', async ({ browser }
 	expect(writes()[1].body).toBe(JSON.stringify({ allow: '0', deny: '0' }));
 });
 
-test('a manager who would lose access is told before anything is sent', async ({ browser }) => {
+test('the manager turns Private on', async ({ browser }) => {
 	const owner = await newUser(browser, 'owner');
 	const manager = await newUser(browser, 'manager');
 	const server = await createServer(owner.context, uniqueName('Guild'));
 	const channel = await createChannel(owner.context, server.id, 'plans');
+	const everyone = await everyoneRoleId(owner.context, server.id);
 	await joinInvite(manager.context, (await createInvite(owner.context, server.id)).id);
 	const managers = await createRole(owner.context, server.id, 'Managers', {
 		allow: MANAGER_PERMISSIONS
 	});
 	await setMemberRoles(owner.context, server.id, manager.user.id, [managers.id]);
 
-	await manager.page.goto(channelPath(server.id, channel.id));
-	await openPermissions(manager.page);
-	const requests = recordRequests(manager.page);
-
-	const privateSwitch = manager.page.getByRole('switch', { name: 'Private' });
-	await expect(privateSwitch).toBeDisabled();
-	await expect(
-		manager.page.getByText(
-			'Turning this on would take this channel away from you. Allow View for one of your lower roles first, or ask someone above you.'
-		)
-	).toBeVisible();
-	const row = permissionRow(manager.page, '@everyone');
-	await expect(row.getByText('Deny would take this channel away from you.')).toBeVisible();
-	await expect(option(row, 'View channel', 'Deny')).toBeDisabled();
-	await expect(option(row, 'View channel', 'Allow')).toBeEnabled();
-	await expect(option(row, 'Send messages', 'Deny')).toBeEnabled();
-	await manager.page.waitForTimeout(500);
-
-	expect(requests.filter((r) => r.method !== 'GET')).toEqual([]);
-});
-
-test('a manager can turn Private on while the View write for a lower role is still saving', async ({
-	browser
-}) => {
-	const owner = await newUser(browser, 'owner');
-	const manager = await newUser(browser, 'manager');
-	const server = await createServer(owner.context, uniqueName('Guild'));
-	const channel = await createChannel(owner.context, server.id, 'plans');
-	await joinInvite(manager.context, (await createInvite(owner.context, server.id)).id);
-	const lead = await createRole(owner.context, server.id, 'Lead', { allow: MANAGER_PERMISSIONS });
-	const helpers = await createRole(owner.context, server.id, 'Helpers');
-	await setMemberRoles(owner.context, server.id, manager.user.id, [lead.id, helpers.id]);
-
 	const page = manager.page;
 	await page.goto(channelPath(server.id, channel.id));
 	await openPermissions(page);
-	const helpersRow = await addRow(page, 'Helpers');
-	await page.route(`**/permissions/roles/${helpers.id}`, async (route) => {
-		if (route.request().method() === 'PUT')
-			await new Promise((resolve) => setTimeout(resolve, 1500));
-		await route.continue();
-	});
-	const statuses: number[] = [];
-	page.on('response', (response) => {
-		if (response.request().method() === 'PUT') statuses.push(response.status());
-	});
-
-	await option(helpersRow, 'View channel', 'Allow').click();
+	const requests = recordRequests(page);
 	const privateSwitch = page.getByRole('switch', { name: 'Private' });
 	await expect(privateSwitch).toBeEnabled();
-	await privateSwitch.click();
-	await expect(privateSwitch).toBeChecked();
 
-	await expect(toggle(helpersRow, 'View channel')).toHaveAttribute('aria-busy', 'false', {
-		timeout: 10_000
-	});
-	await expect.poll(() => statuses).toEqual([200, 200]);
+	const saved = savedWrite(page);
+	await privateSwitch.click();
+	await saved;
+
+	const own = permissionRow(page, manager.user.username);
+	await expect(own, 'the server should add a row that keeps the manager in').toContainText(
+		'· Member'
+	);
 	await expect(privateSwitch).toBeChecked();
-	await expect(page.getByText("Couldn't save permissions")).toHaveCount(0);
+	expect(requests.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.path}`)).toEqual([
+		`PUT /channels/${channel.id}/permissions/roles/${everyone}`
+	]);
+
+	await page.keyboard.press('Escape');
+	await expect(
+		page.getByRole('complementary', { name: 'Channels' }).getByRole('link', { name: 'plans' }),
+		"the channel should stay in the manager's sidebar"
+	).toBeVisible();
 });
 
 test('category settings: private on and off through one write each', async ({ browser }) => {

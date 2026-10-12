@@ -24,12 +24,14 @@
 	} from '$lib/utils/overwrites';
 	import {
 		canView,
+		categoryUnseen,
 		inheritedForMember,
 		inheritedForRole,
 		isPrivate,
 		privateRow,
 		scopeMask,
 		visibleTo,
+		withKeepRow,
 		type MemberInfo,
 		type Scope,
 		type Who
@@ -137,24 +139,37 @@
 		return "Private because @everyone can't view channels in this server.";
 	});
 
-	const actorMask = $derived(scope ? scopeMask(scope, actor) : 0n);
+	// The server keeps the actor in when a write takes their View. Until that row arrives, assume it.
+	let keeping = $state(false);
+	const actorScope = $derived(
+		scope && keeping && me != null && !canView(scope, actor) ? withKeepRow(scope, me) : scope
+	);
+	const actorMask = $derived(actorScope ? scopeMask(actorScope, actor) : 0n);
+	const categoryHidden = $derived(
+		actorScope != null && categoryUnseen(targetKind, actorScope, actor, isOwner)
+	);
+
+	const isSelf = (subject: OverwriteSubject) => subject.kind === 'members' && subject.id === me;
 
 	function losesView(subject: OverwriteSubject, next: Bits): boolean {
 		if (isOwner || !scope) return false;
 		return !canView({ ...scope, target: withRow(scope.target, subject, next) }, actor);
 	}
 
+	$effect(() => {
+		if (keeping && me != null && (rowBits(rows, { kind: 'members', id: me }).allow & VIEW) !== 0n) {
+			keeping = false;
+		}
+	});
+
 	function lacksBits(changed: bigint): boolean {
 		return !isOwner && (changed & ~actorMask) !== 0n;
 	}
 
 	const everyoneLocked = $derived(everyone != null && !canTouchRole(everyone, rank, isOwner));
-	const switchNote = $derived.by(() => {
-		if (!scope || !everyone || !everyoneSubject) return null;
-		if (everyoneLocked) return "You can't change @everyone, so you can't change this.";
-		if (privateOn || !losesView(everyoneSubject, privateRow(scope, everyone.id, true))) return null;
-		return `Turning this on would take this ${noun} away from you. Allow View for one of your lower roles first, or ask someone above you.`;
-	});
+	const switchNote = $derived(
+		everyoneLocked ? "You can't change @everyone, so you can't change this." : null
+	);
 
 	type Entry = {
 		key: string;
@@ -165,6 +180,8 @@
 		member?: MemberInfo;
 		locked: boolean;
 		lockedNote: string;
+		/** The row that keeps its owner in can be removed although it is locked. */
+		removable: boolean;
 	};
 
 	const rowKey = (subject: OverwriteSubject) => `${subject.kind}:${subject.id}`;
@@ -198,11 +215,14 @@
 					kindLabel: parentRole ? `inherits from ${parentRole.name}` : 'Role',
 					role,
 					locked: !canTouchRole(role, rank, isOwner),
-					lockedNote: "This is at or above your highest role, so you can't change it."
+					lockedNote: "This is at or above your highest role, so you can't change it.",
+					removable: false
 				});
 			} else {
 				const member = members.find((m) => m.id === subject.id);
 				if (!member) continue;
+				const { allow, deny } = rowBits(rows, subject);
+				const removable = isSelf(subject) && allow === VIEW && deny === 0n;
 				out.push({
 					key,
 					subject,
@@ -210,7 +230,10 @@
 					kindLabel: 'Member',
 					member,
 					locked: memberLocked(member.id, member.roleIds),
-					lockedNote: "Their highest role is at or above yours, so you can't change this."
+					lockedNote: removable
+						? 'This row keeps you in. You can remove it but not change it.'
+						: "Their highest role is at or above yours, so you can't change this.",
+					removable
 				});
 			}
 		}
@@ -251,6 +274,7 @@
 		const seq = ++hereSeq;
 		hereReady = false;
 		loadError = false;
+		keeping = false;
 		try {
 			await Promise.all([
 				overwritesState.load(t),
@@ -298,18 +322,31 @@
 		void loadParent(parent);
 	}
 
+	function save(subject: OverwriteSubject, next: Bits, changed: bigint) {
+		const keepsActor =
+			!isOwner &&
+			!isSelf(subject) &&
+			scope != null &&
+			canView(scope, actor) &&
+			losesView(subject, next);
+		if (keepsActor) keeping = true;
+		void overwritesState.save(here, subject, next, changed).then((saved) => {
+			if (!saved) keeping = false;
+		});
+	}
+
 	function change(entry: Entry, bit: bigint, state: PermissionState) {
 		const next = withState(rowBits(rows, entry.subject), bit, state);
 		if (entry.locked || lacksBits(bit)) return;
-		if (bit === VIEW && losesView(entry.subject, next)) return;
+		if (bit === VIEW && isSelf(entry.subject) && losesView(entry.subject, next)) return;
 		shown.add(entry.key);
-		void overwritesState.save(here, entry.subject, next, bit);
+		save(entry.subject, next, bit);
 	}
 
 	function removeNote(entry: Entry): string | null {
-		if (entry.locked) return null;
+		if (entry.locked && !entry.removable) return null;
 		const bits = rowBits(rows, entry.subject);
-		if (losesView(entry.subject, NO_BITS)) {
+		if (isSelf(entry.subject) && losesView(entry.subject, NO_BITS)) {
 			return `Removing this would take this ${noun} away from you.`;
 		}
 		if (lacksBits(bits.allow | bits.deny)) {
@@ -319,9 +356,9 @@
 	}
 
 	function remove(entry: Entry) {
-		if (entry.locked || removeNote(entry)) return;
+		if ((entry.locked && !entry.removable) || removeNote(entry)) return;
 		shown.delete(entry.key);
-		void overwritesState.save(here, entry.subject, NO_BITS, CHANNEL_BITS);
+		save(entry.subject, NO_BITS, CHANNEL_BITS);
 	}
 
 	function add(kind: 'roles' | 'members', value: string) {
@@ -336,7 +373,7 @@
 	function togglePrivate() {
 		if (!scope || !everyone || !everyoneSubject || switchNote) return;
 		const next = privateRow(scope, everyone.id, !privateOn);
-		void overwritesState.save(here, everyoneSubject, next, VIEW);
+		save(everyoneSubject, next, VIEW);
 	}
 
 	const stateLabel: Record<PermissionState, string> = {
@@ -355,7 +392,7 @@
 				note: "You don't have this permission here, so you can't change it."
 			};
 		}
-		if (bit !== VIEW) return open;
+		if (bit !== VIEW || !isSelf(entry.subject)) return open;
 		const blocked = (['inherit', 'deny'] as const).filter((state) =>
 			losesView(entry.subject, withState(bits, VIEW, state))
 		);
@@ -394,6 +431,10 @@
 		</p>
 	{:else if !ready || !scope}
 		<p class="text-sm text-muted-foreground">Loading…</p>
+	{:else if categoryHidden}
+		<p class="text-sm text-muted-foreground">
+			You can't change this category's permissions without seeing the category itself.
+		</p>
 	{:else}
 		<section class="flex flex-col gap-3">
 			<SettingsSwitch
@@ -499,7 +540,7 @@
 						{#if blockedRemoval}
 							<p class="text-xs text-muted-foreground">{blockedRemoval}</p>
 						{/if}
-						{#if !entry.locked && !entry.role?.is_default}
+						{#if (!entry.locked || entry.removable) && !entry.role?.is_default}
 							<div class="flex justify-end">
 								<Button
 									variant="ghost"

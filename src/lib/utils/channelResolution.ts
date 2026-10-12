@@ -1,5 +1,5 @@
 import { ALL_PERMISSIONS, CHANNEL_BITS, Permission } from '$lib/permissions';
-import type { OverwriteSubject, Overwrites } from '$lib/types/overwrite.types';
+import type { OverwriteSubject, OverwriteTarget, Overwrites } from '$lib/types/overwrite.types';
 import type { Role } from '$lib/types/server.types';
 import { rowBits, withRow, withState, type Bits } from './overwrites';
 import { applyLayer, inheritedSource, memberMask, ownState, sortRoles } from './roles';
@@ -52,6 +52,24 @@ export function scopeMask(scope: Scope, who: Who): bigint {
 
 export function canView(scope: Scope, who: Who): boolean {
 	return (scopeMask(scope, who) & VIEW) !== 0n;
+}
+
+/** The scope with the member row the server adds when a write would take the actor's View. */
+export function withKeepRow(scope: Scope, userId: number): Scope {
+	const subject: OverwriteSubject = { kind: 'members', id: userId };
+	const row = rowBits(scope.target, subject);
+	const keep = { allow: row.allow | VIEW, deny: row.deny & ~VIEW };
+	return { ...scope, target: withRow(scope.target, subject, keep) };
+}
+
+/** Rules of a category can only be changed by someone who sees the category itself. */
+export function categoryUnseen(
+	kind: OverwriteTarget['kind'],
+	scope: Scope,
+	who: Who,
+	isOwner: boolean
+): boolean {
+	return kind === 'group' && !isOwner && !canView(scope, who);
 }
 
 /** Someone with no roles and no member row of their own can't view it. */

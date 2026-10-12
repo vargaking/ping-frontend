@@ -4,6 +4,7 @@ import type { Overwrites } from '$lib/types/overwrite.types';
 import type { Role } from '$lib/types/server.types';
 import {
 	canView,
+	categoryUnseen,
 	decide,
 	inheritedForMember,
 	inheritedForRole,
@@ -12,6 +13,7 @@ import {
 	privateRow,
 	scopeMask,
 	visibleTo,
+	withKeepRow,
 	type MemberInfo,
 	type Scope,
 	type Who
@@ -276,6 +278,46 @@ describe('privateRow', () => {
 		expect(isPrivate(scope(withOn))).toBe(true);
 		const off = privateRow(scope(withOn), everyone, false);
 		expect(isPrivate(scope(rows({ 1: [off.allow, off.deny] })))).toBe(false);
+	});
+});
+
+describe('withKeepRow', () => {
+	const hidden = rows({ 1: [0n, VIEW] }, {});
+
+	it.each([
+		['no row yet', {}, { allow: VIEW, deny: 0n }],
+		['an allow without View', { [USER]: [SEND, 0n] }, { allow: VIEW | SEND, deny: 0n }],
+		['a deny of View and Send', { [USER]: [0n, VIEW | SEND] }, { allow: VIEW, deny: SEND }]
+	] as [string, Pairs, { allow: bigint; deny: bigint }][])(
+		'adds View to the own row: %s',
+		(_, existing, expected) => {
+			const kept = withKeepRow(scope({ ...hidden, members: rows({}, existing).members }), USER);
+			const row = kept.target.members.find((m) => m.user_id === USER)!;
+			expect({ allow: BigInt(row.allow), deny: BigInt(row.deny) }).toEqual(expected);
+		}
+	);
+
+	it('lets a member see what @everyone hides, and nobody else', () => {
+		const kept = withKeepRow(scope(hidden), USER);
+		expect(canView(scope(hidden), holding(2))).toBe(false);
+		expect(canView(kept, holding(2))).toBe(true);
+		expect(canView(kept, { userId: USER + 1, roleIds: [2] })).toBe(false);
+	});
+});
+
+describe('categoryUnseen', () => {
+	const hiddenCategory = scope(rows({ 1: [0n, VIEW] }));
+	const throughRole = scope(rows({ 1: [0n, VIEW], 2: [VIEW, 0n] }));
+	const throughMemberRow = scope(rows({ 1: [0n, VIEW] }, { [USER]: [VIEW, 0n] }));
+
+	it.each([
+		['a category the actor cannot see', 'group', hiddenCategory, false, true],
+		['a category seen through a role', 'group', throughRole, false, false],
+		['a category seen through the actor row', 'group', throughMemberRow, false, false],
+		['a category the owner cannot see by rows', 'group', hiddenCategory, true, false],
+		['a channel the actor cannot see', 'channel', hiddenCategory, false, false]
+	] as const)('%s', (_, kind, target, isOwner, expected) => {
+		expect(categoryUnseen(kind, target, holding(2), isOwner)).toBe(expected);
 	});
 });
 
