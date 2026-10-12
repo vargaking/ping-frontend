@@ -155,6 +155,27 @@ describe('applyFrame', () => {
 	});
 });
 
+describe('refresh', () => {
+	it('reloads an entry of the current user', async () => {
+		requests.get.mockResolvedValue(serve());
+		await importedAuthorsState.load(SERVER);
+		requests.get.mockClear();
+		importedAuthorsState.refresh(SERVER);
+		expect(requests.get).toHaveBeenCalledTimes(1);
+	});
+
+	it('leaves a server never loaded, or loaded by someone else, alone', async () => {
+		importedAuthorsState.refresh(SERVER);
+		requests.get.mockResolvedValue(serve());
+		await importedAuthorsState.load(SERVER);
+		requests.get.mockClear();
+		logIn(9);
+		importedAuthorsState.refresh(SERVER);
+		importedAuthorsState.refresh(2);
+		expect(requests.get).not.toHaveBeenCalled();
+	});
+});
+
 describe('save', () => {
 	it('sends the whole mapping, shows the answer and reloads the changes', async () => {
 		requests.get.mockResolvedValueOnce(serve());

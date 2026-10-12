@@ -7,6 +7,7 @@ import type {
 	PlanLeftOut
 } from '$lib/types/serverImport.types';
 import {
+	canApplyAuthors,
 	channelAction,
 	channelCounts,
 	existingLine,
@@ -653,5 +654,16 @@ describe('showImportedAuthors', () => {
 		[true, true, 'ready', false]
 	] as const)('owner %s, may match %s, %s gives %s', (isOwner, canMap, status, expected) => {
 		expect(showImportedAuthors(isOwner, canMap, status)).toBe(expected);
+	});
+});
+
+describe('canApplyAuthors', () => {
+	it.each([
+		[true, false, true],
+		[true, true, true],
+		[false, true, true],
+		[false, false, false]
+	])('changes %s, retryable %s gives %s', (dirty, retryable, expected) => {
+		expect(canApplyAuthors(dirty, retryable)).toBe(expected);
 	});
 });

@@ -92,6 +92,11 @@ class ImportedAuthorsState {
 		if (statusChanged) void this.load(serverId);
 	}
 
+	/** Reload after a change that sends this member no progress frames, such as a newer import finishing. */
+	refresh(serverId: number): void {
+		if (this.entries[serverId]?.userId === usersState.loggedInUser?.id) void this.load(serverId);
+	}
+
 	/** Send the mapping and show the answer; the error is thrown so the caller can show its text. */
 	async save(serverId: number, mapping: AuthorMapping): Promise<void> {
 		const userId = usersState.loggedInUser?.id;

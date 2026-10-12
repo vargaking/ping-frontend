@@ -295,6 +295,7 @@
 			{actionLabel}
 			{alwaysShowAction}
 			busy={busy === 'save'}
+			retryable={imp.error != null}
 			error={saveError}
 			onaction={saveAuthors}
 		/>

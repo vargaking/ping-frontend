@@ -373,3 +373,6 @@ export function showImportedAuthors(
 ): boolean {
 	return !isOwner && canMapAuthors && status === 'ready';
 }
+
+/** Whether Apply can be pressed: there are changes, or the last hand-over failed and the same mapping may be sent again. */
+export const canApplyAuthors = (dirty: boolean, retryable: boolean): boolean => dirty || retryable;

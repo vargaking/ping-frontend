@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
 	order: [] as string[],
 	refreshImport: vi.fn(),
+	refreshAuthors: vi.fn(),
 	fetchChannels: vi.fn(),
 	refreshForums: vi.fn(),
 	forget: vi.fn(),
@@ -12,6 +13,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./serverImportState.svelte', () => ({
 	serverImportState: { refresh: mocks.refreshImport }
+}));
+vi.mock('./importedAuthorsState.svelte', () => ({
+	importedAuthorsState: { refresh: mocks.refreshAuthors }
 }));
 vi.mock('./serversState.svelte', () => ({
 	serversState: { fetchServerChannels: mocks.fetchChannels }
@@ -28,6 +32,7 @@ import { refreshAfterImport } from './importRefresh';
 beforeEach(() => {
 	mocks.order.length = 0;
 	mocks.refreshImport.mockReset();
+	mocks.refreshAuthors.mockReset();
 	mocks.usersState.loggedInUser = { id: 7 };
 	mocks.fetchChannels.mockReset().mockImplementation(async () => {
 		await Promise.resolve();
@@ -55,6 +60,7 @@ describe('refreshAfterImport', () => {
 		await refreshAfterImport(frame([301, 305]));
 
 		expect(mocks.refreshImport).toHaveBeenCalledWith(12);
+		expect(mocks.refreshAuthors).toHaveBeenCalledWith(12);
 		expect(mocks.refreshForums).toHaveBeenCalledWith([301, 305]);
 		expect(mocks.forget).toHaveBeenCalledWith(12, [301, 305]);
 		expect(mocks.resync).toHaveBeenCalledWith('import');

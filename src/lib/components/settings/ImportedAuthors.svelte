@@ -87,6 +87,7 @@
 				actionLabel="Apply"
 				alwaysShowAction
 				busy={saving || working}
+				retryable={imp.error != null}
 				error={saveError}
 				onaction={apply}
 			/>
