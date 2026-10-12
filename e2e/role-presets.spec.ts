@@ -34,7 +34,7 @@ async function openRoles(page: Page, serverName: string) {
 async function createFromPreset(page: Page, name: string, preset: string) {
 	await page.getByLabel('New role name').fill(name);
 	await page.getByLabel('Start from').selectOption({ label: preset });
-	await page.getByRole('button', { name: 'Create' }).click();
+	await page.getByRole('button', { name: 'Create', exact: true }).click();
 	await expect(page.getByRole('textbox', { name: 'Name' })).toHaveValue(name);
 }
 
@@ -57,7 +57,7 @@ test('creating a role from a preset ticks its toggles and leaves the danger zone
 	for (const label of OUTSIDE_DANGER) await expect(allowed(owner.page, label)).toBeChecked();
 	for (const label of DANGER) await expect(allowed(owner.page, label)).not.toBeChecked();
 	await expect(
-		owner.page.locator('section[aria-label]').last(),
+		owner.page.locator('fieldset section[aria-label]').last(),
 		'the danger zone should be the last group'
 	).toHaveAttribute('aria-label', 'Danger zone');
 
