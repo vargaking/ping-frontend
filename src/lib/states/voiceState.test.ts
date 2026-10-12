@@ -622,6 +622,30 @@ describe('voiceState screen share sound', () => {
 		expect(stopSystemAudio).toHaveBeenCalledOnce();
 	});
 
+	it('keeps the link and the share when a reconnect republishes the live track', async () => {
+		startableRoom();
+		await voiceState.startScreenShare();
+		const handlers = new Map<string, (...args: unknown[]) => void>();
+		const emitter = {
+			on: (event: string, handler: (...args: unknown[]) => void) => {
+				handlers.set(event, handler);
+				return emitter;
+			},
+			once: () => emitter
+		};
+		internals.wireRoom(emitter, internals.generation);
+		const me = { identity: 'me', name: 'Me', attributes: {}, getTrackPublication: () => undefined };
+		const track = { mediaStreamTrack: { readyState: 'live' } };
+
+		handlers.get(RoomEvent.LocalTrackUnpublished)!(
+			{ source: 'screen_share', kind: 'video', track },
+			me
+		);
+
+		expect(stopSystemAudio).not.toHaveBeenCalled();
+		expect(voiceState.sharing).toBe(true);
+	});
+
 	it('unlinks when leaving the call', async () => {
 		startableRoom();
 		await voiceState.startScreenShare();

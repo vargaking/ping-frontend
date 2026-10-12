@@ -488,7 +488,9 @@ class VoiceState {
 				this.upsertPeer(p);
 				this.refreshScreenSound(p);
 				if (pub.source !== Track.Source.ScreenShare || gen !== this.generation) return;
-				if (pub.kind === Track.Kind.Video && !this.swappingScreen) {
+				// A reconnect republishes every track without stopping it; the share goes on.
+				const republishing = pub.track?.mediaStreamTrack.readyState === 'live';
+				if (pub.kind === Track.Kind.Video && !this.swappingScreen && !republishing) {
 					this.sharing = false;
 					this.shareSound = null;
 					this.releaseSystemAudio();
