@@ -135,15 +135,14 @@ class UnreadState {
 			const existing = this.channels[channel.id];
 			const lastReadId = channel.last_read_message_id ?? null;
 			const lastMessageId = channel.last_message_id ?? null;
-			// Mentions are only counted live, so keep them unless the server says
-			// the channel has been read since.
+			// The server's count wins; an older server sends none, so keep ours.
 			const caughtUp = lastMessageId == null || lastMessageId === lastReadId;
 			this.channels[channel.id] = {
 				serverId,
 				name: channel.name,
 				lastReadId,
 				lastMessageId,
-				mentions: caughtUp ? 0 : (existing?.mentions ?? 0)
+				mentions: caughtUp ? 0 : (channel.mention_count ?? existing?.mentions ?? 0)
 			};
 		}
 	}
@@ -163,7 +162,7 @@ class UnreadState {
 			name: channel.name,
 			lastReadId: channel.last_read_message_id ?? null,
 			lastMessageId: channel.last_message_id ?? null,
-			mentions: 0
+			mentions: channel.mention_count ?? 0
 		};
 	}
 
