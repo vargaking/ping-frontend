@@ -8,11 +8,13 @@
 	import FriendButton from '$lib/components/friends/FriendButton.svelte';
 	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { friendsState } from '$lib/states/friendsState.svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import type { ProfileCardTarget } from '$lib/states/profileCardState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { friendCardActions } from '$lib/utils/friendActions';
+	import { avatarToneClass } from '$lib/utils/avatar';
 	import { openDirectMessage, profileCardActions } from '$lib/utils/menuActions';
 	import { bannerOf, cardStatus, closingFirst } from '$lib/utils/profileCard';
 	import ProfileBanner from './ProfileBanner.svelte';
@@ -64,6 +66,7 @@
 		user?.username ?? (target.kind === 'imported' ? target.name : target.fallbackName) ?? '…'
 	);
 	const banner = $derived(bannerOf(user?.profile));
+	const tone = $derived(avatarToneClass(user?.id ?? name));
 	const online = $derived(userId != null && status !== 'left' && usersState.isOnline(userId));
 	const statusLine = $derived(
 		status === 'left'
@@ -116,16 +119,20 @@
 </script>
 
 <div class="flex w-full min-w-0 flex-col" data-profile-card>
-	<ProfileBanner {banner} class="h-20 shrink-0" />
+	<ProfileBanner {banner} fallbackClass="{tone} opacity-60" class="h-20 shrink-0" />
 	<div class="flex min-w-0 flex-col gap-3 px-4 pb-4">
-		<div class="flex items-end justify-between gap-2">
+		<div class="flex items-start justify-between">
 			<div class="relative -mt-8 h-16 w-16 shrink-0">
-				<div class="h-full w-full overflow-hidden rounded-full ring-4 ring-popover">
-					<Avatar {user} name={user ? null : name} size="xl" className="h-full! w-full!" />
-				</div>
+				<Avatar
+					{user}
+					name={user ? null : name}
+					size="xl"
+					rounded="rounded-2xl"
+					className="h-full! w-full! ring-4 ring-popover"
+				/>
 				{#if user && status !== 'left'}
 					<span
-						class="absolute right-0 bottom-0 h-4 w-4 rounded-full ring-4 ring-popover {online
+						class="absolute -right-1 -bottom-1 h-3.5 w-3.5 rounded-full ring-[3px] ring-popover {online
 							? 'bg-online'
 							: 'bg-offline'}"
 						aria-hidden="true"
@@ -133,34 +140,18 @@
 					<span class="sr-only">{online ? 'Online' : 'Offline'}</span>
 				{/if}
 			</div>
-			{#if acting && user}
-				<div class="flex items-center gap-1.5 pt-2">
-					{#if isMe}
-						<Button variant="secondary" size="sm" onclick={editProfile}>
-							<Pencil size={14} strokeWidth={1.75} />
-							Edit profile
-						</Button>
-					{:else if !inThisDm}
-						<Button size="sm" onclick={message}>
-							<MessageSquare size={14} strokeWidth={1.75} />
-							Message
-						</Button>
-					{/if}
-					{#if !isMe}<FriendButton {user} />{/if}
-					{#if overflow.length > 0}
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger
-								aria-label="More actions"
-								class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent pointer-coarse:h-11 pointer-coarse:w-11"
-							>
-								<Ellipsis size={18} strokeWidth={1.75} />
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Content align="end" class="w-52">
-								<ActionDropdownItems actions={overflow} />
-							</DropdownMenu.Content>
-						</DropdownMenu.Root>
-					{/if}
-				</div>
+			{#if overflow.length > 0}
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						aria-label="More actions"
+						class="mt-2 -mr-1.5 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none data-[state=open]:bg-accent pointer-coarse:h-11 pointer-coarse:w-11"
+					>
+						<Ellipsis size={18} strokeWidth={1.75} />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-52">
+						<ActionDropdownItems actions={overflow} />
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 			{/if}
 		</div>
 
@@ -179,7 +170,7 @@
 					>
 						<span
 							aria-hidden="true"
-							class="h-2.5 w-2.5 shrink-0 rounded-full {role.color ? '' : 'bg-text-subtle'}"
+							class="h-2 w-2 shrink-0 rounded-full {role.color ? '' : 'bg-text-subtle'}"
 							style:background-color={role.color}
 						></span>
 						<span class="truncate">{role.name}</span>
@@ -190,6 +181,25 @@
 
 		{#if joinedLabel}
 			<p class="text-xs text-text-subtle">Member since {joinedLabel}</p>
+		{/if}
+
+		{#if acting && user && (isMe || !inThisDm || friendsState.loaded)}
+			<div class="flex gap-2 pt-1 *:min-w-0 *:flex-1">
+				{#if isMe}
+					<Button variant="secondary" size="sm" onclick={editProfile}>
+						<Pencil size={14} strokeWidth={1.75} />
+						Edit profile
+					</Button>
+				{:else}
+					{#if !inThisDm}
+						<Button size="sm" onclick={message}>
+							<MessageSquare size={14} strokeWidth={1.75} />
+							Message
+						</Button>
+					{/if}
+					<FriendButton {user} />
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>

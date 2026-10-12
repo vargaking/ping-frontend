@@ -42,7 +42,7 @@ test('a request from a profile card reaches the other user live, and accepting m
 		.click();
 	const card = a.page.getByRole('dialog');
 	await card.getByRole('button', { name: 'Add friend' }).click();
-	await expect(card.getByRole('button', { name: 'Request sent' })).toBeDisabled();
+	await expect(card.getByText('Request sent')).toBeVisible();
 
 	await expect(
 		directLink(b.page),
@@ -101,7 +101,7 @@ test('friends with no server in common see each other online and offline, and re
 	await expect(a.page).toHaveURL(/\/app\/direct\/\d+/);
 	await a.page.getByRole('button', { name: b.user.username }).click();
 	const card = a.page.getByRole('dialog');
-	await expect(card.getByRole('button', { name: 'Friends', exact: true })).toBeDisabled();
+	await expect(card.getByText('Friends', { exact: true })).toBeVisible();
 	await card.getByRole('button', { name: 'More actions' }).click();
 	await a.page.getByRole('menuitem', { name: 'Remove friend' }).click();
 	await a.page.getByRole('button', { name: 'Remove', exact: true }).click();

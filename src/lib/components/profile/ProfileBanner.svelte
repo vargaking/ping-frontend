@@ -2,7 +2,14 @@
 	import { cn } from '$lib/utils.js';
 	import type { Banner } from '$lib/utils/profileCard';
 
-	let { banner, class: className }: { banner: Banner; class?: string } = $props();
+	type Props = {
+		banner: Banner;
+		/** Background of the banner when the person has set neither a colour nor an image. */
+		fallbackClass?: string;
+		class?: string;
+	};
+
+	let { banner, fallbackClass = 'bg-accent', class: className }: Props = $props();
 
 	let failedSrc = $state<string | null>(null);
 
@@ -13,7 +20,7 @@
 
 <div
 	data-banner={banner.kind}
-	class={cn('w-full overflow-hidden', color || showImage ? '' : 'bg-accent', className)}
+	class={cn('w-full overflow-hidden', color || showImage ? '' : fallbackClass, className)}
 	style:background-color={color}
 >
 	{#if showImage && src}
