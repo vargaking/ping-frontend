@@ -5,6 +5,7 @@ import { serversState } from './serversState.svelte';
 import { serverRequestState } from './serverRequestState.svelte';
 import { friendsState } from './friendsState.svelte';
 import { voiceState } from './voiceState.svelte';
+import { callsState } from './callsState.svelte';
 import { connectionState, serverHost } from './connectionState.svelte';
 import {
 	messagesState,
@@ -38,6 +39,8 @@ import { getUser } from '$lib/requests/users/getUser';
 import { v4 as uuidv4 } from 'uuid';
 import type { Embed, MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
+import type { CallStateFrame } from '$lib/types/call.types';
+import { callMeta } from '$lib/utils/callText';
 import type { Attachment } from '$lib/types/attachment.types';
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
@@ -524,7 +527,8 @@ class SocketState {
 
 		await db.messages.put(message);
 
-		if (!effects?.notify || conversationId == null) return;
+		// A call has its own ring, so its row stays quiet.
+		if (!effects?.notify || conversationId == null || message.call) return;
 
 		this.notifyIncoming({
 			kind: 'direct',
@@ -629,12 +633,22 @@ class SocketState {
 		const withAttachments = {
 			...changes,
 			...(message.attachments && { attachments: message.attachments }),
-			...(message.reactions && { reactions: message.reactions })
+			...(message.reactions && { reactions: message.reactions }),
+			...(message.call && { call: message.call })
 		};
 		messagesState.updateMessage(message.id, withAttachments);
 		conversationsState.messageEdited(message.id, changes);
 		await db.messages.update(message.id, withAttachments);
 		await refreshReplyQuotes(message);
+	}
+
+	/** A call changed: the call itself, and the row it left in the conversation. */
+	async handleCallState(frame: CallStateFrame) {
+		if (!callsState.apply(frame.call)) return;
+		const changes = { content: frame.content, call: callMeta(frame.call) };
+		messagesState.updateMessage(frame.call.message_id, changes);
+		conversationsState.messageEdited(frame.call.message_id, { content: frame.content });
+		await db.messages.update(frame.call.message_id, changes);
 	}
 
 	async handleMessageDeleted(message: { id: string }) {
@@ -879,6 +893,9 @@ class SocketState {
 				} else {
 					serversState.removeMember(message.server_id, message.user_id);
 				}
+				break;
+			case 'call_state':
+				this.handleCallState(message);
 				break;
 			case 'voice_state':
 				voicePresenceState.apply(message.server_id, message.channel_id, message.participants);
