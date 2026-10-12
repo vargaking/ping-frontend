@@ -11,6 +11,9 @@
 
 	const relation = $derived(friendsState.stateOf(user.id));
 
+	const status =
+		'inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-border px-2.5 text-sm whitespace-nowrap text-muted-foreground pointer-coarse:h-11';
+
 	async function run(action: (user: User) => Promise<void>) {
 		if (busy) return;
 		busy = true;
@@ -29,19 +32,19 @@
 			Add friend
 		</Button>
 	{:else if relation === 'outgoing'}
-		<Button variant="secondary" size="sm" disabled>
+		<span class={status}>
 			<Check size={14} strokeWidth={1.75} />
 			Request sent
-		</Button>
+		</span>
 	{:else if relation === 'incoming'}
 		<Button variant="secondary" size="sm" disabled={busy} onclick={() => run(acceptFriend)}>
 			<UserCheck size={14} strokeWidth={1.75} />
 			Accept request
 		</Button>
 	{:else}
-		<Button variant="secondary" size="sm" disabled>
+		<span class={status}>
 			<UserCheck size={14} strokeWidth={1.75} />
 			Friends
-		</Button>
+		</span>
 	{/if}
 {/if}
