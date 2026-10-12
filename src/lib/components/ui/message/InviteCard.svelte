@@ -67,9 +67,16 @@
 			{#if loading}
 				<span class="h-12 w-12 shrink-0 animate-pulse rounded-xl bg-accent" aria-hidden="true"
 				></span>
-				<div class="min-w-0 flex-1 space-y-1" aria-hidden="true">
-					<div class="h-4 w-24 animate-pulse rounded bg-accent"></div>
-					<div class="h-5 w-40 max-w-full animate-pulse rounded bg-accent"></div>
+				<div class="min-w-0 flex-1" aria-hidden="true">
+					<div class="flex h-4 items-center">
+						<div class="h-3 w-24 animate-pulse rounded bg-accent"></div>
+					</div>
+					<div class="flex h-5 items-center">
+						<div class="h-4 w-40 max-w-full animate-pulse rounded bg-accent"></div>
+					</div>
+					<div class="flex h-4 items-center">
+						<div class="h-3 w-20 animate-pulse rounded bg-accent"></div>
+					</div>
 				</div>
 			{:else if invite}
 				<ServerIcon

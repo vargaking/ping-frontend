@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios';
+import { flushSync, untrack } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InvitePublicResponse } from '$lib/types/invite.types';
 
@@ -39,6 +40,27 @@ beforeEach(() => {
 });
 
 describe('InviteCardsState', () => {
+	it('updates a reader that looked before anything was loaded', async () => {
+		let seen: unknown;
+		const stop = $effect.root(() => {
+			const entry = $derived(cards.entry('code-a', 1));
+			$effect(() => {
+				seen = entry;
+			});
+			$effect(() => {
+				untrack(() => void cards.load('code-a', 1));
+			});
+		});
+		flushSync();
+		expect(seen).toBeUndefined();
+
+		await vi.waitFor(() => {
+			flushSync();
+			expect(seen).toEqual({ status: 'ready', invite: invite() });
+		});
+		stop();
+	});
+
 	it('has no entry until the lookup finishes, then shares it', async () => {
 		const loading = cards.load('code-a', 1);
 		expect(cards.entry('code-a', 1)).toBeUndefined();

@@ -16,7 +16,7 @@ export type InviteCardEntry =
 export class InviteCardsState {
 	private entries = new SvelteMap<string, InviteCardEntry>();
 	private inflight = new SvelteMap<string, Promise<void>>();
-	private owner: number | null | undefined;
+	private owner = $state<number | null | undefined>(undefined);
 	private generation = 0;
 
 	entry(code: string, userId: number | null): InviteCardEntry | undefined {
