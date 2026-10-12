@@ -389,6 +389,21 @@ describe('accepting and declining from the banner', () => {
 		expect(goto).toHaveBeenCalledOnce();
 	});
 
+	it('leaves a later accept alone when an old join finishes after a logout', async () => {
+		let connected!: () => void;
+		vi.spyOn(voiceState, 'joinCall')
+			.mockReturnValueOnce(new Promise((resolve) => (connected = resolve)))
+			.mockReturnValue(new Promise(() => {}));
+
+		const first = callsState.accept(call());
+		callsState.reset();
+		void callsState.accept(call({ id: 20 }));
+		connected();
+		await first;
+
+		expect(callsState.accepting).toBe(20);
+	});
+
 	it('declines through the server and drops the banner', async () => {
 		callsState.apply(call());
 		requests.declineCall.mockResolvedValue(call({ state: 'declined', reason: 'declined' }));

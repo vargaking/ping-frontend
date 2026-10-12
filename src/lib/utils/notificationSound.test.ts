@@ -25,7 +25,11 @@ function node() {
 	};
 }
 
-const pagehide = vi.hoisted(() => ({ listeners: new Set<() => void>() }));
+const listeners = vi.hoisted(() => new Map<string, Set<(event: { persisted: boolean }) => void>>());
+
+function fire(type: string, persisted = false) {
+	listeners.get(type)?.forEach((listener) => listener({ persisted }));
+}
 
 import { startRing } from './notificationSound';
 
@@ -34,11 +38,15 @@ beforeEach(() => {
 	context.state = 'suspended';
 	context.createOscillator.mockReset().mockImplementation(node);
 	context.createGain.mockReset().mockImplementation(node);
-	pagehide.listeners.clear();
+	listeners.clear();
 	vi.stubGlobal('window', {
 		AudioContext: FakeAudioContext,
-		addEventListener: (_: string, listener: () => void) => pagehide.listeners.add(listener),
-		removeEventListener: (_: string, listener: () => void) => pagehide.listeners.delete(listener)
+		addEventListener: (type: string, listener: (event: { persisted: boolean }) => void) => {
+			if (!listeners.has(type)) listeners.set(type, new Set());
+			listeners.get(type)!.add(listener);
+		},
+		removeEventListener: (type: string, listener: (event: { persisted: boolean }) => void) =>
+			listeners.get(type)?.delete(listener)
 	});
 });
 
@@ -77,16 +85,30 @@ describe('the ring', () => {
 
 		expect(context.createOscillator).toHaveBeenCalledTimes(2);
 		expect(vi.getTimerCount()).toBe(0);
-		expect(pagehide.listeners.size).toBe(0);
+		expect([...listeners.values()].every((set) => set.size === 0)).toBe(true);
 	});
 
-	it('stops when the page is left', () => {
+	it('pauses when the page is left and rings again when it comes back from the cache', () => {
 		context.state = 'running';
-		startRing();
-		pagehide.listeners.forEach((listener) => listener());
+		const stop = startRing();
+		fire('pagehide');
 		vi.advanceTimersByTime(10_000);
-
 		expect(context.createOscillator).toHaveBeenCalledTimes(2);
 		expect(vi.getTimerCount()).toBe(0);
+
+		fire('pageshow', true);
+		expect(context.createOscillator).toHaveBeenCalledTimes(4);
+		vi.advanceTimersByTime(2_000);
+		expect(context.createOscillator).toHaveBeenCalledTimes(6);
+		stop();
+	});
+
+	it('does not ring twice when the page is shown without having been hidden', () => {
+		context.state = 'running';
+		const stop = startRing();
+		fire('pageshow', true);
+		expect(context.createOscillator).toHaveBeenCalledTimes(2);
+		expect(vi.getTimerCount()).toBe(1);
+		stop();
 	});
 });

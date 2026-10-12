@@ -8,7 +8,7 @@
 	const call = $derived(callsState.incomingCall);
 	const caller = $derived(call ? usersState.users[call.caller_id] : undefined);
 	const name = $derived(caller?.username ?? 'Someone');
-	const busy = $derived(call != null && callsState.accepting === call.id);
+	const busy = $derived(callsState.accepting != null);
 
 	$effect(() => {
 		if (call) usersState.getOrFetchUser(call.caller_id);

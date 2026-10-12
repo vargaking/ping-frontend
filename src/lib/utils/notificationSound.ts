@@ -71,9 +71,11 @@ export function playMentionChime() {
 
 const RING_INTERVAL_MS = 2000;
 
-/** Rings until the returned function is called or the page is left. Quiet while
- *  the audio context isn't running; the next ring is heard once a gesture resumes it. */
+/** Rings until the returned function is called, pausing while the page is hidden away
+ *  in the back/forward cache. Quiet while the audio context isn't running; the next
+ *  ring is heard once a gesture resumes it. */
 export function startRing(): () => void {
+	let timer: ReturnType<typeof setInterval> | undefined;
 	const ring = () => {
 		const context = getContext();
 		if (!context || context.state !== 'running') return;
@@ -81,12 +83,24 @@ export function startRing(): () => void {
 		tone(context, now, 880, 180, 0.12);
 		tone(context, now + 0.24, 660, 180, 0.12);
 	};
-	const stop = () => {
+	const pause = () => {
 		clearInterval(timer);
-		window.removeEventListener('pagehide', stop);
+		timer = undefined;
 	};
-	ring();
-	const timer = setInterval(ring, RING_INTERVAL_MS);
-	window.addEventListener('pagehide', stop);
-	return stop;
+	const resume = () => {
+		if (timer !== undefined) return;
+		ring();
+		timer = setInterval(ring, RING_INTERVAL_MS);
+	};
+	const onShow = (event: PageTransitionEvent) => {
+		if (event.persisted) resume();
+	};
+	resume();
+	window.addEventListener('pagehide', pause);
+	window.addEventListener('pageshow', onShow);
+	return () => {
+		pause();
+		window.removeEventListener('pagehide', pause);
+		window.removeEventListener('pageshow', onShow);
+	};
 }

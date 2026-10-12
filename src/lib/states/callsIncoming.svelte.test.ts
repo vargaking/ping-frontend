@@ -255,5 +255,23 @@ describe('the desktop notification', () => {
 			await vi.advanceTimersByTimeAsync(0);
 			expect(notification.close).toHaveBeenCalled();
 		});
+
+		it('shows one notification per call as more calls come in', async () => {
+			ringing();
+			await vi.advanceTimersByTimeAsync(0);
+			ringing({ id: 11, conversation_id: 6 });
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(FakeNotification.instances.map((n) => n.options.tag)).toEqual(['call-10', 'call-11']);
+		});
+
+		it('closes a notification for a call that stopped ringing while it was being made', async () => {
+			ringing();
+			ringing({ state: 'active' });
+			await vi.advanceTimersByTimeAsync(0);
+
+			const [notification] = FakeNotification.instances;
+			expect(notification.close).toHaveBeenCalled();
+		});
 	});
 });
