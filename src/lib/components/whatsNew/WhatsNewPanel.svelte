@@ -45,7 +45,11 @@
 							<div class="flex items-center gap-2 text-xs text-text-subtle">
 								<span class="font-medium">{levelLabel(announcement.level)}</span>
 								<time datetime={announcement.created_at}>
-									{formatEntryDate(announcement.created_at.slice(0, 10))}
+									{new Date(announcement.created_at).toLocaleDateString(undefined, {
+										day: 'numeric',
+										month: 'short',
+										year: 'numeric'
+									})}
 								</time>
 								{#if announcement.ended}
 									<span class="rounded-full bg-accent px-2 py-0.5 text-[11px] leading-none"
