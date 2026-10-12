@@ -20,6 +20,7 @@
 	import { historySyncState } from '$lib/states/historySyncState.svelte';
 	import { resyncState } from '$lib/states/resyncState.svelte';
 	import { updateState } from '$lib/states/updateState.svelte';
+	import { callKeepAwake } from '$lib/states/callKeepAwake.svelte';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { whatsNewState } from '$lib/states/whatsNewState.svelte';
 	import { writePushPrefs } from '$lib/utils/pushPrefs';
@@ -62,6 +63,7 @@
 	);
 
 	onMount(() => updateState.start());
+	onMount(() => callKeepAwake.start());
 
 	onMount(() => {
 		notificationsState.refreshPermission();
