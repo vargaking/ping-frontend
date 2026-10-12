@@ -1,14 +1,20 @@
 import { untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { AxiosError } from 'axios';
+import { goto } from '$app/navigation';
 import { toast } from 'svelte-sonner';
 import { getActiveCalls } from '$lib/requests/calls/getActiveCalls';
 import { declineCall } from '$lib/requests/calls/declineCall';
 import { startCall } from '$lib/requests/calls/startCall';
 import { getErrorMessage } from '$lib/requests/errors';
 import type { Call, CallStatus } from '$lib/types/call.types';
+import { desktop } from '$lib/desktop';
 import { isOpenCall } from '$lib/utils/callText';
+import { startRing } from '$lib/utils/notificationSound';
+import { withTag, type NotificationData } from '$lib/utils/notificationTags';
 import { describeVoiceError } from '$lib/utils/voiceErrors';
+import { documentFocusState } from '$lib/utils/documentFocus.svelte';
+import { notificationsState } from './notificationsState.svelte';
 import { resyncState } from './resyncState.svelte';
 import { usersState } from './usersState.svelte';
 import { voiceState } from './voiceState.svelte';
@@ -20,6 +26,11 @@ const RANK: Record<CallStatus, number> = {
 	missed: 2,
 	declined: 2
 };
+
+const ICON = '/icon-192.png';
+
+/** The push for a call uses the same tag, so the two replace each other. */
+export const callTag = (callId: number) => `call-${callId}`;
 
 /** A call someone else started, still ringing, that the viewer hasn't answered. */
 export function isIncomingRing(call: Call, me: number | null, now: number): boolean {
@@ -49,6 +60,8 @@ class CallsState {
 	loaded = $state(false);
 	/** A call is being started in this conversation. */
 	starting: number | null = $state(null);
+	/** The call being answered from the banner. */
+	accepting: number | null = $state(null);
 	private now = $state(Date.now());
 
 	private userId: number | null = null;
@@ -60,6 +73,9 @@ class CallsState {
 	// Calls a frame or answer described since the current load began.
 	private touched = new Set<number>();
 	private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+	private stopRing: (() => void) | null = null;
+	private notified = new Set<number>();
+	private shown = new Map<number, Notification>();
 
 	/** Calls that are ringing or active. */
 	get open(): Call[] {
@@ -70,6 +86,14 @@ class CallsState {
 	get incoming(): Call[] {
 		const me = usersState.loggedInUser?.id ?? null;
 		return this.open.filter((call) => isIncomingRing(call, me, this.now));
+	}
+
+	/** The call the banner offers: the newest of the ringing ones. */
+	get incomingCall(): Call | null {
+		return this.incoming.reduce<Call | null>(
+			(newest, call) => (newest && newest.id > call.id ? newest : call),
+			null
+		);
 	}
 
 	forConversation(conversationId: number): Call | null {
@@ -159,6 +183,7 @@ class CallsState {
 		this.byConversation = {};
 		this.loaded = false;
 		this.starting = null;
+		this.accepting = null;
 		this.closed = new Set();
 		this.announced.clear();
 		this.touched = new Set();
@@ -192,9 +217,24 @@ class CallsState {
 		}
 	}
 
-	/** Loads the calls for the signed-in user and again after each resync. Returns the stop function. */
+	/** Joins the call's room, which answers it, and opens the call view. */
+	async accept(call: Call): Promise<void> {
+		if (this.accepting != null) return;
+		this.accepting = call.id;
+		const generation = this.generation;
+		try {
+			const joined = voiceState.joinCall(call);
+			void goto(`/app/direct/${call.conversation_id}/call/`);
+			await joined;
+		} finally {
+			if (generation === this.generation) this.accepting = null;
+		}
+	}
+
+	/** Loads the calls for the signed-in user and again after each resync, rings and notifies
+	 *  for incoming calls. Returns the stop function. */
 	follow(): () => void {
-		return $effect.root(() => {
+		const stopEffects = $effect.root(() => {
 			$effect(() => {
 				const id = usersState.loggedInUser?.id ?? null;
 				untrack(() => this.sync(id));
@@ -203,7 +243,96 @@ class CallsState {
 				if (resyncState.generation === 0) return;
 				untrack(() => void this.load());
 			});
+			$effect(() => {
+				const ring = this.incoming.length > 0 && this.accepting == null && notificationsState.sound;
+				untrack(() => this.ring(ring));
+			});
+			$effect(() => {
+				const wanted = documentFocusState.visible ? [] : this.incoming;
+				untrack(() => this.syncNotifications(wanted));
+			});
 		});
+		return () => {
+			stopEffects();
+			this.ring(false);
+			this.syncNotifications([]);
+		};
+	}
+
+	private ring(on: boolean) {
+		if (on) this.stopRing ??= startRing();
+		else {
+			this.stopRing?.();
+			this.stopRing = null;
+		}
+	}
+
+	private syncNotifications(calls: Call[]) {
+		const wanted = new Set(calls.map((call) => call.id));
+		for (const id of this.notified) {
+			if (wanted.has(id)) continue;
+			this.notified.delete(id);
+			void this.closeNotification(id);
+		}
+		notificationsState.refreshPermission();
+		if (!notificationsState.desktop || notificationsState.permission !== 'granted') return;
+		for (const call of calls) {
+			if (this.notified.has(call.id)) continue;
+			this.notified.add(call.id);
+			void this.showNotification(call);
+		}
+	}
+
+	private async showNotification(call: Call) {
+		const tag = callTag(call.id);
+		const url = `/app/direct/${call.conversation_id}/`;
+		try {
+			const caller = await usersState.getOrFetchUser(call.caller_id);
+			const title = caller?.username ?? 'Someone';
+			const registration = desktop ? undefined : await navigator.serviceWorker?.getRegistration();
+			if (registration) {
+				// A push for this call may have landed first.
+				if (withTag(await registration.getNotifications(), tag).length === 0) {
+					await registration.showNotification(title, {
+						body: 'Incoming call',
+						tag,
+						icon: ICON,
+						data: {
+							url,
+							count: 1,
+							messageUuid: call.message_id,
+							shownAt: Date.now()
+						} satisfies NotificationData
+					});
+				}
+			} else {
+				const notification = new Notification(title, { body: 'Incoming call', tag, icon: ICON });
+				notification.onclick = () => {
+					desktop?.showWindow();
+					window.focus();
+					void goto(url);
+					notification.close();
+				};
+				this.shown.set(call.id, notification);
+			}
+			// The call may have stopped ringing while the notification was being made.
+			if (!this.notified.has(call.id)) await this.closeNotification(call.id);
+		} catch (e) {
+			console.warn('Failed to show call notification', e);
+		}
+	}
+
+	private async closeNotification(callId: number) {
+		try {
+			this.shown.get(callId)?.close();
+			this.shown.delete(callId);
+			if (desktop) return;
+			const registration = await navigator.serviceWorker?.getRegistration();
+			const open = await registration?.getNotifications();
+			if (open) withTag(open, callTag(callId)).forEach((notification) => notification.close());
+		} catch (e) {
+			console.debug('Failed to close call notification', e);
+		}
 	}
 
 	// The banner and the "ringing" rows end on their own when the ring runs out.

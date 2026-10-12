@@ -4,6 +4,7 @@ import type { Call } from '$lib/types/call.types';
 
 const getActiveCalls = vi.hoisted(() => vi.fn());
 
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/requests/calls/getActiveCalls', () => ({ getActiveCalls }));
 vi.mock('$lib/requests/voice/refreshVoicePresence', () => ({
 	refreshVoicePresence: vi.fn(),
