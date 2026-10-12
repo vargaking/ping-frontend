@@ -70,14 +70,15 @@ describe('AnnouncementsState', () => {
 		expect(state.listed).toMatchObject([{ id: 10, ended: true, expires_at: at(-1000) }]);
 	});
 
-	it.each([
-		['incident before maintenance before info', ['info', 'maintenance', 'incident'], 'incident'],
-		['maintenance before info', ['info', 'maintenance'], 'maintenance']
-	] as const)('shows the most severe first: %s', async (_, levels, expected) => {
-		const state = await loaded(levels.map((level) => announcement({ level })));
+	it('shows the most severe first even when it is the oldest', async () => {
+		const state = await loaded([
+			announcement({ id: 1, level: 'incident', created_at: at(-3000) }),
+			announcement({ id: 2, level: 'maintenance', created_at: at(-2000) }),
+			announcement({ id: 3, level: 'info', created_at: at(-1000) }),
+			announcement({ id: 4, level: 'maintenance', created_at: at(-500) })
+		]);
 
-		expect(state.active[0].level).toBe(expected);
-		expect(state.active).toHaveLength(levels.length);
+		expect(ids(state)).toEqual([1, 4, 2, 3]);
 	});
 
 	it('breaks a tie between equal levels by newest', async () => {
@@ -166,6 +167,56 @@ describe('AnnouncementsState', () => {
 			state.markEnded(10, at(0));
 
 			expect(vi.getTimerCount()).toBe(0);
+		});
+	});
+
+	describe('a refetch that was overtaken by a local change', () => {
+		it.each([
+			[
+				'a dismissal',
+				async (state: AnnouncementsState) => {
+					api.dismiss.mockResolvedValue(undefined);
+					await state.dismiss(1);
+				},
+				(state: AnnouncementsState) => expect(ids(state)).toEqual([])
+			],
+			[
+				'an announcement frame',
+				async (state: AnnouncementsState) => state.apply(announcement({ id: 2 })),
+				(state: AnnouncementsState) => expect(ids(state).sort()).toEqual([1, 2])
+			],
+			[
+				'an ended frame',
+				async (state: AnnouncementsState) => state.markEnded(1, at(-1000)),
+				(state: AnnouncementsState) => {
+					expect(ids(state)).toEqual([]);
+					expect(state.listed[0]).toMatchObject({ ended: true, expires_at: at(-1000) });
+				}
+			]
+		])('keeps %s', async (_, change, check) => {
+			const state = await loaded([announcement({ id: 1 })]);
+			let answer!: (items: Announcement[]) => void;
+			api.get.mockReturnValueOnce(new Promise<Announcement[]>((r) => (answer = r)));
+
+			const refreshing = state.refresh();
+			await change(state);
+			answer([announcement({ id: 1 })]);
+			await refreshing;
+
+			check(state);
+		});
+
+		it('still takes the server state for what nothing changed locally', async () => {
+			const state = await loaded([announcement({ id: 1 }), announcement({ id: 2 })]);
+			let answer!: (items: Announcement[]) => void;
+			api.get.mockReturnValueOnce(new Promise<Announcement[]>((r) => (answer = r)));
+
+			const refreshing = state.refresh();
+			state.apply(announcement({ id: 3 }));
+			answer([announcement({ id: 1, dismissed: true }), announcement({ id: 2, ended: true })]);
+			await refreshing;
+
+			expect(ids(state)).toEqual([3]);
 		});
 	});
 

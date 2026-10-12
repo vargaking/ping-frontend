@@ -16,6 +16,8 @@ export class AnnouncementsState {
 	items: Announcement[] = $state([]);
 	private userId: number | null = null;
 	private generation = 0;
+	/** Counts local changes, so a response that was overtaken by one gets merged, not swapped in. */
+	private mutations = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 
 	/** Newest first, for the What's new panel. */
@@ -35,6 +37,7 @@ export class AnnouncementsState {
 		if (userId === this.userId) return;
 		this.generation++;
 		this.userId = userId;
+		this.mutations++;
 		this.items = [];
 		this.rearm();
 		if (userId != null) void this.refresh();
@@ -43,10 +46,11 @@ export class AnnouncementsState {
 	async refresh(): Promise<void> {
 		if (this.userId == null) return;
 		const generation = this.generation;
+		const mutations = this.mutations;
 		try {
 			const items = await getAnnouncements();
 			if (generation !== this.generation) return;
-			this.items = items;
+			this.items = mutations === this.mutations ? items : this.merge(items);
 			this.rearm();
 		} catch (e) {
 			console.warn('Failed to load announcements', e);
@@ -55,11 +59,13 @@ export class AnnouncementsState {
 
 	apply(announcement: Announcement): void {
 		if (this.userId == null) return;
+		this.mutations++;
 		this.items = [...this.items.filter((a) => a.id !== announcement.id), announcement];
 		this.rearm();
 	}
 
 	markEnded(id: number, expiresAt: string): void {
+		this.mutations++;
 		this.items = this.items.map((a) =>
 			a.id === id ? { ...a, ended: true, expires_at: expiresAt } : a
 		);
@@ -80,7 +86,23 @@ export class AnnouncementsState {
 	}
 
 	private setDismissed(id: number, dismissed: boolean) {
+		this.mutations++;
 		this.items = this.items.map((a) => (a.id === id ? { ...a, dismissed } : a));
+	}
+
+	/** What the server said, plus what happened here while it was answering. */
+	private merge(fetched: Announcement[]): Announcement[] {
+		const merged = fetched.map((remote) => {
+			const mine = this.items.find((a) => a.id === remote.id);
+			if (!mine) return remote;
+			return {
+				...remote,
+				dismissed: mine.dismissed || remote.dismissed,
+				...(mine.ended && { ended: true, expires_at: mine.expires_at })
+			};
+		});
+		const fromFrames = this.items.filter((a) => !fetched.some((f) => f.id === a.id));
+		return [...merged, ...fromFrames];
 	}
 
 	/** One timer, to the soonest expiry; the server filter and resync cover a sleeping tab. */
