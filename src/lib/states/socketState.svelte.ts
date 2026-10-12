@@ -40,7 +40,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Embed, MessageTarget, MessageType } from '$lib/types/messages.types';
 import type { User } from '$lib/types/auth.types';
 import type { CallStateFrame } from '$lib/types/call.types';
-import { callMeta } from '$lib/utils/callText';
+import { callMeta, isOpenCall } from '$lib/utils/callText';
 import type { Attachment } from '$lib/types/attachment.types';
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
@@ -503,6 +503,8 @@ class SocketState {
 		const conversationId = message.conversation_id;
 
 		if (conversationId != null) typingState.clear(directThreadKey(conversationId), message.user_id);
+
+		if (message.call && isOpenCall(message.call.state)) callsState.noteAnnounced(message.call.id);
 
 		// Only append to threads already loaded; an unopened one fetches its
 		// history (including this message) when opened.

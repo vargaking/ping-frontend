@@ -206,6 +206,62 @@ describe('loading the active calls', () => {
 		expect(callsState.byConversation[5].state).toBe('ended');
 	});
 
+	it('does not call a freshly announced row stale before its call_state arrives', () => {
+		callsState.noteAnnounced(10);
+		expect(callsState.isStale(10)).toBe(false);
+
+		callsState.apply(call());
+		expect(callsState.isStale(10)).toBe(false);
+		callsState.apply(call({ state: 'ended' }));
+		expect(callsState.isStale(10)).toBe(true);
+	});
+
+	it('settles an announced row that never got its call_state on the next load', async () => {
+		callsState.noteAnnounced(10);
+
+		await callsState.load();
+
+		expect(callsState.isStale(10)).toBe(true);
+	});
+
+	it('keeps a row announced while a load was running until the next load', async () => {
+		let answer!: (calls: Call[]) => void;
+		requests.getActiveCalls.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+
+		const loading = callsState.load();
+		callsState.noteAnnounced(10);
+		answer([]);
+		await loading;
+
+		expect(callsState.isStale(10)).toBe(false);
+	});
+
+	it('ignores an announcement for a call already known to be over', () => {
+		callsState.apply(call({ state: 'ended' }));
+		callsState.noteAnnounced(10);
+		expect(callsState.isStale(10)).toBe(true);
+	});
+
+	it('does not let an older overlapping load drop a call created while it ran', async () => {
+		const answers: ((calls: Call[]) => void)[] = [];
+		requests.getActiveCalls.mockImplementation(
+			() => new Promise((resolve) => answers.push(resolve))
+		);
+
+		const older = callsState.load();
+		callsState.apply(call({ id: 20, conversation_id: 9, caller_id: ME, callee_id: 2 }));
+		const newer = callsState.load();
+		answers[0]([]);
+		await older;
+
+		expect(callsState.forConversation(9)?.id).toBe(20);
+		answers[1]([call({ id: 20, conversation_id: 9, caller_id: ME, callee_id: 2 })]);
+		await newer;
+
+		expect(callsState.forConversation(9)?.id).toBe(20);
+		expect(callsState.apply(call({ id: 20, conversation_id: 9, state: 'active' }))).toBe(true);
+	});
+
 	it('is not stale before the list has loaded', () => {
 		callsState.reset();
 		expect(callsState.isStale(10)).toBe(false);

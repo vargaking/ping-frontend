@@ -1,4 +1,5 @@
 import { untrack } from 'svelte';
+import { SvelteSet } from 'svelte/reactivity';
 import { AxiosError } from 'axios';
 import { toast } from 'svelte-sonner';
 import { getActiveCalls } from '$lib/requests/calls/getActiveCalls';
@@ -53,6 +54,9 @@ class CallsState {
 	private userId: number | null = null;
 	private generation = 0;
 	private closed = new Set<number>();
+	// Rows announced by a message whose call_state hasn't arrived yet.
+	private announced = new SvelteSet<number>();
+	private loadSeq = 0;
 	// Calls a frame or answer described since the current load began.
 	private touched = new Set<number>();
 	private expiryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,7 +83,12 @@ class CallsState {
 
 	/** A cached row still says ringing or active, but the server no longer lists that call. */
 	isStale(callId: number): boolean {
-		return this.loaded && !this.isOpen(callId);
+		return this.loaded && !this.isOpen(callId) && !this.announced.has(callId);
+	}
+
+	/** A new call row arrived. Its call_state follows, and until then the row is not stale. */
+	noteAnnounced(callId: number): void {
+		if (!this.closed.has(callId)) this.announced.add(callId);
 	}
 
 	/** Takes in a description of a call unless a newer one is already held. */
@@ -92,6 +101,7 @@ class CallsState {
 		if (this.closed.has(call.id) && isOpenCall(call.state)) return false;
 
 		this.touched.add(call.id);
+		this.announced.delete(call.id);
 		this.byConversation[call.conversation_id] = call;
 		if (!isOpenCall(call.state)) {
 			this.closed.add(call.id);
@@ -113,7 +123,10 @@ class CallsState {
 	async load(): Promise<void> {
 		if (this.userId == null) return;
 		const generation = this.generation;
+		// A newer load sees everything this one would, so only the latest result counts.
+		const seq = ++this.loadSeq;
 		this.touched = new Set();
+		const announcedBefore = [...this.announced];
 		let calls: Call[];
 		try {
 			calls = await getActiveCalls();
@@ -121,7 +134,7 @@ class CallsState {
 			console.warn('Failed to load active calls', e);
 			return;
 		}
-		if (generation !== this.generation) return;
+		if (generation !== this.generation || seq !== this.loadSeq) return;
 
 		const framed = this.touched;
 		const listed = new Set(calls.map((call) => call.id));
@@ -136,6 +149,7 @@ class CallsState {
 		if (joined != null && !listed.has(joined) && !framed.has(joined))
 			void voiceState.endCall(joined);
 
+		for (const id of announcedBefore) this.announced.delete(id);
 		this.loaded = true;
 		this.scheduleExpiry();
 	}
@@ -146,6 +160,7 @@ class CallsState {
 		this.loaded = false;
 		this.starting = null;
 		this.closed = new Set();
+		this.announced.clear();
 		this.touched = new Set();
 		this.scheduleExpiry();
 	}
