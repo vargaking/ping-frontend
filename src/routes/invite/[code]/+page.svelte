@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { useInvite, getInvite } from '$lib/requests/invites';
-	import { serversState } from '$lib/states/serversState.svelte';
+	import { getInvite } from '$lib/requests/invites';
+	import { joinInvite } from '$lib/utils/joinInvite';
 	import { usersState } from '$lib/states/usersState.svelte';
 	import { getErrorMessage } from '$lib/requests/errors';
 	import { goto } from '$app/navigation';
@@ -58,16 +58,8 @@
 		joinError = null;
 
 		try {
-			const result = await useInvite(invite.id, invite.has_password ? { password } : {});
-
-			// If join is successful, immediately fetch user servers to update the state
-			await serversState.fetchUserServers();
-			serversState
-				.fetchServerChannels(result.server_id)
-				.catch((e) => console.warn('Failed to load channels for joined server', e));
-
-			// Navigate to the server page
-			goto(`/app/server/${result.server_id}`);
+			const serverId = await joinInvite(invite.id, invite.has_password ? password : undefined);
+			goto(`/app/server/${serverId}`);
 		} catch (e: unknown) {
 			console.error('Failed to join server via invite:', e);
 			joinError = getErrorMessage(e) || 'Failed to join the server.';
