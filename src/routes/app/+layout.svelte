@@ -31,6 +31,7 @@
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import { membersPanelState } from '$lib/states/membersPanelState.svelte';
 	import { shellViewportState } from '$lib/states/shellViewportState.svelte';
+	import { attachPagePanGuard } from '$lib/utils/pagePan';
 	import {
 		expectedKeyboardHeight,
 		isTextEntry,
@@ -235,7 +236,9 @@
 		window.addEventListener('orientationchange', onOrientation);
 		document.addEventListener('focusin', onFocusIn);
 		document.addEventListener('focusout', onFocusOut);
+		const detachPanGuard = attachPagePanGuard(() => root.hasAttribute('data-keyboard'));
 		return () => {
+			detachPanGuard();
 			clearTimers();
 			stopAnticipating();
 			viewport.removeEventListener('resize', onViewportResize);
