@@ -7,6 +7,18 @@ import type { WhatsNewEntry } from '$lib/types/whatsNew.types';
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
 	{
+		id: '2026-10-12',
+		date: '2026-10-12',
+		title: 'Friends, and channels that open straight away',
+		bullets: [
+			'Add friends from a profile card, answer requests on the new Friends page, and see when friends are online even without a shared server.',
+			'Channels, DMs and posts you have opened before show their messages at once, then catch up.',
+			'Messages edited or deleted while your device was away are updated or removed when you come back.',
+			'On a phone, tapping a voice channel shows who is in it first, with Join and Join muted.',
+			'On a phone, the screen stays on during a voice call.'
+		]
+	},
+	{
 		id: '2026-10-11-2',
 		date: '2026-10-11',
 		title: 'Search filters, and smoother game streams',
