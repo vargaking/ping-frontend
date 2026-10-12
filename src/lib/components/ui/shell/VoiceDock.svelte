@@ -7,6 +7,7 @@
 	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
+	import { callKeepAwake } from '$lib/states/callKeepAwake.svelte';
 	import { Permission } from '$lib/permissions';
 	import {
 		SCREEN_CONTENT_LABELS,
@@ -193,6 +194,22 @@
 						: ''} focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 				>
 					{voiceState.micError === 'off' ? 'Allow' : 'Try again'}
+				</button>
+			</div>
+		{/if}
+
+		{#if compact && callKeepAwake.noteVisible}
+			<div
+				class="col-span-2 mb-2 flex items-center gap-2 rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground"
+				role="status"
+			>
+				<span class="min-w-0 flex-1">Voice pauses when you leave the app.</span>
+				<button
+					type="button"
+					onclick={() => callKeepAwake.dismissNote()}
+					class="min-h-11 shrink-0 rounded-sm px-2 font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+				>
+					Got it
 				</button>
 			</div>
 		{/if}
