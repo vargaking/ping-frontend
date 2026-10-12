@@ -240,7 +240,8 @@ function mergeSources(loads: Load[]): MessagePager {
 const EMPTY_PAGER: MessagePager = { next: async () => [] };
 
 /** Ranges that each hold every match, so any one of them can drive the search. The ranges of
- *  several `from:` keys form one candidate, merged. */
+ *  several `from:` keys form one candidate, merged. A server or everywhere scope is big enough
+ *  that counting it costs more than checking it per row, so it only drives when no filter can. */
 function driverCandidates(scope: SearchScope, f: MessageFilters): Range[][] {
 	const candidates: Range[][] = f.has.map((kind) => [
 		{ index: `[${HAS_FIELD[kind]}+ts]` as TimeIndex, key: 1 }
@@ -248,8 +249,29 @@ function driverCandidates(scope: SearchScope, f: MessageFilters): Range[][] {
 	if (f.fromKeys) {
 		candidates.push(f.fromKeys.map((key) => ({ index: '[fromKey+ts]', key })));
 	}
-	if (scope.kind !== 'everywhere' || candidates.length === 0) candidates.push([scopeRange(scope)]);
+	const checkedPerRow = scope.kind === 'everywhere' || scope.kind === 'server';
+	if (candidates.length === 0 || !checkedPerRow) candidates.push([scopeRange(scope)]);
 	return candidates;
+}
+
+type Driver = { ranges: Range[]; size: number };
+
+/** The candidate with the fewest rows. Counting walks the range, so a lone candidate is not
+ *  counted: its size is unknown and the search walks it. */
+async function chooseDriver(candidates: Range[][], filters: MessageFilters): Promise<Driver> {
+	if (candidates.length === 1) return { ranges: candidates[0], size: Infinity };
+	const sized = await Promise.all(
+		candidates.map(async (ranges) => {
+			const counts = await Promise.all(
+				ranges.map((range) => rangeCollection(range, filters, null).count())
+			);
+			return {
+				ranges: ranges.filter((_, i) => counts[i] > 0),
+				size: counts.reduce((sum, count) => sum + count, 0)
+			};
+		})
+	);
+	return sized.reduce((a, b) => (b.size < a.size ? b : a));
 }
 
 /** Messages matching all tokens and filters within scope, newest first, read as they are asked
@@ -272,18 +294,7 @@ export async function pageMessages(
 		if (words.size === 0) return EMPTY_PAGER;
 	}
 
-	const candidates = await Promise.all(
-		driverCandidates(scope, filters).map(async (ranges) => {
-			const counts = await Promise.all(
-				ranges.map((range) => rangeCollection(range, filters, null).count())
-			);
-			return {
-				ranges: ranges.filter((_, i) => counts[i] > 0),
-				size: counts.reduce((sum, count) => sum + count, 0)
-			};
-		})
-	);
-	const driver = candidates.reduce((a, b) => (b.size < a.size ? b : a));
+	const driver = await chooseDriver(driverCandidates(scope, filters), filters);
 	if (driver.size === 0) return EMPTY_PAGER;
 
 	if (words && words.size <= SMALL_MATCH_SET && words.size < driver.size) {
