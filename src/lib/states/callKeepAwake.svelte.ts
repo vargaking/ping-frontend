@@ -23,9 +23,7 @@ class CallKeepAwake {
 	private requesting = false;
 	private sentinel: WakeLockSentinel | null = null;
 
-	readonly inCall = $derived(
-		voiceState.connecting || voiceState.connected || voiceState.reconnecting
-	);
+	readonly inCall = $derived(voiceState.connected || voiceState.reconnecting);
 	readonly noteVisible = $derived(phoneState.phone && this.inCall && !this.noteSeen);
 
 	start() {
@@ -35,7 +33,7 @@ class CallKeepAwake {
 
 		$effect.root(() => {
 			$effect(() => {
-				const hold = phoneState.touch && (voiceState.connected || voiceState.reconnecting);
+				const hold = phoneState.touch && this.inCall;
 				untrack(() => {
 					this.wanted = hold;
 					void this.sync();

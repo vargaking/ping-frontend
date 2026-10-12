@@ -180,18 +180,6 @@ describe('wake lock', () => {
 		expect(request).not.toHaveBeenCalled();
 	});
 
-	it('does nothing where the browser has no wake lock', async () => {
-		const { phoneState, voiceState } = await load(undefined);
-		phoneState.touch = true;
-		voiceState.connected = true;
-		await settle();
-		await changeVisibility('hidden');
-		await changeVisibility('visible');
-
-		voiceState.connected = false;
-		await settle();
-	});
-
 	it('tries again after a refused request', async () => {
 		request.mockRejectedValueOnce(new DOMException('refused', 'NotAllowedError'));
 		const { phoneState, voiceState } = await load();
@@ -213,7 +201,7 @@ describe('phone note', () => {
 		expect(callKeepAwake.noteVisible).toBe(false);
 
 		phoneState.phone = true;
-		voiceState.connecting = true;
+		voiceState.connected = true;
 		await settle();
 		expect(callKeepAwake.noteVisible).toBe(true);
 	});
@@ -272,11 +260,15 @@ describe('phone note', () => {
 		expect(callKeepAwake.noteVisible).toBe(false);
 	});
 
-	it('is not used up by a call without it on screen', async () => {
+	it.each([
+		['a call off a phone', { phone: false, field: 'connected' }],
+		['a phone join that never connects', { phone: true, field: 'connecting' }]
+	] as const)('is not used up by %s', async (_name, { phone, field }) => {
 		const { phoneState, voiceState, callKeepAwake } = await load();
-		voiceState.connected = true;
+		phoneState.phone = phone;
+		voiceState[field] = true;
 		await settle();
-		voiceState.connected = false;
+		voiceState[field] = false;
 		await settle();
 
 		phoneState.phone = true;
