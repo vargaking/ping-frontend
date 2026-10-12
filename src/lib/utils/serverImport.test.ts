@@ -23,6 +23,7 @@ import {
 	mergeImportFrame,
 	notImportedLines,
 	percent,
+	showImportedAuthors,
 	platformName,
 	POLL_MS,
 	pollInterval,
@@ -639,5 +640,18 @@ describe('listCapped', () => {
 		const twelve = Array.from({ length: 12 }, (_, i) => String(i + 1));
 		expect(listCapped(twelve)).toBe('1, 2, 3, 4, 5, 6, 7, 8, 9, 10 and 2 more');
 		expect(listCapped(twelve.slice(0, 10))).toBe(twelve.slice(0, 10).join(', '));
+	});
+});
+
+describe('showImportedAuthors', () => {
+	it.each([
+		[false, true, 'ready', true],
+		[false, true, 'loading', false],
+		[false, true, 'missing', false],
+		[false, true, 'error', false],
+		[false, false, 'ready', false],
+		[true, true, 'ready', false]
+	] as const)('owner %s, may match %s, %s gives %s', (isOwner, canMap, status, expected) => {
+		expect(showImportedAuthors(isOwner, canMap, status)).toBe(expected);
 	});
 });

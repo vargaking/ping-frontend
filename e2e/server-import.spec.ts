@@ -1,5 +1,13 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { createInvite, createServer, joinInvite, newUser, uniqueName } from './helpers';
+import {
+	createInvite,
+	createRole,
+	createServer,
+	joinInvite,
+	newUser,
+	setMemberRoles,
+	uniqueName
+} from './helpers';
 import { storedZip } from './zip';
 
 const CHANNEL = 'imported-general';
@@ -170,6 +178,64 @@ test('the owner imports an export, matches an author and everyone sees the chann
 	).toHaveCount(0);
 
 	expect(importReads, 'the whole flow should need only a few reads').toBeLessThan(40);
+});
+
+test('a member who may match authors maps one and the owner sees it in the recent changes', async ({
+	browser
+}) => {
+	const owner = await newUser(browser, 'owner');
+	const matcher = await newUser(browser, 'matcher');
+	const serverName = uniqueName('Guild');
+	const server = await createServer(owner.context, serverName);
+	await joinInvite(matcher.context, (await createInvite(owner.context, server.id)).id);
+	// Match imported authors is bit 15.
+	const role = await createRole(owner.context, server.id, 'Matchers', {
+		allow: String(1 << 15)
+	});
+	await setMemberRoles(owner.context, server.id, matcher.user.id, [role.id]);
+
+	await owner.page.goto(`/app/server/${server.id}/`);
+	const ownerTabs = await openServerSettings(owner.page, serverName);
+	await ownerTabs.getByRole('button', { name: 'Import' }).click();
+	await owner.page.locator('input[type="file"][accept*=".zip"]').setInputFiles({
+		name: 'export.zip',
+		mimeType: 'application/zip',
+		buffer: exportZip(uniqueName('src'))
+	});
+	await owner.page.getByRole('button', { name: 'Start import' }).click({ timeout: 60_000 });
+	await expect(
+		owner.page.getByText('Imported 2 messages, 0 forum posts and 0 attachments from Deducks.'),
+		'the import should finish'
+	).toBeVisible({ timeout: 60_000 });
+
+	await matcher.page.goto(`/app/server/${server.id}/`);
+	const matcherTabs = await openServerSettings(matcher.page, serverName);
+	await expect(
+		matcherTabs.getByRole('button', { name: 'Import', exact: true }),
+		'the Import tab is for the owner'
+	).toHaveCount(0);
+	await matcherTabs.getByRole('button', { name: 'Imported authors' }).click();
+	await expect(matcher.page.getByText('0 of 2 matched')).toBeVisible();
+
+	await matcher.page.getByRole('button', { name: 'Member for Maple' }).click();
+	await matcher.page.getByRole('combobox', { name: 'Search members' }).fill(matcher.user.username);
+	await matcher.page.getByRole('option', { name: matcher.user.username, exact: true }).click();
+	await matcher.page.getByRole('button', { name: 'Apply' }).click();
+
+	const entry = (page: Page) =>
+		page
+			.getByRole('list', { name: 'Recent changes' })
+			.getByRole('listitem')
+			.filter({ hasText: `Maple · Not mapped → ${matcher.user.username}` });
+	await expect(entry(matcher.page), 'the change should be logged').toContainText(
+		matcher.user.username
+	);
+	await expect(matcher.page.getByText('1 of 2 matched')).toBeVisible();
+
+	await owner.page.getByRole('button', { name: 'Close settings' }).click();
+	const reopened = await openServerSettings(owner.page, serverName);
+	await reopened.getByRole('button', { name: 'Import' }).click();
+	await expect(entry(owner.page), 'the owner should see the same change').toBeVisible();
 });
 
 test('the owner picks which private channels come along and who sees them', async ({ browser }) => {

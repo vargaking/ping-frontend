@@ -364,3 +364,12 @@ export function listCapped(items: string[], max = 10): string {
 	if (items.length <= max) return items.join(', ');
 	return `${items.slice(0, max).join(', ')} and ${items.length - max} more`;
 }
+
+/** Whether the settings list "Imported authors": for members who may match authors but don't own the server, once a finished import is known. */
+export function showImportedAuthors(
+	isOwner: boolean,
+	canMapAuthors: boolean,
+	status: 'loading' | 'ready' | 'missing' | 'error'
+): boolean {
+	return !isOwner && canMapAuthors && status === 'ready';
+}

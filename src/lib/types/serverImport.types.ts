@@ -112,9 +112,33 @@ export type Import = {
 	updated_at: string;
 };
 
+/** One mapping change of a finished import; a null user means not mapped. */
+export type ImportAuthorChange = {
+	id: number;
+	author_id: string;
+	author_name: string;
+	actor_id: number | null;
+	from_user_id: number | null;
+	to_user_id: number | null;
+	created_at: string;
+};
+
 export type ImportsResponse = {
 	limits: ImportLimits;
 	import: Import | null;
+	/** Absent on older servers. */
+	changes?: ImportAuthorChange[];
+};
+
+/** What members who may match authors, but don't own the server, get in a progress frame. */
+export type HolderImportFrame = Pick<Import, 'id' | 'status' | 'progress' | 'error' | 'updated_at'>;
+
+/** The finished import as those members see it: no plan, result or file details. */
+export type AuthorsImport = HolderImportFrame & Pick<Import, 'source' | 'authors'>;
+
+export type ImportedAuthorsResponse = {
+	import: AuthorsImport;
+	changes: ImportAuthorChange[];
 };
 
 export type ImportPiece = {
@@ -129,7 +153,7 @@ export type AuthorMapping = Record<string, number | null>;
 export type ServerImportUpdatedFrame = {
 	type: 'server_import_updated';
 	server_id: number;
-	import: Import;
+	import: Import | HolderImportFrame;
 };
 
 export type ServerImportFinishedFrame = {

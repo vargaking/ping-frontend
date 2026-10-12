@@ -27,6 +27,7 @@
 	import Button from '$lib/components/ui/button/button.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
 	import ErrorState from '$lib/components/ui/feedback/ErrorState.svelte';
+	import ImportChanges from './ImportChanges.svelte';
 	import ServerImportAuthors from './ServerImportAuthors.svelte';
 	import ServerImportChannels from './ServerImportChannels.svelte';
 	import ServerImportProgress from './ServerImportProgress.svelte';
@@ -542,6 +543,7 @@
 			{@render notImported(result)}
 		{/if}
 		{@render authorsSection('Apply', true)}
+		<ImportChanges changes={entry?.changes ?? []} {members} />
 
 		<section aria-labelledby="import-newer" class="flex flex-col gap-2">
 			<h3 id="import-newer" class="text-sm font-semibold">Upload a newer export</h3>
