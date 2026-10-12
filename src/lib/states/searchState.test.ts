@@ -9,6 +9,7 @@ import {
 	storedUserIds,
 	type MessagePager
 } from '$lib/utils/messageSearch';
+import { EMPTY_SCAN, scanStoredAuthors, type AuthorScan } from '$lib/utils/searchAuthors';
 import { conversationsState } from './conversationsState.svelte';
 import { searchState } from './searchState.svelte';
 import { unreadState } from './unreadState.svelte';
@@ -23,6 +24,12 @@ vi.mock('$lib/utils/messageSearch', async (importOriginal) => ({
 	storedUserIds: vi.fn()
 }));
 
+vi.mock('$lib/utils/searchAuthors', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/utils/searchAuthors')>()),
+	scanStoredAuthors: vi.fn()
+}));
+
+const scanAuthors = vi.mocked(scanStoredAuthors);
 const findIds = vi.mocked(findMessageIds);
 const storedIds = vi.mocked(storedUserIds);
 const findPostRows = vi.mocked(findPosts);
@@ -55,6 +62,7 @@ beforeEach(() => {
 	pageRows.mockReset().mockResolvedValue(pagerOf([]).pager);
 	findPostRows.mockReset().mockResolvedValue([]);
 	storedIds.mockReset().mockResolvedValue([]);
+	scanAuthors.mockReset().mockResolvedValue(EMPTY_SCAN);
 	loadRows.mockReset().mockImplementation(async (ids) => ids.map((id) => channelMessage(id, 10)));
 	unreadState.noteNewChannel(1, { id: 10, name: 'general', type: 'text' } as never);
 	unreadState.noteNewChannel(1, { id: 20, name: 'forum', type: 'forum' } as never);
@@ -198,6 +206,85 @@ describe('searchState', () => {
 			await vi.advanceTimersByTimeAsync(120);
 			expect(fetchUser).toHaveBeenCalledTimes(1);
 			expect(pageRows.mock.calls[1][2]?.fromKeys).toEqual(['name:nobody']);
+		});
+
+		describe('author names', () => {
+			const withDenes: AuthorScan = {
+				userIds: [],
+				imported: [{ key: 'name:denes', name: 'Dénes' }]
+			};
+
+			it('resolves a typed prefix to the typed name and every author it starts', async () => {
+				scanAuthors.mockResolvedValue(withDenes);
+				searchState.setQuery('from:den');
+				await vi.advanceTimersByTimeAsync(120);
+
+				expect(pageRows.mock.calls[0][2]?.fromKeys).toEqual(['name:den', 'name:denes']);
+			});
+
+			it('takes a complete imported name without fetching profiles', async () => {
+				scanAuthors.mockResolvedValue(withDenes);
+				storedIds.mockResolvedValue([5]);
+				const fetchUser = vi.spyOn(usersState, 'getOrFetchUser');
+				searchState.setQuery('from:denes');
+				await vi.advanceTimersByTimeAsync(120);
+
+				expect(pageRows.mock.calls[0][2]?.fromKeys).toEqual(['name:denes']);
+				expect(fetchUser).not.toHaveBeenCalled();
+				expect(storedIds).not.toHaveBeenCalled();
+			});
+
+			it('scans once per session, and again after a reset', async () => {
+				searchState.setQuery('from:a');
+				await vi.advanceTimersByTimeAsync(120);
+				searchState.setQuery('from:b');
+				await vi.advanceTimersByTimeAsync(120);
+				expect(scanAuthors).toHaveBeenCalledTimes(1);
+
+				searchState.reset();
+				await searchState.loadAuthors();
+				expect(scanAuthors).toHaveBeenCalledTimes(2);
+			});
+
+			it('keeps the authors once the scan is done', async () => {
+				scanAuthors.mockResolvedValue(withDenes);
+				await searchState.loadAuthors();
+				expect(searchState.authors).toEqual(withDenes);
+				searchState.reset();
+				expect(searchState.authors).toEqual(EMPTY_SCAN);
+			});
+
+			it('drops a scan that finishes after a reset', async () => {
+				const slow = deferred<AuthorScan>();
+				scanAuthors.mockReturnValueOnce(slow.promise);
+				const loading = searchState.loadAuthors();
+				searchState.reset();
+				slow.resolve(withDenes);
+				await loading;
+
+				expect(searchState.authors).toEqual(EMPTY_SCAN);
+			});
+
+			it('scans again after a failed scan', async () => {
+				vi.spyOn(console, 'warn').mockImplementation(() => {});
+				scanAuthors.mockRejectedValueOnce(new Error('broken'));
+				expect(await searchState.loadAuthors()).toEqual(EMPTY_SCAN);
+				scanAuthors.mockResolvedValue(withDenes);
+				expect(await searchState.loadAuthors()).toEqual(withDenes);
+			});
+
+			it('fetches the profiles of scanned users who are not loaded', async () => {
+				scanAuthors.mockResolvedValue({ userIds: [5, 6], imported: [] });
+				usersState.applyUser(user(6, 'someone'));
+				const fetchUser = vi.spyOn(usersState, 'getOrFetchUser').mockImplementation(async (id) => {
+					usersState.applyUser(user(id, 'Gone'));
+					return usersState.users[id];
+				});
+				await searchState.loadAuthorProfiles();
+
+				expect(fetchUser).toHaveBeenCalledTimes(1);
+				expect(fetchUser).toHaveBeenCalledWith(5);
+			});
 		});
 
 		it('tries a profile that failed to load again on the next search', async () => {

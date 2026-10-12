@@ -2,7 +2,6 @@ import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 import {
 	findMessageIds,
 	findPosts,
-	fromKeysForName,
 	loadMessages,
 	pageMessages,
 	storedUserIds,
@@ -10,6 +9,13 @@ import {
 	type MessagePager,
 	type SearchScope
 } from '$lib/utils/messageSearch';
+import {
+	EMPTY_SCAN,
+	exactAuthorKeys,
+	prefixAuthorKeys,
+	scanStoredAuthors,
+	type AuthorScan
+} from '$lib/utils/searchAuthors';
 import type { HasKind } from '$lib/utils/searchFacets';
 import { hasFilters, parseSearchQuery } from '$lib/utils/searchQuery';
 import { conversationsState } from './conversationsState.svelte';
@@ -55,6 +61,8 @@ class SearchState {
 	/** The `has:` filters the shown results were found with. */
 	has = $state.raw<HasKind[]>([]);
 	hasMore = $state(false);
+	/** Every author in the local history; filled once per session, by `loadAuthors`. */
+	authors = $state.raw<AuthorScan>(EMPTY_SCAN);
 
 	private ids: string[] = [];
 	private pager: MessagePager | null = null;
@@ -66,6 +74,9 @@ class SearchState {
 	private loadingToken: number | null = null;
 	/** Stored authors whose profile was already asked for, so a name with no match isn't refetched. */
 	private authorFetches = new Map<number, Promise<unknown>>();
+	private authorScan: Promise<AuthorScan> | null = null;
+	/** Bumped by reset, so a scan that finishes after logout doesn't fill the next session. */
+	private authorGen = 0;
 
 	setQuery(query: string) {
 		this.query = query;
@@ -109,12 +120,40 @@ class SearchState {
 		}
 	}
 
+	/** Reads the authors out of the local history once; later calls share the result. */
+	loadAuthors(): Promise<AuthorScan> {
+		if (this.authorScan) return this.authorScan;
+		const gen = this.authorGen;
+		const scan = scanStoredAuthors().then(
+			(result) => {
+				if (gen === this.authorGen) this.authors = result;
+				return result;
+			},
+			(e) => {
+				console.warn('Failed to list authors in the local history', e);
+				if (gen === this.authorGen) this.authorScan = null;
+				return EMPTY_SCAN;
+			}
+		);
+		this.authorScan = scan;
+		return scan;
+	}
+
+	/** Brings the profiles of the stored authors up, so the suggestions can show their names. */
+	async loadAuthorProfiles(): Promise<void> {
+		const { userIds } = await this.loadAuthors();
+		await this.fetchAuthors(userIds.filter((id) => !usersState.users[id]));
+	}
+
 	reset() {
 		this.token++;
+		this.authorGen++;
 		this.clearTimer();
 		this.query = '';
 		this.scope = EVERYWHERE;
 		this.authorFetches.clear();
+		this.authorScan = null;
+		this.authors = EMPTY_SCAN;
 		this.clear();
 	}
 
@@ -203,20 +242,33 @@ class SearchState {
 		}
 	}
 
-	/** The author keys a `from:` name can mean. Profiles of stored authors that aren't loaded
-	 *  are fetched only when no loaded user has the name. */
+	/** The author keys a `from:` name can mean: exactly, when someone has that name, otherwise
+	 *  everyone whose name starts with it. Profiles of stored authors that aren't loaded are
+	 *  fetched only when no known author has the name. */
 	private async resolveFrom(name: string): Promise<string[]> {
-		const known = fromKeysForName(name, Object.values(usersState.users));
-		if (known.some((key) => key.startsWith('user:'))) return known;
-		const missing = (await storedUserIds()).filter((id) => !usersState.users[id]);
-		const queue = [...missing];
+		const { imported } = await this.loadAuthors();
+		const exact = exactAuthorKeys(name, imported, Object.values(usersState.users));
+		if (exact) return exact;
+		const stored = await storedUserIds();
+		await this.fetchAuthors(stored.filter((id) => !usersState.users[id]));
+		return (
+			exactAuthorKeys(name, imported, Object.values(usersState.users)) ??
+			prefixAuthorKeys(
+				name,
+				imported,
+				stored.flatMap((id) => usersState.users[id] ?? [])
+			)
+		);
+	}
+
+	private async fetchAuthors(ids: number[]): Promise<void> {
+		const queue = [...ids];
 		const worker = async () => {
 			for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
 				await this.fetchAuthor(id);
 			}
 		};
 		await Promise.all(Array.from({ length: AUTHOR_FETCHES }, worker));
-		return fromKeysForName(name, Object.values(usersState.users));
 	}
 
 	/** One request per author; a later search waits for it, and one that failed is tried again. */
