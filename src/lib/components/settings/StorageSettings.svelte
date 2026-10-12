@@ -2,11 +2,10 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import Button from '$lib/components/ui/button/button.svelte';
-	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import * as Dialog from '$lib/components/ui/dialog/index';
 	import { formatBytes } from '$lib/requests/attachments/uploadAttachment';
 	import { historySyncState } from '$lib/states/historySyncState.svelte';
 	import { installState } from '$lib/states/installState.svelte';
-	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { localHistoryAvailable, localHistoryReady } from '$lib/utils/db';
 	import {
 		isStoragePersisted,
@@ -19,6 +18,8 @@
 	let usage = $state<number | null>(null);
 	let persisted = $state<boolean | null>(null);
 	let switching = $state(false);
+	let confirming = $state(false);
+	let clearing = $state(false);
 
 	const unavailable = $derived(!localHistoryAvailable || ready === 'blocked');
 	const downloadOn = $derived(historySyncState.downloadOn);
@@ -49,24 +50,19 @@
 		}
 	}
 
-	function askToClear() {
-		const again = downloadOn;
-		overlayState.open(ConfirmDialog, {
-			title: again ? 'Clear and download again?' : 'Clear message history?',
-			description: again
-				? 'Everything stored on this device is deleted and downloaded again. Messages on the server stay as they are.'
-				: 'Everything stored on this device is deleted. Messages on the server stay as they are, and conversations you open are stored again.',
-			confirmLabel: again ? 'Clear and download again' : 'Clear',
-			destructive: true,
-			onConfirm: async () => {
-				try {
-					await historySyncState.clear();
-				} catch (e) {
-					console.warn('Failed to clear local history', e);
-					toast.error("Couldn't clear the history on this device. Try again.");
-				}
-			}
-		});
+	async function clear() {
+		if (clearing) return;
+		clearing = true;
+		try {
+			await historySyncState.clear();
+			confirming = false;
+			await refresh();
+		} catch (e) {
+			console.warn('Failed to clear local history', e);
+			toast.error("Couldn't clear the history on this device. Try again.");
+		} finally {
+			clearing = false;
+		}
 	}
 </script>
 
@@ -124,10 +120,32 @@
 			{/if}
 		</dl>
 
-		<div>
-			<Button variant="destructive" size="sm" onclick={askToClear}>
-				{downloadOn ? 'Clear and download again' : 'Clear'}
-			</Button>
-		</div>
+		<Dialog.Root bind:open={confirming}>
+			<Dialog.Trigger>
+				{#snippet child({ props })}
+					<Button {...props} variant="destructive" size="sm" class="w-fit">
+						{downloadOn ? 'Clear and download again' : 'Clear'}
+					</Button>
+				{/snippet}
+			</Dialog.Trigger>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title>
+						{downloadOn ? 'Clear and download again?' : 'Clear message history?'}
+					</Dialog.Title>
+					<Dialog.Description>
+						{downloadOn
+							? 'Everything stored on this device is deleted and downloaded again. Messages on the server stay as they are.'
+							: 'Everything stored on this device is deleted. Messages on the server stay as they are, and conversations you open are stored again.'}
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button variant="secondary" onclick={() => (confirming = false)}>Cancel</Button>
+					<Button variant="destructive" disabled={clearing} onclick={clear}>
+						{clearing ? 'Clearing…' : downloadOn ? 'Clear and download again' : 'Clear'}
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 	{/if}
 </div>

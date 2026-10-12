@@ -805,6 +805,22 @@ describe('clear', () => {
 		expect(runMock).toHaveBeenCalledTimes(1);
 	});
 
+	it('starts no run while the wipe is under way', async () => {
+		let finishReset!: () => void;
+		resetMock.mockImplementation(() => new Promise<void>((resolve) => (finishReset = resolve)));
+
+		const clearing = historySyncState.clear();
+		await vi.advanceTimersByTimeAsync(0);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(runMock).not.toHaveBeenCalled();
+
+		finishReset();
+		await clearing;
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(1);
+	});
+
 	it('starts nothing when stopped meanwhile', async () => {
 		let finishReset!: () => void;
 		resetMock.mockImplementation(() => new Promise<void>((resolve) => (finishReset = resolve)));

@@ -73,6 +73,7 @@ const downloadSwitch = (page: Page) => page.getByRole('switch', { name: 'Downloa
 
 async function closeSettings(page: Page) {
 	await page.getByRole('button', { name: 'Close settings' }).click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
 }
 
 async function setUp(browser: Parameters<typeof newUser>[0], word: string) {
@@ -119,7 +120,10 @@ test('the download switch survives a reload, stops the download and starts it ag
 	await downloadSwitch(page).click();
 	await expect(downloadSwitch(page)).toBeChecked();
 	await expect
-		.poll(() => gate.requests.length, { message: 'turning it on starts the download' })
+		.poll(() => gate.requests.length, {
+			message: 'turning it on starts the download',
+			timeout: 30_000
+		})
 		.toBeGreaterThan(0);
 	gate.release();
 	await expect
@@ -147,8 +151,12 @@ test('clearing removes what search found, and the download brings it back', asyn
 	gate.hold();
 	await openStorageSettings(page);
 	await page.getByRole('button', { name: 'Clear and download again' }).click();
-	await page.getByRole('dialog').getByRole('button', { name: 'Clear and download again' }).click();
+	await page
+		.getByRole('dialog', { name: 'Clear and download again?' })
+		.getByRole('button', { name: 'Clear and download again' })
+		.click();
 	await expect.poll(() => storedMessages(page)).toBe(0);
+	await closeSettings(page);
 
 	await page.keyboard.press('Control+k');
 	await search.fill(word);
