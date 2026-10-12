@@ -1,3 +1,6 @@
+import { AxiosError } from 'axios';
+import { DisconnectReason } from 'livekit-client';
+import { toast } from 'svelte-sonner';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('livekit-client', async (importOriginal) => ({
@@ -13,7 +16,23 @@ vi.mock('$lib/requests/voice/refreshVoicePresence', () => ({
 	refreshVoicePresenceOnUnload: vi.fn()
 }));
 
-import { voiceState } from './voiceState.svelte';
+vi.mock('$lib/requests/calls/refreshCall', () => ({
+	refreshCall: vi.fn(),
+	refreshCallOnUnload: vi.fn()
+}));
+
+vi.mock('$lib/requests/calls/getCallToken', () => ({ getCallToken: vi.fn() }));
+
+vi.mock('svelte-sonner', () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
+
+import { axiosClient } from '$lib/requests/axiosClient';
+import { getCallToken } from '$lib/requests/calls/getCallToken';
+import { refreshCall, refreshCallOnUnload } from '$lib/requests/calls/refreshCall';
+import {
+	refreshVoicePresence,
+	refreshVoicePresenceOnUnload
+} from '$lib/requests/voice/refreshVoicePresence';
+import { voiceState, type VoiceTarget } from './voiceState.svelte';
 import { voiceSettingsState } from './voiceSettingsState.svelte';
 import { usersState } from './usersState.svelte';
 
@@ -184,5 +203,283 @@ describe('voiceState screen share republish', () => {
 
 		expect(localParticipant.getTrackPublication('screen_share')).toBeUndefined();
 		expect(localParticipant.publishTrack).toHaveBeenCalledTimes(1);
+	});
+});
+
+const CHANNEL = { channelId: 5, serverId: 1 };
+const CALL = { callId: 9, callConversationId: 3 };
+const callTarget: VoiceTarget = { kind: 'call', callId: 9, conversationId: 3 };
+const channelTarget: VoiceTarget = { kind: 'channel', serverId: 1, channelId: 5 };
+
+type Internals = {
+	connect: (target: VoiceTarget, gen: number) => Promise<void>;
+	rejoin: (target: VoiceTarget) => Promise<void>;
+	handleDisconnected: (room: unknown, reason?: DisconnectReason) => void;
+	onPageHide: () => void;
+	fetchToken: (target: VoiceTarget) => Promise<unknown>;
+	cleanup: () => void;
+};
+const internals = () => voiceState as unknown as Internals;
+
+function failure(status: number) {
+	return new AxiosError('failed', undefined, undefined, undefined, {
+		status,
+		data: {},
+		headers: {},
+		statusText: '',
+		config: {} as never
+	});
+}
+
+describe('voiceState call target', () => {
+	afterEach(() => {
+		internals().cleanup();
+		vi.restoreAllMocks();
+		vi.useRealTimers();
+		vi.clearAllMocks();
+		usersState.loggedInUser = null;
+	});
+
+	function signedIn() {
+		usersState.loggedInUser = { id: 1 } as typeof usersState.loggedInUser;
+	}
+
+	it.each([
+		{ kind: 'channel', fields: CHANNEL, refresh: refreshVoicePresence, id: 5 },
+		{ kind: 'call', fields: CALL, refresh: refreshCall, id: 9 }
+	])('leaving a $kind refreshes its target and clears every target field', async (c) => {
+		const { room } = fakeRoom(async () => {});
+		Object.assign(voiceState, { room, ...c.fields });
+
+		await voiceState.leaveVoice();
+
+		expect(c.refresh).toHaveBeenCalledWith(c.id);
+		expect(voiceState.target).toBeNull();
+		expect([
+			voiceState.channelId,
+			voiceState.serverId,
+			voiceState.callId,
+			voiceState.callConversationId
+		]).toEqual([null, null, null, null]);
+	});
+
+	it.each([
+		{
+			from: 'channel',
+			to: 'call',
+			fields: CHANNEL,
+			refreshed: refreshVoicePresence,
+			join: () => voiceState.joinCall({ id: 9, conversation_id: 3 }),
+			target: callTarget,
+			now: { channelId: null, callId: 9 }
+		},
+		{
+			from: 'call',
+			to: 'channel',
+			fields: CALL,
+			refreshed: refreshCall,
+			join: () => voiceState.joinVoice(1, 5),
+			target: channelTarget,
+			now: { channelId: 5, callId: null }
+		}
+	])(
+		'joining a $to from a $from leaves the old room first and sets only the new target',
+		async (c) => {
+			signedIn();
+			const { room } = fakeRoom(async () => {});
+			Object.assign(voiceState, { room, ...c.fields });
+			const connect = vi.spyOn(internals(), 'connect').mockResolvedValue();
+
+			await c.join();
+
+			expect(room.disconnect).toHaveBeenCalledOnce();
+			expect(c.refreshed).toHaveBeenCalledOnce();
+			expect(connect).toHaveBeenCalledWith(c.target, expect.any(Number));
+			expect({ channelId: voiceState.channelId, callId: voiceState.callId }).toEqual(c.now);
+		}
+	);
+
+	it('does nothing when joining the call it is already in', async () => {
+		signedIn();
+		const { room } = fakeRoom(async () => {});
+		Object.assign(voiceState, { room, ...CALL });
+		const connect = vi.spyOn(internals(), 'connect').mockResolvedValue();
+
+		await voiceState.joinCall({ id: 9, conversation_id: 3 });
+
+		expect(connect).not.toHaveBeenCalled();
+		expect(room.disconnect).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			name: 'a deleted channel room',
+			reason: DisconnectReason.ROOM_DELETED,
+			fields: CHANNEL,
+			toasted: 'The voice channel was closed.'
+		},
+		{
+			name: 'a deleted call room',
+			reason: DisconnectReason.ROOM_DELETED,
+			fields: CALL,
+			toasted: null
+		},
+		{
+			name: 'a closed call room',
+			reason: DisconnectReason.ROOM_CLOSED,
+			fields: CALL,
+			toasted: null
+		},
+		{
+			name: 'being removed from a call',
+			reason: DisconnectReason.PARTICIPANT_REMOVED,
+			fields: CALL,
+			toasted: 'You joined voice somewhere else.'
+		},
+		{
+			name: 'a duplicate identity in a channel',
+			reason: DisconnectReason.DUPLICATE_IDENTITY,
+			fields: CHANNEL,
+			toasted: 'You joined voice somewhere else.'
+		}
+	])('$name toasts $toasted and does not rejoin', (c) => {
+		const { room } = fakeRoom(async () => {});
+		Object.assign(voiceState, { room, ...c.fields });
+		const rejoin = vi.spyOn(internals(), 'rejoin').mockResolvedValue();
+
+		internals().handleDisconnected(room, c.reason);
+
+		expect(rejoin).not.toHaveBeenCalled();
+		expect(voiceState.target).toBeNull();
+		if (c.toasted) expect(toast).toHaveBeenCalledWith(c.toasted);
+		else expect(toast).not.toHaveBeenCalled();
+	});
+
+	it('rejoins the same call after an unexpected disconnect', () => {
+		const { room } = fakeRoom(async () => {});
+		Object.assign(voiceState, { room, ...CALL });
+		const rejoin = vi.spyOn(internals(), 'rejoin').mockResolvedValue();
+
+		internals().handleDisconnected(room, DisconnectReason.SERVER_SHUTDOWN);
+
+		expect(rejoin).toHaveBeenCalledWith(callTarget);
+	});
+
+	it.each([
+		{ target: callTarget, fields: CALL, status: 409, tries: 1, lost: false },
+		{ target: callTarget, fields: CALL, status: 500, tries: 3, lost: true },
+		{ target: channelTarget, fields: CHANNEL, status: 409, tries: 3, lost: true }
+	])('rejoining a $target.kind after a $status tries $tries times and toasts: $lost', async (c) => {
+		vi.useFakeTimers();
+		Object.assign(voiceState, c.fields);
+		const connect = vi.spyOn(internals(), 'connect').mockRejectedValue(failure(c.status));
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		const rejoining = internals().rejoin(c.target);
+		await vi.advanceTimersByTimeAsync(20_000);
+		await rejoining;
+
+		expect(connect).toHaveBeenCalledTimes(c.tries);
+		expect(voiceState.target).toBeNull();
+		if (c.lost) {
+			expect(toast.error).toHaveBeenCalledWith(
+				"Lost connection to voice. Join again when you're back online."
+			);
+		} else {
+			expect(toast.error).not.toHaveBeenCalled();
+		}
+	});
+
+	it('rejoining a call connects to the same call and keeps it', async () => {
+		vi.useFakeTimers();
+		Object.assign(voiceState, CALL);
+		const connect = vi.spyOn(internals(), 'connect').mockResolvedValue();
+
+		const rejoining = internals().rejoin(callTarget);
+		await vi.advanceTimersByTimeAsync(1_000);
+		await rejoining;
+
+		expect(connect).toHaveBeenCalledWith(callTarget, expect.any(Number));
+		expect(voiceState.callId).toBe(9);
+	});
+
+	it.each([
+		{ name: 'the call it is in', fields: CALL, id: 9, leaves: true },
+		{ name: 'another call', fields: CALL, id: 10, leaves: false },
+		{ name: 'a channel', fields: CHANNEL, id: 9, leaves: false }
+	])('ending $name with id $id leaves: $leaves', async (c) => {
+		const { room } = fakeRoom(async () => {});
+		Object.assign(voiceState, { room, ...c.fields });
+
+		await voiceState.endCall(c.id);
+
+		expect(room.disconnect).toHaveBeenCalledTimes(c.leaves ? 1 : 0);
+		expect(voiceState.target === null).toBe(c.leaves);
+	});
+
+	it('stops a rejoin loop when the call ends', async () => {
+		vi.useFakeTimers();
+		Object.assign(voiceState, CALL);
+		const connect = vi.spyOn(internals(), 'connect').mockResolvedValue();
+
+		const rejoining = internals().rejoin(callTarget);
+		await voiceState.endCall(9);
+		await vi.advanceTimersByTimeAsync(20_000);
+		await rejoining;
+
+		expect(connect).not.toHaveBeenCalled();
+		expect(voiceState.callId).toBeNull();
+		expect(toast.error).not.toHaveBeenCalled();
+	});
+
+	it('leaves the newer join alone when a superseded join fails late', async () => {
+		signedIn();
+		let failFirst!: (err: unknown) => void;
+		vi.spyOn(internals(), 'connect')
+			.mockImplementationOnce(() => new Promise((_resolve, reject) => (failFirst = reject)))
+			.mockResolvedValue();
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+		const first = voiceState.joinVoice(1, 6);
+		await voiceState.joinCall({ id: 9, conversation_id: 3 });
+		failFirst(failure(500));
+		await first;
+
+		expect(toast.error).not.toHaveBeenCalled();
+		expect(voiceState.target).toEqual(callTarget);
+	});
+
+	it.each([
+		{ kind: 'channel', fields: CHANNEL, beacon: refreshVoicePresenceOnUnload, id: 5 },
+		{ kind: 'call', fields: CALL, beacon: refreshCallOnUnload, id: 9 }
+	])('hiding the page disconnects and sends a beacon for the $kind', (c) => {
+		const { room } = fakeRoom(async () => {});
+		Object.assign(voiceState, { room, ...c.fields });
+
+		internals().onPageHide();
+
+		expect(room.disconnect).toHaveBeenCalledOnce();
+		expect(c.beacon).toHaveBeenCalledWith(c.id);
+	});
+
+	it.each([
+		{
+			kind: 'channel',
+			target: channelTarget,
+			asked: () =>
+				expect(axiosClient.post).toHaveBeenCalledWith('/api/voice/token', { channel_id: 5 })
+		},
+		{
+			kind: 'call',
+			target: callTarget,
+			asked: () => expect(getCallToken).toHaveBeenCalledWith(9)
+		}
+	])('asks the $kind token endpoint', async (c) => {
+		vi.spyOn(axiosClient, 'post').mockResolvedValue({ data: { token: 't', url: 'u' } });
+		vi.mocked(getCallToken).mockResolvedValue({ token: 't', url: 'u', room: 'r' });
+
+		await expect(internals().fetchToken(c.target)).resolves.toMatchObject({ token: 't' });
+
+		c.asked();
 	});
 });
