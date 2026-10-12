@@ -25,6 +25,7 @@
 	import { documentFocusState } from '$lib/utils/documentFocus.svelte';
 	import { resyncState } from '$lib/states/resyncState.svelte';
 	import { mergeNewestPage, replaceWithNewestPage } from '$lib/utils/mergeNewestPage';
+	import { pruneToPage, readNewest, type CachedThread } from '$lib/utils/threadCache';
 	import {
 		countHeldBack,
 		countNewBelow,
@@ -58,8 +59,8 @@
 		target: MessageTarget | null;
 		/** Newest-first page of history: the newest, or as `query` says (older, around a message, newer). */
 		fetchPage: (query?: PageQuery) => Promise<MessagePage>;
-		/** Cached messages (oldest first), used when the API is unreachable. */
-		readCache: () => Promise<MessageType[]>;
+		/** The thread's local copy: shown first on a first open, kept in line with the newest page. */
+		cache: CachedThread;
 		emptyDescription: string;
 		errorDescription: string;
 		/** Shown above the first message once all older history is loaded, e.g. "Beginning of #general". */
@@ -78,7 +79,7 @@
 		threadKey,
 		target,
 		fetchPage,
-		readCache,
+		cache,
 		emptyDescription,
 		errorDescription,
 		beginningLabel,
@@ -91,7 +92,7 @@
 	let messageWrapper = $state<HTMLDivElement>();
 	let topSentinel = $state<HTMLDivElement>();
 	let bottomSentinel = $state<HTMLDivElement>();
-	let loadState = $state<'loading' | 'error' | 'ready'>('loading');
+	let loadState = $state<'reading' | 'loading' | 'error' | 'ready'>('loading');
 	// The thread whose newest page is on screen; loadState alone stays 'ready' across a switch.
 	let loadedKey = $state<string | null>(null);
 	// The jump (thread and message) already carried out, so each value jumps once.
@@ -130,6 +131,12 @@
 
 	// The list shows the IndexedDB cache because the API failed.
 	let fromCache = $state(false);
+	// Ids shown from IndexedDB while the newest page is still on its way.
+	let cachedTail = $state.raw<ReadonlySet<string> | null>(null);
+	// The newest page requested over a cached tail; a resync waits for it instead of racing it.
+	let pendingOpen: Promise<void> | null = null;
+	// How long a first open waits for IndexedDB before showing the skeleton instead.
+	const CACHE_WAIT_MS = 300;
 	// Older pages may hold edits or deletes we missed; they are dropped once back at the bottom.
 	let staleOlder = false;
 
@@ -282,6 +289,20 @@
 		unseen?: MessageType[];
 	};
 
+	// Pin the unread divider to the message right after the boundary, once. If
+	// the boundary is older than this page, anchor on the first loaded message.
+	// A thread that was never read (no marker) gets no divider.
+	function anchorUnreadDivider(messages: MessageType[], hasNewer: boolean) {
+		const boundary = unreadBoundaryId;
+		if (boundary != null) {
+			const idx = messages.findIndex((m) => m.id === boundary);
+			const first = hasNewer ? null : messages[0];
+			unreadAnchorId = idx >= 0 ? (messages[idx + 1]?.id ?? null) : (first?.id ?? null);
+		} else {
+			unreadAnchorId = null;
+		}
+	}
+
 	function applyPage(
 		key: string,
 		messages: MessageType[],
@@ -301,17 +322,7 @@
 		const newest = messagesState.messages(key).at(-1);
 		seenThrough = newest ? { id: newest.id, timestamp: newest.timestamp } : null;
 
-		// Pin the unread divider to the message right after the boundary, once. If
-		// the boundary is older than this page, anchor on the first loaded message.
-		// A thread that was never read (no marker) gets no divider.
-		const boundary = unreadBoundaryId;
-		if (boundary != null) {
-			const idx = messages.findIndex((m) => m.id === boundary);
-			const first = hasNewer ? null : messages[0];
-			unreadAnchorId = idx >= 0 ? (messages[idx + 1]?.id ?? null) : (first?.id ?? null);
-		} else {
-			unreadAnchorId = null;
-		}
+		anchorUnreadDivider(messages, hasNewer);
 
 		loadedKey = key;
 		loadState = 'ready';
@@ -335,11 +346,14 @@
 		older.reset();
 		newer.reset();
 		messagesState.beginNewestLoad(key);
+		cachedTail = null;
 
 		// Only flash the skeleton on a first visit, when there's nothing cached
 		// for this thread yet. Revisits keep their messages on screen while we
 		// refresh, so the switch doesn't flicker.
-		if (messagesState.messages(key).length === 0) loadState = 'loading';
+		const firstOpen = messagesState.messages(key).length === 0;
+		const jump = pendingJump(key);
+		if (firstOpen) loadState = jump ? 'loading' : 'reading';
 
 		// Snapshot the read markers BEFORE marking the thread read, so the divider
 		// anchors on what was actually unread when we opened it.
@@ -349,41 +363,132 @@
 				? snapshot.lastReadId
 				: null;
 
+		if (firstOpen && !jump) {
+			await showCachedTail(key, token);
+			if (token !== loadToken) return;
+		}
+
+		const run = fetchNewest(key, token, jump);
+		if (cachedTail) pendingOpen = run;
+		await run.finally(() => {
+			if (pendingOpen === run) pendingOpen = null;
+		});
+	}
+
+	// The newest messages from IndexedDB, shown while the newest page is requested. They are read
+	// before the request goes out, so a row the page lacks was already stored when it was built.
+	async function showCachedTail(key: string, token: number) {
+		const cached = await Promise.race([
+			readNewest(cache),
+			new Promise<null>((resolve) => setTimeout(resolve, CACHE_WAIT_MS, null))
+		]);
+		if (token !== loadToken) return;
+		if (!cached?.length) {
+			loadState = 'loading';
+			return;
+		}
+		cachedTail = new Set(cached.map((m) => m.id));
+		// Older history exists beyond a cached tail; the cursor to it comes with the page.
+		applyPage(key, replaceWithNewestPage(messagesState.messages(key), cached, new Set()), {
+			hasMore: true
+		});
+		unreadAnchorId = null; // the divider waits for the page
+	}
+
+	async function fetchNewest(key: string, token: number, jump: string | null) {
+		const requested = new Set(messagesState.messages(key).map((m) => m.id));
 		try {
 			// The API is the source of truth for the newest page; Dexie is a cache.
-			const pageData = await fetchOpeningPage(fetchPage, pendingJump(key));
+			const pageData = await fetchOpeningPage(fetchPage, jump);
 			if (token !== loadToken) return; // a newer switch superseded us
 
 			const ascending = [...pageData.messages].reverse();
+			db.messages.bulkPut(ascending).catch((e) => console.warn('Failed to cache messages', e));
 			nextCursor = pageData.next_cursor;
 			fromCache = false;
 			staleOlder = false;
-			applyPage(key, ascending, {
-				hasMore: pageData.has_more,
-				hasNewer: pageData.has_newer ?? false
-			});
-			db.messages.bulkPut(ascending).catch((e) => console.warn('Failed to cache messages', e));
+			if (cachedTail) {
+				await landOverCachedTail(key, token, ascending, pageData.has_more, requested);
+			} else {
+				applyPage(key, ascending, {
+					hasMore: pageData.has_more,
+					hasNewer: pageData.has_newer ?? false
+				});
+				if (jump == null && !pageData.has_newer) {
+					dropGoneFromCache(key, ascending, pageData.has_more, requested);
+				}
+			}
 		} catch (e) {
 			if (token !== loadToken) return;
 			if (onNotFound && normalizeError(e).status === 404) {
+				cachedTail = null;
 				messagesState.endNewestLoad(key);
 				onNotFound();
 				return;
 			}
 			console.warn('Failed to load messages from API, falling back to cache', e);
-			try {
-				const cached = await readCache();
-				if (token !== loadToken) return;
+			if (cachedTail) {
+				// Offline over a cached tail: keep it, and don't move the view.
+				cachedTail = null;
+				fromCache = true;
+				messagesState.endNewestLoad(key);
+				return;
+			}
+			const cached = await readNewest(cache);
+			if (token !== loadToken) return;
+			if (cached) {
 				nextCursor = null;
 				fromCache = true;
 				applyPage(key, cached, { hasMore: false });
-			} catch (cacheError) {
-				if (token !== loadToken) return;
-				console.error('Failed to load messages', cacheError);
-				messagesState.endNewestLoad(key);
-				if (messagesState.messages(key).length === 0) loadState = 'error';
+				return;
 			}
+			console.error('Failed to load messages from the local cache');
+			messagesState.endNewestLoad(key);
+			if (messagesState.messages(key).length === 0) loadState = 'error';
 		}
+	}
+
+	// Lands the newest page over the cached tail the way a resync does, so a reader who
+	// scrolled up while it loaded stays where they are.
+	async function landOverCachedTail(
+		key: string,
+		token: number,
+		page: MessageType[],
+		hasMore: boolean,
+		requested: ReadonlySet<string>
+	) {
+		const shown = cachedTail!;
+		cachedTail = null;
+		const merged = replaceWithNewestPage(messagesState.messages(key), page, requested);
+		// Without a shared message the page may leave a gap, so it can't vouch for what is stored.
+		if (!page.some((m) => shown.has(m.id))) {
+			applyPage(key, merged, { hasMore });
+			return;
+		}
+
+		const anchors = stickToBottom ? null : visibleRows();
+		messagesState.replace(key, merged, hasMore);
+		anchorUnreadDivider(merged, false);
+		dropGoneFromCache(key, page, hasMore, requested);
+		await tick();
+		if (destroyed || token !== loadToken) return;
+		if (anchors) keepRowsInPlace(anchors);
+		else scrollToBottom();
+		void older.request();
+	}
+
+	function dropGoneFromCache(
+		key: string,
+		page: MessageType[],
+		hasMore: boolean,
+		requested: ReadonlySet<string>
+	) {
+		pruneToPage(cache, {
+			page,
+			complete: !hasMore,
+			requested,
+			keep: () => new Set(messagesState.messages(key).map((m) => m.id))
+		}).catch((e) => console.warn('Failed to drop deleted messages from the cache', e));
 	}
 
 	// Pins the view to the same messages across a change at the top of the list, such as a page
@@ -498,10 +603,11 @@
 	async function resyncThread() {
 		const key = threadKey;
 		do {
+			await pendingOpen?.catch(() => {});
 			await pendingWindow?.catch(() => {});
 			await older.idle();
 			await newer.idle();
-		} while (pendingWindow);
+		} while (pendingWindow || pendingOpen);
 		if (destroyed || key !== threadKey) return;
 		if (loadState !== 'ready' || fromCache) return loadMessages(key);
 
@@ -532,6 +638,7 @@
 			nextCursor = pageData.next_cursor;
 			staleOlder = false;
 			pinDividerAfter(newestBefore, page);
+			dropGoneFromCache(key, page, pageData.has_more, knownBefore);
 			tick().then(scrollToBottom);
 			return;
 		}
@@ -548,6 +655,7 @@
 		if (!merged.keptOlder) nextCursor = pageData.next_cursor;
 		messagesState.replace(key, merged.messages, hasMore);
 		pinDividerAfter(newestBefore, page);
+		dropGoneFromCache(key, page, pageData.has_more, knownBefore);
 		await tick();
 		keepRowsInPlace(anchors);
 	}
@@ -645,6 +753,7 @@
 		const ascending = [...pageData.messages].reverse();
 		nextCursor = pageData.next_cursor;
 		fromCache = false;
+		cachedTail = null;
 		staleOlder = false;
 		applyPage(key, ascending, {
 			hasMore: pageData.has_more,
@@ -859,6 +968,8 @@
 	const reading = $derived(
 		active &&
 			stickToBottom &&
+			!fromCache &&
+			cachedTail == null &&
 			loadState === 'ready' &&
 			loadedKey === threadKey &&
 			!messagesState.newerExists(threadKey)
@@ -925,6 +1036,8 @@
 					onRetry={() => loadMessages(threadKey)}
 				/>
 			</div>
+		{:else if loadState === 'reading'}
+			<!-- IndexedDB answers in a few ms: neither the skeleton nor "No messages yet" -->
 		{:else if items.length === 0}
 			<div class="flex h-full items-center justify-center px-8 max-md:px-3">
 				<EmptyState title="No messages yet" description={emptyDescription}>
