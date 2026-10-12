@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('livekit-client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('livekit-client')>()),
@@ -123,8 +123,13 @@ describe('voiceState.joinVoice self state', () => {
 });
 
 /** A live screen share whose republish waits until `finish` is called. */
-function sharingRoom() {
-	const mst = { contentHint: '', applyConstraints: vi.fn(async () => {}), stop: vi.fn() };
+function sharingRoom(captured: { width: number; height: number } = { width: 1920, height: 1080 }) {
+	const mst = {
+		contentHint: '',
+		applyConstraints: vi.fn(async () => {}),
+		getSettings: vi.fn(() => ({ ...captured, frameRate: 30 })),
+		stop: vi.fn()
+	};
 	let publication: { track: unknown } | undefined = { track: { mediaStreamTrack: mst } };
 	let finishPublish!: () => void;
 	const localParticipant = {
@@ -144,6 +149,14 @@ function sharingRoom() {
 					};
 				})
 		),
+		createScreenTracks: vi.fn(async () => [
+			{
+				kind: 'video',
+				mediaStreamTrack: mst,
+				stop: vi.fn(),
+				waitForDimensions: async () => captured
+			}
+		]),
 		setScreenShareEnabled: vi.fn(async () => {
 			publication = undefined;
 		})
@@ -184,5 +197,63 @@ describe('voiceState screen share republish', () => {
 
 		expect(localParticipant.getTrackPublication('screen_share')).toBeUndefined();
 		expect(localParticipant.publishTrack).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('voiceState screen share start', () => {
+	beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+
+	afterEach(() => {
+		vi.useRealTimers();
+		voiceState.sharing = false;
+		voiceState.startingShare = false;
+		voiceState.shareOutput = null;
+	});
+
+	it.each([
+		{ preset: '1440p30', captured: { width: 3440, height: 1440 }, maxBitrate: 10_750_000 },
+		{ preset: '1440p30', captured: { width: 1920, height: 1080 }, maxBitrate: 4_500_000 },
+		{ preset: '1080p60', captured: { width: 2580, height: 1080 }, maxBitrate: 9_406_250 }
+	] as const)(
+		'publishes $preset from a $captured.width x $captured.height capture at $maxBitrate bps',
+		async ({ preset, captured, maxBitrate }) => {
+			voiceSettingsState.save({ screenPreset: preset, screenContent: 'detail' });
+			const { room, localParticipant, mst } = sharingRoom(captured);
+			localParticipant.publishTrack.mockImplementation(async () => {
+				voiceState.sharing = true;
+			});
+			Object.assign(voiceState, { room });
+
+			await voiceState.startScreenShare();
+
+			expect(localParticipant.createScreenTracks).toHaveBeenCalledWith(
+				expect.objectContaining({ resolution: { width: 0, height: 0 } })
+			);
+			expect(mst.applyConstraints).not.toHaveBeenCalled();
+			expect(localParticipant.publishTrack.mock.calls[0][1]).toMatchObject({
+				screenShareEncoding: { maxBitrate }
+			});
+			expect(voiceState.shareOutput).toMatchObject(captured);
+			expect(voiceState.startingShare).toBe(false);
+		}
+	);
+
+	it('scales a capture above the pixel ceiling down before publishing', async () => {
+		voiceSettingsState.save({ screenPreset: '1440p30', screenContent: 'detail' });
+		const { room, localParticipant, mst } = sharingRoom({ width: 5120, height: 1440 });
+		mst.getSettings
+			.mockReturnValueOnce({ width: 5120, height: 1440, frameRate: 30 })
+			.mockReturnValue({ width: 4434, height: 1246, frameRate: 30 });
+		localParticipant.publishTrack.mockImplementation(async () => {
+			voiceState.sharing = true;
+		});
+		Object.assign(voiceState, { room });
+
+		await voiceState.startScreenShare();
+
+		expect(mst.applyConstraints).toHaveBeenCalledOnce();
+		expect(localParticipant.publishTrack.mock.calls[0][1]).toMatchObject({
+			screenShareEncoding: { maxBitrate: 11_989_505 }
+		});
 	});
 });

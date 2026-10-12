@@ -6,11 +6,13 @@ import {
 	Room,
 	RoomEvent,
 	Track,
+	type LocalTrack,
 	type RemoteTrack,
 	type RemoteParticipant,
 	type Participant,
 	type RemoteVideoTrack,
-	type TrackPublication
+	type TrackPublication,
+	type TrackPublishOptions
 } from 'livekit-client';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
@@ -31,12 +33,18 @@ import {
 	type MicIssue
 } from '$lib/utils/voiceErrors';
 import {
-	SCREEN_PRESETS,
+	screenCaptureConstraints,
+	screenCaptureSize,
+	screenCeilingTarget,
 	screenPublishOptions,
+	screenTargetConstraints,
+	sourceBelowPreset,
 	isPickerCancel,
 	type ScreenContent,
-	type ScreenPresetId
+	type ScreenPresetId,
+	type ScreenSize
 } from '$lib/utils/screenShare';
+import { topLayerSample, type ScreenOutput } from '$lib/utils/screenOutput';
 import { soundEnv, soundOption, soundResult } from '$lib/utils/shareSound';
 
 export interface VoicePeer {
@@ -70,6 +78,7 @@ const DEAFENED_ATTR = 'deafened';
 /** Participant attribute the server sets while a moderator has muted someone. */
 const SERVER_MUTED_ATTR = 'server_muted';
 const SCREEN_REPUBLISH_GRACE_MS = 1000;
+const SCREEN_OUTPUT_REFRESH_MS = 2000;
 const STORAGE_KEY = 'voice.selfState';
 const REJOIN_DELAYS_MS = [1000, 3000, 10000];
 
@@ -131,6 +140,8 @@ class VoiceState {
 	startingShare: boolean = $state(false);
 	/** Whether your own share carries sound, and why not. Null while not sharing. */
 	shareSound: { on: boolean; text: string } | null = $state(null);
+	/** What your own share is sending right now. Null while not sharing. */
+	shareOutput: ScreenOutput | null = $state(null);
 	// participant identity -> their screen share video
 	screens: SvelteMap<string, ScreenStream> = $state(new SvelteMap());
 	/** Identities LiveKit reported gone since they last connected to this room. */
@@ -147,6 +158,7 @@ class VoiceState {
 	private swappingScreen = false;
 	private screenRepublishQueued = false;
 	private screenStopQueued = false;
+	private screenOutputTimer: ReturnType<typeof setInterval> | undefined;
 	// Removal of a remote screen tile is delayed so a republished track can replace it in place.
 	private screenRemovals = new Map<string, ReturnType<typeof setTimeout>>();
 	// The saved device is unplugged and the call is on the default one instead.
@@ -438,6 +450,7 @@ class VoiceState {
 				if (pub.kind === Track.Kind.Video && !this.swappingScreen) {
 					this.sharing = false;
 					this.shareSound = null;
+					this.clearShareOutput();
 					this.screens.delete(p.identity);
 					const audio = p.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
 					if (audio) void p.unpublishTrack(audio).catch(() => {});
@@ -562,22 +575,41 @@ class VoiceState {
 		const requested = voiceSettingsState.screenSound;
 		// The browser's picker can still switch to a tab, so only a device that can't share sound at all skips it.
 		const askForAudio = requested && soundOption(env, 'browser').available;
-		const { preset } = SCREEN_PRESETS[voiceSettingsState.screenPreset];
+		const { screenPreset, screenContent, screenSurface } = voiceSettingsState;
+		const browser = env.browser.kind;
 		this.startingShare = true;
+		let tracks: LocalTrack[] = [];
 		try {
-			await room.localParticipant.setScreenShareEnabled(
-				true,
-				{
-					audio: askForAudio,
-					video: env.desktop ? true : { displaySurface: voiceSettingsState.screenSurface },
-					resolution: preset.resolution,
-					contentHint: voiceSettingsState.screenContent,
-					selfBrowserSurface: 'exclude',
-					surfaceSwitching: 'include',
-					systemAudio: 'include',
-					suppressLocalAudioPlayback: true
-				},
-				screenPublishOptions(voiceSettingsState.screenPreset, voiceSettingsState.screenContent)
+			tracks = await room.localParticipant.createScreenTracks({
+				audio: askForAudio,
+				video: screenCaptureConstraints(
+					screenPreset,
+					browser,
+					env.desktop ? undefined : screenSurface
+				),
+				// Zero size makes livekit pass the constraints through instead of adding its own 1080p box.
+				resolution: { width: 0, height: 0 },
+				contentHint: screenContent,
+				selfBrowserSurface: 'exclude',
+				surfaceSwitching: 'include',
+				systemAudio: 'include',
+				suppressLocalAudioPlayback: true
+			});
+			const capture = tracks.find((track) => track.kind === Track.Kind.Video);
+			if (!capture) throw new Error('No video track in the capture.');
+			// Some browsers report no size until the first frame.
+			await capture.waitForDimensions().catch(() => {});
+			const { size, sourceBelow } = await this.fitScreenCapture(
+				capture.mediaStreamTrack,
+				screenPreset
+			);
+			if (gen !== this.generation) {
+				tracks.forEach((track) => track.stop());
+				return;
+			}
+			await this.publishScreenTracks(
+				tracks,
+				screenPublishOptions(screenPreset, screenContent, size)
 			);
 			const video = this.localScreenTrack;
 			if (gen === this.generation && this.sharing && video) {
@@ -589,8 +621,10 @@ class VoiceState {
 					surface: this.captureSurface(video),
 					requested
 				});
+				this.showShareOutput(video.mediaStreamTrack, size, sourceBelow);
 			}
 		} catch (err) {
+			tracks.forEach((track) => track.stop());
 			if (isPickerCancel(err)) return;
 			console.warn('Screen share failed:', err);
 			toast.error(`Couldn't start screen share${err instanceof Error ? `: ${err.message}` : '.'}`);
@@ -643,22 +677,20 @@ class VoiceState {
 		const lp = this.room?.localParticipant;
 		const track = this.localScreenTrack;
 		if (!lp || !track) return false;
-		const { preset } = SCREEN_PRESETS[id];
 		const mst = track.mediaStreamTrack;
+		const browser = soundEnv().browser.kind;
 		try {
 			await lp.unpublishTrack(track, false);
-			await mst.applyConstraints({
-				width: { ideal: preset.width },
-				height: { ideal: preset.height },
-				frameRate: { ideal: preset.encoding.maxFramerate }
-			});
+			await mst.applyConstraints(screenCaptureConstraints(id, browser));
+			const { size, sourceBelow } = await this.fitScreenCapture(mst, id);
 			mst.contentHint = content;
 			const next = new LocalVideoTrack(mst, undefined, true);
 			next.source = Track.Source.ScreenShare;
 			await lp.publishTrack(next, {
 				source: Track.Source.ScreenShare,
-				...screenPublishOptions(id, content)
+				...screenPublishOptions(id, content, size)
 			});
+			this.showShareOutput(mst, size, sourceBelow);
 			return true;
 		} catch (err) {
 			console.warn('Could not change screen share quality:', err);
@@ -666,6 +698,7 @@ class VoiceState {
 			this.swappingScreen = false;
 			this.sharing = false;
 			this.shareSound = null;
+			this.clearShareOutput();
 			this.screens.delete(lp.identity);
 			await this.stopScreenShare();
 			const audio = lp.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
@@ -673,6 +706,50 @@ class VoiceState {
 			toast.error("Screen share stopped: couldn't change quality.");
 			return false;
 		}
+	}
+
+	/** The one place that decides which captured tracks go out; sound rides along here. */
+	private async publishScreenTracks(tracks: LocalTrack[], options: TrackPublishOptions) {
+		const lp = this.room?.localParticipant;
+		if (!lp) throw new Error('Not in a call.');
+		await Promise.all(tracks.map((track) => lp.publishTrack(track, options)));
+	}
+
+	/** Reads the capture's real size and, past the pixel ceiling, scales it down. */
+	private async fitScreenCapture(
+		mst: MediaStreamTrack,
+		id: ScreenPresetId
+	): Promise<{ size: ScreenSize; sourceBelow: number | null }> {
+		const captured = screenCaptureSize(mst.getSettings(), id);
+		const target = screenCeilingTarget(id, captured);
+		if (!target) return { size: captured, sourceBelow: sourceBelowPreset(id, captured) };
+		await mst.applyConstraints(screenTargetConstraints(id, target)).catch(() => {});
+		return { size: screenCaptureSize(mst.getSettings(), id), sourceBelow: null };
+	}
+
+	private showShareOutput(mst: MediaStreamTrack, size: ScreenSize, sourceBelow: number | null) {
+		const fps = Math.round(mst.getSettings().frameRate ?? 0);
+		this.shareOutput = { ...size, fps, limit: null, sourceBelow };
+		clearInterval(this.screenOutputTimer);
+		this.screenOutputTimer = setInterval(
+			() => void this.refreshShareOutput(),
+			SCREEN_OUTPUT_REFRESH_MS
+		);
+	}
+
+	private async refreshShareOutput() {
+		const track = this.localScreenTrack;
+		if (!track || this.swappingScreen) return;
+		const sample = topLayerSample(await track.getSenderStats().catch(() => []));
+		if (sample && this.shareOutput && track === this.localScreenTrack) {
+			this.shareOutput = { ...this.shareOutput, ...sample };
+		}
+	}
+
+	private clearShareOutput() {
+		clearInterval(this.screenOutputTimer);
+		this.screenOutputTimer = undefined;
+		this.shareOutput = null;
 	}
 
 	/** The degradation preference and bottom layer are publish options, so a live share is republished. */
@@ -756,6 +833,7 @@ class VoiceState {
 		this.sharing = false;
 		this.startingShare = false;
 		this.shareSound = null;
+		this.clearShareOutput();
 		this.selfPreview = false;
 		this.quality = 'unknown';
 	}
