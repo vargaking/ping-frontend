@@ -9,6 +9,7 @@ import {
 	inheritedForMember,
 	inheritedForRole,
 	isPrivate,
+	keepSettled,
 	opinions,
 	privateRow,
 	scopeMask,
@@ -302,6 +303,20 @@ describe('withKeepRow', () => {
 		expect(canView(scope(hidden), holding(2))).toBe(false);
 		expect(canView(kept, holding(2))).toBe(true);
 		expect(canView(kept, { userId: USER + 1, roleIds: [2] })).toBe(false);
+	});
+});
+
+describe('keepSettled', () => {
+	const hidden = scope(rows({ 1: [0n, VIEW] }));
+	const kept = withKeepRow(hidden, USER);
+
+	it.each([
+		['another save is still running', 1, kept, false],
+		['the write is saved but the kept row has not arrived', 0, hidden, false],
+		['the kept row has arrived', 0, kept, true],
+		['the write was undone before it was sent', 0, scope(NO_ROWS), true]
+	] as const)('%s', (_, saving, target, expected) => {
+		expect(keepSettled(saving, target, holding(2))).toBe(expected);
 	});
 });
 

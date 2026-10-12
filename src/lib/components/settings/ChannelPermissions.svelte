@@ -28,6 +28,7 @@
 		inheritedForMember,
 		inheritedForRole,
 		isPrivate,
+		keepSettled,
 		privateRow,
 		scopeMask,
 		visibleTo,
@@ -141,6 +142,7 @@
 
 	// The server keeps the actor in when a write takes their View. Until that row arrives, assume it.
 	let keeping = $state(false);
+	let saving = $state(0);
 	const actorScope = $derived(
 		scope && keeping && me != null && !canView(scope, actor) ? withKeepRow(scope, me) : scope
 	);
@@ -157,9 +159,7 @@
 	}
 
 	$effect(() => {
-		if (keeping && me != null && (rowBits(rows, { kind: 'members', id: me }).allow & VIEW) !== 0n) {
-			keeping = false;
-		}
+		if (keeping && scope && keepSettled(saving, scope, actor)) keeping = false;
 	});
 
 	function lacksBits(changed: bigint): boolean {
@@ -330,8 +330,10 @@
 			canView(scope, actor) &&
 			losesView(subject, next);
 		if (keepsActor) keeping = true;
+		saving++;
 		void overwritesState.save(here, subject, next, changed).then((saved) => {
-			if (!saved) keeping = false;
+			saving--;
+			if (keepsActor && !saved) keeping = false;
 		});
 	}
 

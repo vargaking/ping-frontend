@@ -62,6 +62,11 @@ export function withKeepRow(scope: Scope, userId: number): Scope {
 	return { ...scope, target: withRow(scope.target, subject, keep) };
 }
 
+/** Nothing of ours is saving and the rows already give the actor View: no kept row is left to wait for. */
+export function keepSettled(saving: number, scope: Scope, who: Who): boolean {
+	return saving === 0 && canView(scope, who);
+}
+
 /** Rules of a category can only be changed by someone who sees the category itself. */
 export function categoryUnseen(
 	kind: OverwriteTarget['kind'],
