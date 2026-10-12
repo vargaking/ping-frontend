@@ -8,6 +8,7 @@
 	import { getErrorMessage } from '$lib/requests/errors';
 	import type { Role } from '$lib/types/server.types';
 	import { canTouchRole, moveRole } from '$lib/utils/roles';
+	import { ROLE_PRESETS, presetAllow, type RolePresetId } from '$lib/utils/rolePresets';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import LoadingList from '$lib/components/ui/feedback/LoadingList.svelte';
@@ -27,6 +28,7 @@
 	let loadError = $state(false);
 	let editingId = $state<number | null>(null);
 	let newName = $state('');
+	let preset = $state<RolePresetId>('empty');
 	let creating = $state(false);
 	let dragId = $state<number | null>(null);
 	let drop = $state<{ id: number; edge: 'before' | 'after' } | null>(null);
@@ -54,8 +56,13 @@
 		if (serverId == null || !name || creating) return;
 		creating = true;
 		try {
-			const role = await createRole(serverId, name);
+			const role = await createRole(
+				serverId,
+				name,
+				presetAllow(preset, serversState.maskOf(serverId))
+			);
 			newName = '';
+			preset = 'empty';
 			// Creating shifts every other role up, which the response doesn't carry.
 			serversState.setRoles(serverId, await getServerRoles(serverId));
 			editingId = role.id;
@@ -172,7 +179,7 @@
 				</p>
 
 				<form
-					class="flex items-center gap-2"
+					class="flex flex-wrap items-center gap-2"
 					onsubmit={(e) => {
 						e.preventDefault();
 						add();
@@ -186,6 +193,16 @@
 						disabled={!canCreate}
 						class="h-9 min-w-[140px] flex-1"
 					/>
+					<select
+						aria-label="Start from"
+						bind:value={preset}
+						disabled={!canCreate}
+						class="h-9 rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50"
+					>
+						{#each ROLE_PRESETS as option (option.id)}
+							<option value={option.id}>{option.label}</option>
+						{/each}
+					</select>
 					<Button type="submit" disabled={!newName.trim() || creating || !canCreate}>
 						<Plus size={16} strokeWidth={1.75} />
 						Create

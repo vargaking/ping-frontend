@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { updateChannel, type ChannelUpdate } from '$lib/requests/channels/updateChannel';
 	import { deleteChannel } from '$lib/requests/channels/deleteChannel';
@@ -15,6 +16,8 @@
 
 	let { channelId }: { channelId: number } = $props();
 
+	const canEdit = $derived(serversState.can(Permission.MANAGE_CHANNELS));
+	const canDelete = $derived(serversState.can(Permission.DELETE_CHANNELS));
 	const channel = $derived(serversState.selectedServerChannels[channelId] ?? null);
 	const savedName = $derived(channel?.name ?? '');
 	const savedTopic = $derived(channel?.topic ?? '');
@@ -116,59 +119,63 @@
 
 {#if channel}
 	<SettingsForm {dirty} {saving} onsave={save} onreset={reset}>
-		<SettingsTextField
-			id="channel-name"
-			label="Channel name"
-			bind:value={name}
-			error={errors.name}
-			oninput={() => (errors.name = undefined)}
-			maxlength={100}
-		/>
+		<fieldset disabled={!canEdit} class="contents">
+			<SettingsTextField
+				id="channel-name"
+				label="Channel name"
+				bind:value={name}
+				error={errors.name}
+				oninput={() => (errors.name = undefined)}
+				maxlength={100}
+			/>
 
-		<SettingsTextField
-			id="channel-topic"
-			label="Topic"
-			bind:value={topic}
-			error={errors.topic}
-			oninput={() => (errors.topic = undefined)}
-			hint="Shown in the channel header. Leave empty for none."
-			maxlength={1024}
-			placeholder="What's this channel about?"
-			multiline
-		/>
+			<SettingsTextField
+				id="channel-topic"
+				label="Topic"
+				bind:value={topic}
+				error={errors.topic}
+				oninput={() => (errors.topic = undefined)}
+				hint="Shown in the channel header. Leave empty for none."
+				maxlength={1024}
+				placeholder="What's this channel about?"
+				multiline
+			/>
 
-		<div class="flex max-w-md flex-col gap-1.5">
-			<label for="channel-group" class="text-[13px] font-medium text-text-label">Category</label>
-			<select
-				id="channel-group"
-				bind:value={group}
-				class="h-11 w-full rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-			>
-				<option value="">No category</option>
-				{#each groups as g (g.id)}
-					<option value={String(g.id)}>{g.name}</option>
-				{/each}
-			</select>
-		</div>
+			<div class="flex max-w-md flex-col gap-1.5">
+				<label for="channel-group" class="text-[13px] font-medium text-text-label">Category</label>
+				<select
+					id="channel-group"
+					bind:value={group}
+					class="h-11 w-full rounded-[10px] border border-input bg-surface-input px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+				>
+					<option value="">No category</option>
+					{#each groups as g (g.id)}
+						<option value={String(g.id)}>{g.name}</option>
+					{/each}
+				</select>
+			</div>
 
-		<div class="flex flex-col gap-1.5">
-			<span class="text-[13px] font-medium text-text-label">Type</span>
-			<p class="text-sm text-muted-foreground">
-				{channel.type === 'voice'
-					? 'Voice channel'
-					: channel.type === 'forum'
-						? 'Forum channel'
-						: 'Text channel'}. A channel's type can't be changed.
-			</p>
-		</div>
+			<div class="flex flex-col gap-1.5">
+				<span class="text-[13px] font-medium text-text-label">Type</span>
+				<p class="text-sm text-muted-foreground">
+					{channel.type === 'voice'
+						? 'Voice channel'
+						: channel.type === 'forum'
+							? 'Forum channel'
+							: 'Text channel'}. A channel's type can't be changed.
+				</p>
+			</div>
+		</fieldset>
 
-		<DangerZone
-			consequence="Deleting this channel removes it and all of its messages for everyone."
-			actionLabel="Delete channel"
-			confirmTitle="Delete #{channel.name}?"
-			confirmDescription="This permanently deletes the channel and its message history. It can't be undone."
-			onconfirm={remove}
-		/>
+		{#if canDelete}
+			<DangerZone
+				consequence="Deleting this channel removes it and all of its messages for everyone."
+				actionLabel="Delete channel"
+				confirmTitle="Delete #{channel.name}?"
+				confirmDescription="This permanently deletes the channel and its message history. It can't be undone."
+				onconfirm={remove}
+			/>
+		{/if}
 	</SettingsForm>
 {:else}
 	<div class="p-7 max-md:p-4">
