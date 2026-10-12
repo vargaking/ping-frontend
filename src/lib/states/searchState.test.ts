@@ -11,6 +11,7 @@ import {
 } from '$lib/utils/messageSearch';
 import { EMPTY_SCAN, scanStoredAuthors, type AuthorScan } from '$lib/utils/searchAuthors';
 import { conversationsState } from './conversationsState.svelte';
+import { historySyncState } from './historySyncState.svelte';
 import { searchState } from './searchState.svelte';
 import { unreadState } from './unreadState.svelte';
 import { usersState } from './usersState.svelte';
@@ -222,16 +223,17 @@ describe('searchState', () => {
 				expect(pageRows.mock.calls[0][2]?.fromKeys).toEqual(['name:den', 'name:denes']);
 			});
 
-			it('takes a complete imported name without fetching profiles', async () => {
+			it('finds a stored user who shares a complete imported name', async () => {
 				scanAuthors.mockResolvedValue(withDenes);
 				storedIds.mockResolvedValue([5]);
-				const fetchUser = vi.spyOn(usersState, 'getOrFetchUser');
+				vi.spyOn(usersState, 'getOrFetchUser').mockImplementation(async (id) => {
+					usersState.applyUser(user(id, 'Dénes'));
+					return usersState.users[id];
+				});
 				searchState.setQuery('from:denes');
 				await vi.advanceTimersByTimeAsync(120);
 
-				expect(pageRows.mock.calls[0][2]?.fromKeys).toEqual(['name:denes']);
-				expect(fetchUser).not.toHaveBeenCalled();
-				expect(storedIds).not.toHaveBeenCalled();
+				expect(pageRows.mock.calls[0][2]?.fromKeys).toEqual(['name:denes', 'user:5']);
 			});
 
 			it('scans once per session, and again after a reset', async () => {
@@ -244,6 +246,23 @@ describe('searchState', () => {
 				searchState.reset();
 				await searchState.loadAuthors();
 				expect(scanAuthors).toHaveBeenCalledTimes(2);
+			});
+
+			it('scans again once the history has finished downloading', async () => {
+				const status = historySyncState.status;
+				try {
+					historySyncState.status = 'running';
+					await searchState.loadAuthors();
+					await searchState.loadAuthors();
+					expect(scanAuthors).toHaveBeenCalledTimes(1);
+
+					historySyncState.status = 'done';
+					await searchState.loadAuthors();
+					await searchState.loadAuthors();
+					expect(scanAuthors).toHaveBeenCalledTimes(2);
+				} finally {
+					historySyncState.status = status;
+				}
 			});
 
 			it('keeps the authors once the scan is done', async () => {

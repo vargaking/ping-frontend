@@ -158,7 +158,7 @@
 
 	/** Every edit comes through here: the chips are cut out of the full text again, the query
 	 *  gets the chips' text plus the rest, and the input gets its rest and caret back. */
-	async function apply(full: string, fullCaret: number) {
+	async function apply(full: string, fullCaret: number, placeCaret = true) {
 		const next = splitChips(full, fullCaret);
 		pickedKey = null;
 		dismissedKey = null;
@@ -167,13 +167,18 @@
 		await tick();
 		if (!input) return;
 		if (input.value !== next.rest) input.value = next.rest;
-		input.setSelectionRange(next.caret, next.caret);
+		if (placeCaret) input.setSelectionRange(next.caret, next.caret);
 	}
 
 	function onInput(event: Event) {
-		if ((event as InputEvent).isComposing || !input) return;
-		const prefix = joinChips(split.chips, '').length;
-		void apply(joinChips(split.chips, input.value), prefix + (input.selectionStart ?? 0));
+		if (!input) return;
+		const full = joinChips(split.chips, input.value);
+		const fullCaret = joinChips(split.chips, '').length + (input.selectionStart ?? 0);
+		const composing = (event as InputEvent).isComposing;
+		// Writing to the input mid-composition breaks the IME (Android keyboards compose every
+		// word), so a change that would move text into a chip waits for compositionend.
+		if (composing && splitChips(full, fullCaret).rest !== input.value) return;
+		void apply(full, fullCaret, !composing);
 	}
 
 	function insertFilter(text: string) {

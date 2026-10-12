@@ -77,6 +77,16 @@ test('has: offers four kinds and Tab inserts the highlighted one', async ({ brow
 	await expect(search).toHaveValue('');
 });
 
+test('suggestions follow a word that is still being composed', async ({ browser }) => {
+	const { page, search, suggestions } = await openSearch(browser);
+	const cdp = await page.context().newCDPSession(page);
+
+	await cdp.send('Input.imeSetComposition', { text: 'has:', selectionStart: 4, selectionEnd: 4 });
+	await expect(suggestions.getByRole('option')).toHaveCount(4);
+	await cdp.send('Input.insertText', { text: 'has:' });
+	await expect(search).toHaveValue('has:');
+});
+
 test('a quick date replaces the typed filter', async ({ browser }) => {
 	const { page, search, suggestions, chips } = await openSearch(browser);
 	const month = await page.evaluate(() => {
