@@ -4,6 +4,7 @@
 	import AccountSettings from './AccountSettings.svelte';
 	import NotificationSettings from './NotificationSettings.svelte';
 	import ServerRequestsSettings from './ServerRequestsSettings.svelte';
+	import StorageSettings from './StorageSettings.svelte';
 	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
@@ -188,6 +189,12 @@
 				label: 'Notifications',
 				scope: 'account',
 				render: notifications
+			},
+			{
+				id: 'account-storage',
+				label: 'Storage',
+				scope: 'account',
+				render: storage
 			}
 		];
 		if (serverRequestState.waitlist) {
@@ -277,6 +284,9 @@
 {/snippet}
 {#snippet notifications()}
 	<NotificationSettings />
+{/snippet}
+{#snippet storage()}
+	<StorageSettings />
 {/snippet}
 {#snippet serverRequests()}
 	<ServerRequestsSettings />

@@ -53,6 +53,8 @@ export type HistorySyncOptions = {
 	userId?: number | null;
 	/** False when the browser asks to save data: catch up only, no walk to the oldest message. */
 	fullHistory: boolean;
+	/** List servers and channels and purge what is no longer visible, but download nothing. */
+	listOnly?: boolean;
 	/** Pause between requests. */
 	gapMs?: number;
 	onProgress?: (progress: HistoryProgress) => void;
@@ -171,7 +173,7 @@ async function localServerIds(): Promise<Set<number>> {
 }
 
 export async function runHistorySync(options: HistorySyncOptions): Promise<void> {
-	const { api, signal, serverIds, preferServerId, fullHistory, onProgress } = options;
+	const { api, signal, serverIds, preferServerId, fullHistory, listOnly, onProgress } = options;
 	const gapMs = options.gapMs ?? 150;
 	let requests = 0;
 
@@ -286,7 +288,7 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 					marker: channel.last_message_id ?? null,
 					rev
 				});
-			} else if (channel.type === 'forum') {
+			} else if (channel.type === 'forum' && !listOnly) {
 				try {
 					threads.push(...(await listPostThreads(serverId, channel.id, rev)));
 				} catch (e) {
@@ -339,7 +341,7 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 			...serverIds.filter((id) => id !== preferServerId)
 		];
 
-		const direct = await listDirect();
+		const direct = listOnly ? [] : await listDirect();
 		const serverThreads: SyncThread[] = [];
 		for (const serverId of ordered) {
 			const listing = await listServer(serverId);
@@ -351,6 +353,7 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 			if (!kept.has(serverId)) await purgeServer(serverId);
 		}
 		checkAborted();
+		if (listOnly) return;
 
 		const threads = [...direct, ...serverThreads].filter((t) => t.marker != null);
 		const live = new Set(threads.map((t) => t.key));

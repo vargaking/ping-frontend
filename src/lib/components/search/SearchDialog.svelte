@@ -12,6 +12,8 @@
 	import { usersState } from '$lib/states/usersState.svelte';
 	import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 	import { localHistoryReady } from '$lib/utils/db';
+	import { requestPersistence } from '$lib/utils/persistentStorage';
+	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
 	import type { SearchScope } from '$lib/utils/messageSearch';
 	import { openSearchResult, type SearchResult } from '$lib/utils/openSearchResult';
 	import { FILTER_HINTS } from '$lib/utils/searchQuery';
@@ -76,7 +78,10 @@
 	const showHints = $derived(!searched && searchState.query.trim() === '');
 	const showResults = $derived(items.length > 0);
 	const nothingFound = $derived(searchState.status === 'ready' && items.length === 0);
-	const downloading = $derived(storage === 'ready' && historySyncState.status !== 'done');
+	const downloadOff = $derived(storage === 'ready' && historySyncState.status === 'off');
+	const downloading = $derived(
+		storage === 'ready' && historySyncState.status !== 'done' && !downloadOff
+	);
 	const countLabel = $derived(
 		searchState.total === null
 			? 'Messages'
@@ -88,6 +93,7 @@
 		input?.select();
 		if (!chips.some((chip) => searchState.isScope(chip.scope))) searchState.setScope(EVERYWHERE);
 		void localHistoryReady().then((ready) => (storage = ready ? 'ready' : 'blocked'));
+		void requestPersistence();
 	});
 
 	// New results start from the top.
@@ -299,7 +305,19 @@
 		{/if}
 	</div>
 
-	{#if downloading}
+	{#if downloadOff}
+		<p class="shrink-0 border-t border-border px-4 py-2 text-xs text-text-subtle">
+			History download is off on this device, so only conversations you opened are searchable.
+			<button
+				type="button"
+				onclick={() =>
+					overlayState.open(SettingsModal, { category: 'account', tab: 'account-storage' })}
+				class="underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+			>
+				Open Storage settings
+			</button>
+		</p>
+	{:else if downloading}
 		<p class="shrink-0 border-t border-border px-4 py-2 text-xs text-text-subtle">
 			{#if historySyncState.threads === 0}
 				History is still downloading. Older messages may be missing.
