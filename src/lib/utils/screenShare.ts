@@ -57,7 +57,10 @@ function pixelCeiling(id: ScreenPresetId): number {
 	return presetPixels(id) * MAX_PIXEL_SCALE;
 }
 
-/** The size to scale a capture down to, or null when it is within the preset's pixel ceiling. */
+function widthMax(id: ScreenPresetId): number {
+	return Math.floor(pixelCeiling(id) / SCREEN_PRESETS[id].preset.height);
+}
+
 export function screenCeilingTarget(id: ScreenPresetId, captured: ScreenSize): ScreenSize | null {
 	const pixels = captured.width * captured.height;
 	const ceiling = pixelCeiling(id);
@@ -67,7 +70,6 @@ export function screenCeilingTarget(id: ScreenPresetId, captured: ScreenSize): S
 	return { width: even(captured.width * scale), height: even(captured.height * scale) };
 }
 
-/** What the browser reports for the capture. Falls back to the preset's own size while it reports none. */
 export function screenCaptureSize(settings: MediaTrackSettings, id: ScreenPresetId): ScreenSize {
 	const { width, height } = SCREEN_PRESETS[id].preset;
 	return { width: settings.width || width, height: settings.height || height };
@@ -75,10 +77,7 @@ export function screenCaptureSize(settings: MediaTrackSettings, id: ScreenPreset
 
 export type ScreenCaptureConstraints = MediaTrackConstraints & { displaySurface?: Surface };
 
-/**
- * A preset caps the height only, so a source wider than 16:9 keeps its native width.
- * The width maximum is the pixel ceiling spread over that height.
- */
+/** A preset caps the height only, so a source wider than 16:9 keeps its native width up to the ceiling. */
 export function screenCaptureConstraints(
 	id: ScreenPresetId,
 	browser: BrowserKind,
@@ -86,20 +85,23 @@ export function screenCaptureConstraints(
 ): ScreenCaptureConstraints {
 	const { height, encoding } = SCREEN_PRESETS[id].preset;
 	const fps = encoding.maxFramerate;
-	const widthMax = Math.floor(pixelCeiling(id) / height);
 	const displaySurface = surface ? { displaySurface: surface } : {};
 	if (browser === 'safari') {
-		return { height: { max: height }, width: { max: widthMax }, frameRate: fps, ...displaySurface };
+		return {
+			height: { max: height },
+			width: { max: widthMax(id) },
+			frameRate: fps,
+			...displaySurface
+		};
 	}
 	return {
 		height: { ideal: height },
-		width: { max: widthMax },
+		width: { max: widthMax(id) },
 		frameRate: { ideal: fps },
 		...displaySurface
 	};
 }
 
-/** Brings a live capture down to a target size. */
 export function screenTargetConstraints(
 	id: ScreenPresetId,
 	target: ScreenSize
@@ -111,9 +113,10 @@ export function screenTargetConstraints(
 	};
 }
 
-/** The preset's height when the captured source is shorter than it. */
 export function sourceBelowPreset(id: ScreenPresetId, captured: ScreenSize): number | null {
 	const { height } = SCREEN_PRESETS[id].preset;
+	// A capture held at the width maximum is short because of the source's shape, not its size.
+	if (captured.width >= widthMax(id) - 2) return null;
 	return captured.height < height ? height : null;
 }
 

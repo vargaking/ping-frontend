@@ -715,7 +715,6 @@ class VoiceState {
 		await Promise.all(tracks.map((track) => lp.publishTrack(track, options)));
 	}
 
-	/** Reads the capture's real size and, past the pixel ceiling, scales it down. */
 	private async fitScreenCapture(
 		mst: MediaStreamTrack,
 		id: ScreenPresetId

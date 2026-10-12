@@ -199,10 +199,13 @@ describe('screenCaptureConstraints', () => {
 
 describe('sourceBelowPreset', () => {
 	it.each([
-		[1920, 1080, 1440],
-		[2560, 1440, null],
-		[3440, 1440, null]
-	] as const)('%dx%d against 1440p is %s', (width, height, expected) => {
-		expect(sourceBelowPreset('1440p30', { width, height })).toBe(expected);
+		['1440p30', 1920, 1080, 1440],
+		['1440p30', 2560, 1440, null],
+		['1440p30', 3440, 1440, null],
+		['1440p30', 3840, 1080, null],
+		['1080p30', 2880, 810, null],
+		['1080p30', 1280, 720, 1080]
+	] as const)('%s at %dx%d gives %s', (id, width, height, expected) => {
+		expect(sourceBelowPreset(id, { width, height })).toBe(expected);
 	});
 });

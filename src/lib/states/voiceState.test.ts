@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RoomEvent } from 'livekit-client';
+
+const senderStats = vi.hoisted(() => vi.fn(async () => []));
 
 vi.mock('livekit-client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('livekit-client')>()),
 	LocalVideoTrack: class {
 		source = '';
+		getSenderStats = senderStats;
 		constructor(public mediaStreamTrack: MediaStreamTrack) {}
 	}
 }));
@@ -130,10 +134,14 @@ function sharingRoom(captured: { width: number; height: number } = { width: 1920
 		getSettings: vi.fn(() => ({ ...captured, frameRate: 30 })),
 		stop: vi.fn()
 	};
-	let publication: { track: unknown } | undefined = { track: { mediaStreamTrack: mst } };
+	const captureStop = vi.fn();
+	let publication: { track: unknown } | undefined = {
+		track: { mediaStreamTrack: mst, getSenderStats: senderStats }
+	};
 	let finishPublish!: () => void;
 	const localParticipant = {
 		identity: 'me',
+		trackPublications: new Map(),
 		getTrackPublication: vi.fn((source: string) =>
 			source === 'screen_share' ? publication : undefined
 		),
@@ -153,7 +161,7 @@ function sharingRoom(captured: { width: number; height: number } = { width: 1920
 			{
 				kind: 'video',
 				mediaStreamTrack: mst,
-				stop: vi.fn(),
+				stop: captureStop,
 				waitForDimensions: async () => captured
 			}
 		]),
@@ -161,7 +169,13 @@ function sharingRoom(captured: { width: number; height: number } = { width: 1920
 			publication = undefined;
 		})
 	};
-	return { room: { localParticipant }, localParticipant, mst, finish: () => finishPublish() };
+	return {
+		room: { localParticipant, disconnect: vi.fn(async () => {}) },
+		localParticipant,
+		mst,
+		captureStop,
+		finish: () => finishPublish()
+	};
 }
 
 describe('voiceState screen share republish', () => {
@@ -200,11 +214,22 @@ describe('voiceState screen share republish', () => {
 	});
 });
 
+const internals = voiceState as unknown as {
+	generation: number;
+	wireRoom(room: unknown, generation: number): void;
+};
+
 describe('voiceState screen share start', () => {
-	beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }));
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		senderStats.mockClear();
+	});
 
 	afterEach(() => {
 		vi.useRealTimers();
+		vi.restoreAllMocks();
+		internals.generation = 0;
 		voiceState.sharing = false;
 		voiceState.startingShare = false;
 		voiceState.shareOutput = null;
@@ -255,5 +280,140 @@ describe('voiceState screen share start', () => {
 		expect(localParticipant.publishTrack.mock.calls[0][1]).toMatchObject({
 			screenShareEncoding: { maxBitrate: 11_989_505 }
 		});
+	});
+
+	it('stops the capture when publishing fails', async () => {
+		const { room, localParticipant, captureStop } = sharingRoom();
+		localParticipant.publishTrack.mockRejectedValue(new Error('publish failed'));
+		Object.assign(voiceState, { room });
+
+		await voiceState.startScreenShare();
+
+		expect(captureStop).toHaveBeenCalledOnce();
+		expect(voiceState.startingShare).toBe(false);
+		expect(voiceState.shareOutput).toBeNull();
+	});
+
+	it('ends quietly when the picker is dismissed', async () => {
+		const { room, localParticipant } = sharingRoom();
+		localParticipant.createScreenTracks.mockRejectedValue(
+			new DOMException('dismissed', 'NotAllowedError')
+		);
+		Object.assign(voiceState, { room });
+
+		await voiceState.startScreenShare();
+
+		expect(localParticipant.publishTrack).not.toHaveBeenCalled();
+		expect(voiceState.startingShare).toBe(false);
+		expect(console.warn).not.toHaveBeenCalled();
+	});
+
+	it('drops a capture that finishes after the call changed', async () => {
+		const { room, localParticipant, captureStop } = sharingRoom();
+		const capture = localParticipant.createScreenTracks.getMockImplementation()!;
+		localParticipant.createScreenTracks.mockImplementation(async () => {
+			internals.generation = -1;
+			return capture();
+		});
+		localParticipant.publishTrack.mockResolvedValue(undefined);
+		Object.assign(voiceState, { room });
+
+		await voiceState.startScreenShare();
+
+		expect(captureStop).toHaveBeenCalledOnce();
+		expect(localParticipant.publishTrack).not.toHaveBeenCalled();
+		expect(voiceState.shareOutput).toBeNull();
+	});
+});
+
+describe('voiceState screen share readout', () => {
+	beforeEach(() => {
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		senderStats.mockClear();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+		internals.generation = 0;
+		voiceState.sharing = false;
+		voiceState.startingShare = false;
+		voiceState.shareOutput = null;
+	});
+
+	async function startSharing(captured?: { width: number; height: number }) {
+		voiceSettingsState.save({ screenPreset: '1080p30', screenContent: 'detail' });
+		const live = sharingRoom(captured);
+		live.localParticipant.publishTrack.mockImplementationOnce(async () => {
+			voiceState.sharing = true;
+		});
+		Object.assign(voiceState, { room: live.room });
+		await voiceState.startScreenShare();
+		return live;
+	}
+
+	it('refreshes from the sender stats while sharing', async () => {
+		await startSharing();
+
+		await vi.advanceTimersByTimeAsync(4000);
+
+		expect(senderStats).toHaveBeenCalledTimes(2);
+	});
+
+	it('stops refreshing and clears the readout when the share is unpublished', async () => {
+		await startSharing();
+		const handlers = new Map<string, (...args: unknown[]) => void>();
+		const emitter = {
+			on: (event: string, handler: (...args: unknown[]) => void) => {
+				handlers.set(event, handler);
+				return emitter;
+			},
+			once: () => emitter
+		};
+		internals.wireRoom(emitter, internals.generation);
+		const me = {
+			identity: 'me',
+			name: 'Me',
+			attributes: {},
+			getTrackPublication: () => undefined
+		};
+
+		handlers.get(RoomEvent.LocalTrackUnpublished)!({ source: 'screen_share', kind: 'video' }, me);
+
+		expect(voiceState.shareOutput).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('stops refreshing and clears the readout when the call ends', async () => {
+		await startSharing();
+
+		await voiceState.leaveVoice();
+
+		expect(voiceState.shareOutput).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('shows the new size after a republish and keeps a single timer', async () => {
+		const { mst, finish, localParticipant } = await startSharing();
+		mst.getSettings.mockReturnValue({ width: 2560, height: 1440, frameRate: 60 });
+
+		const quality = voiceState.setScreenQuality('1440p60');
+		await vi.waitFor(() => expect(localParticipant.publishTrack).toHaveBeenCalledTimes(2));
+		finish();
+		await quality;
+
+		expect(voiceState.shareOutput).toMatchObject({ width: 2560, height: 1440, fps: 60 });
+		expect(vi.getTimerCount()).toBe(1);
+	});
+
+	it('clears the readout when a republish fails', async () => {
+		const { localParticipant } = await startSharing();
+		localParticipant.publishTrack.mockRejectedValueOnce(new Error('publish failed'));
+
+		await voiceState.setScreenQuality('1440p60');
+
+		expect(voiceState.shareOutput).toBeNull();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 });
