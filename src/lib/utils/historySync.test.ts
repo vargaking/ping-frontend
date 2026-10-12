@@ -1,7 +1,8 @@
 import 'fake-indexeddb/auto';
 import { AxiosError } from 'axios';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessagePage } from '$lib/requests/channels/getChannelMessages';
+import type { MessageChangesPage } from '$lib/requests/messages/getMessageChanges';
 import type { Channel } from '$lib/types/channel.types';
 import type { Conversation } from '$lib/types/conversation.types';
 import type { ForumPost, ForumPostPage } from '$lib/types/forum.types';
@@ -16,7 +17,19 @@ import {
 	type HistorySyncOptions,
 	type SyncThread
 } from './historySync';
+import { readCursor, writeCursor } from './messageChanges';
 import { channelThreadKey, directThreadKey, postThreadKey } from './threadKeys';
+
+vi.mock('$lib/states/socketState.svelte', async () => {
+	const { db } = await import('./db');
+	return {
+		socketState: {
+			handleMessageUpdated: (message: MessageType) =>
+				db.messages.update(message.id, { content: message.content }),
+			handleMessageDeleted: (message: { id: string }) => db.messages.delete(message.id)
+		}
+	};
+});
 
 const httpError = (status: number) =>
 	new AxiosError('failed', 'ERR_BAD_REQUEST', undefined, undefined, {
@@ -50,7 +63,22 @@ class FakeApi implements HistoryApi {
 	pageErrors = new Map<string, unknown>();
 	pageCalls: { key: string; before: string | null }[] = [];
 	onPage: (() => void) | null = null;
+	feedPages: (MessageChangesPage | Error)[] = [];
+	feedCalls: { since: string | undefined; pagesBefore: number }[] = [];
+	lookupCalls: string[][] = [];
 	private counter = 0;
+
+	messageChanges: HistoryApi['messageChanges'] = async (since) => {
+		this.feedCalls.push({ since, pagesBefore: this.pageCalls.length });
+		const next = this.feedPages[this.feedCalls.length - 1];
+		if (next instanceof Error) throw next;
+		return next ?? { reset: false, changes: [], cursor: 'fresh', has_more: false };
+	};
+
+	messagesByIds: HistoryApi['messagesByIds'] = async (ids) => {
+		this.lookupCalls.push(ids);
+		return [];
+	};
 
 	addChannel(
 		serverId: number,
@@ -854,5 +882,126 @@ describe('forgetSyncedChannels', () => {
 		await forgetSyncedChannels(1, []);
 
 		expect(await syncKeys()).toHaveLength(5);
+	});
+});
+
+describe('changes feed', () => {
+	const USER = 7;
+	let storage: Map<string, string>;
+
+	beforeEach(() => {
+		storage = new Map();
+		Object.defineProperty(globalThis, 'localStorage', {
+			configurable: true,
+			value: {
+				getItem: (key: string) => storage.get(key) ?? null,
+				setItem: (key: string, value: string) => void storage.set(key, value),
+				removeItem: (key: string) => void storage.delete(key)
+			}
+		});
+	});
+
+	afterEach(() => {
+		Reflect.deleteProperty(globalThis, 'localStorage');
+	});
+
+	const change = (id: string, kind: 'edited' | 'deleted') => ({ id, kind, at: '' });
+
+	it('takes a cursor before catching up when it has none', async () => {
+		fake.addChannel(1, 10, 4);
+
+		await sync({ userId: USER });
+
+		expect(fake.feedCalls).toEqual([{ since: undefined, pagesBefore: 0 }]);
+		expect(readCursor(USER)).toBe('fresh');
+		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+	});
+
+	it('applies the changes before catching up, so catch-up sees the corrected rows', async () => {
+		fake.addChannel(1, 10, 4);
+		await sync({ userId: USER });
+		const [newest, , , oldest] = fake.ids('10');
+		fake.remove('10', [oldest]);
+		fake.feedPages = [
+			{ reset: false, changes: [change(oldest, 'deleted')], cursor: 'next', has_more: false }
+		];
+		fake.feedCalls = [];
+		fake.pageCalls = [];
+
+		await sync({ userId: USER });
+
+		expect(fake.feedCalls).toEqual([{ since: 'fresh', pagesBefore: 0 }]);
+		expect(await db.messages.get(oldest)).toBeUndefined();
+		expect(await db.messages.get(newest)).toBeDefined();
+		expect(readCursor(USER)).toBe('next');
+	});
+
+	it('clears the local history on reset and downloads it again', async () => {
+		fake.addChannel(1, 10, 4);
+		await sync({ userId: USER });
+		writeCursor(USER, 'stale');
+		fake.pageCalls = [];
+		fake.feedCalls = [];
+		fake.feedPages = [{ reset: true, changes: [], cursor: 'brand-new', has_more: false }];
+
+		await sync({ userId: USER });
+
+		expect(fake.pagesFor('10')).toEqual([null, '3']);
+		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+		expect(readCursor(USER)).toBe('brand-new');
+	});
+
+	it.each([
+		['a server without the feed', httpError(404)],
+		['a network failure', networkError()]
+	])('keeps its cursor and carries on after %s', async (_name, failure) => {
+		fake.addChannel(1, 10, 4);
+		writeCursor(USER, 'kept');
+		fake.feedPages = [failure];
+
+		await sync({ userId: USER });
+
+		expect(readCursor(USER)).toBe('kept');
+		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+	});
+
+	it('keeps the first page cursor and carries on when the second page fails', async () => {
+		fake.addChannel(1, 10, 4);
+		writeCursor(USER, 'c0');
+		fake.feedPages = [{ reset: false, changes: [], cursor: 'c1', has_more: true }, httpError(500)];
+
+		await sync({ userId: USER });
+
+		expect(readCursor(USER)).toBe('c1');
+		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+	});
+
+	it.each([
+		['the user is unknown', { userId: null }, {}],
+		['the api has no feed', { userId: USER }, { messageChanges: undefined }],
+		['the api cannot look messages up', { userId: USER }, { messagesByIds: undefined }]
+	])('is skipped when %s', async (_name, options, missing) => {
+		fake.addChannel(1, 10, 4);
+		Object.assign(fake, missing);
+
+		await sync(options);
+
+		expect(fake.feedCalls).toEqual([]);
+		expect(readCursor(USER)).toBeNull();
+		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+	});
+
+	it('ends the run when stopped during the feed', async () => {
+		fake.addChannel(1, 10, 4);
+		const controller = new AbortController();
+		fake.messageChanges = async () => {
+			controller.abort();
+			throw networkError();
+		};
+
+		await sync({ userId: USER, signal: controller.signal });
+
+		expect(fake.pageCalls).toEqual([]);
+		expect(readCursor(USER)).toBeNull();
 	});
 });

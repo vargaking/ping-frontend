@@ -1,4 +1,5 @@
 import type { MessagePage } from '$lib/requests/channels/getChannelMessages';
+import type { MessageChangesPage } from '$lib/requests/messages/getMessageChanges';
 import { normalizeError } from '$lib/requests/errors';
 import type { Channel } from '$lib/types/channel.types';
 import type { Conversation } from '$lib/types/conversation.types';
@@ -6,6 +7,7 @@ import type { ForumPostPage } from '$lib/types/forum.types';
 import type { ThreadSync } from '$lib/types/localHistory.types';
 import type { MessageType } from '$lib/types/messages.types';
 import { db } from '$lib/utils/db';
+import { applyMessageChanges } from '$lib/utils/messageChanges';
 import { tokenize } from '$lib/utils/searchText';
 import { channelThreadKey, directThreadKey, postThreadKey } from '$lib/utils/threadKeys';
 
@@ -34,6 +36,9 @@ export type HistoryApi = {
 	posts(channelId: number, cursor: string | null, signal: AbortSignal): Promise<ForumPostPage>;
 	conversations(signal: AbortSignal): Promise<Conversation[]>;
 	page(thread: SyncThread, before: string | null, signal: AbortSignal): Promise<MessagePage>;
+	/** Both are needed for the changes feed; without them the feed is skipped. */
+	messageChanges?(since: string | undefined, signal: AbortSignal): Promise<MessageChangesPage>;
+	messagesByIds?(ids: string[], signal: AbortSignal): Promise<MessageType[]>;
 };
 
 export type HistoryProgress = { threads: number; complete: number };
@@ -44,6 +49,8 @@ export type HistorySyncOptions = {
 	/** Tried first. */
 	preferServerId: number | null;
 	signal: AbortSignal;
+	/** Whose cursor the changes feed keeps; the feed is skipped without it. */
+	userId?: number | null;
 	/** False when the browser asks to save data: catch up only, no walk to the oldest message. */
 	fullHistory: boolean;
 	/** Pause between requests. */
@@ -310,7 +317,23 @@ export async function runHistorySync(options: HistorySyncOptions): Promise<void>
 		}
 	}
 
+	/** Applies edits and deletes made elsewhere. A failure leaves its cursor and the run carries on. */
+	async function syncChanges() {
+		const { userId } = options;
+		if (userId == null || !api.messageChanges || !api.messagesByIds) return;
+		try {
+			await applyMessageChanges(userId, {
+				page: (since) => request(() => api.messageChanges!(since, signal)),
+				byIds: (ids) => request(() => api.messagesByIds!(ids, signal))
+			});
+		} catch (e) {
+			if (e instanceof Aborted) throw e;
+		}
+	}
+
 	async function run() {
+		await syncChanges();
+
 		const ordered = [
 			...serverIds.filter((id) => id === preferServerId),
 			...serverIds.filter((id) => id !== preferServerId)
