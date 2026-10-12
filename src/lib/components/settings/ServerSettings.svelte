@@ -9,7 +9,13 @@
 	import { ICON_TYPES, iconProblem } from '$lib/utils/serverIcon';
 	import { avatarTone, graphemes, toneClass, TONE_COUNT } from '$lib/utils/avatar';
 	import type { ServerSettings } from '$lib/types/server.types';
-	import { ACCENT_ERROR, ACCENT_PRESETS, parseAccent, readableAccent } from '$lib/utils/accent';
+	import {
+		ACCENT_ERROR,
+		ACCENT_PRESETS,
+		DEFAULT_ACCENT,
+		parseAccent,
+		readableAccent
+	} from '$lib/utils/accent';
 	import { Check } from 'lucide-svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
@@ -511,11 +517,9 @@
 				<div class="flex items-center gap-3">
 					<span
 						aria-hidden="true"
-						style:background-color={shownAccent?.color}
-						style:color={shownAccent?.foreground}
-						class="flex h-8 items-center rounded-lg px-3 text-[13px] font-medium {shownAccent
-							? ''
-							: 'bg-primary text-primary-foreground'}"
+						style:background-color={shownAccent?.color ?? DEFAULT_ACCENT.color}
+						style:color={shownAccent?.foreground ?? DEFAULT_ACCENT.foreground}
+						class="flex h-8 items-center rounded-lg px-3 text-[13px] font-medium"
 					>
 						Preview
 					</span>

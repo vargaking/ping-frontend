@@ -34,21 +34,12 @@ describe('contrastRatio', () => {
 });
 
 describe('readableAccent', () => {
-	it('keeps a colour that already stands out from the surface', () => {
-		expect(readableAccent('#5b9cf5')).toEqual({
-			color: '#5b9cf5',
-			foreground: '#000000',
-			adjusted: false
-		});
-	});
-
-	it('keeps a very light colour and puts black text on it', () => {
-		expect(readableAccent('#ffff00')).toEqual({
-			color: '#ffff00',
-			foreground: '#000000',
-			adjusted: false
-		});
-	});
+	it.each(['#5b9cf5', '#ffff00'])(
+		'keeps %s, which already stands out, with black text',
+		(color) => {
+			expect(readableAccent(color)).toEqual({ color, foreground: '#000000', adjusted: false });
+		}
+	);
 
 	it.each(['#101010', '#000000', '#1a2b3c', '#2a0a5e'])(
 		'lightens the dark colour %s until it stands out from the surface',

@@ -16,6 +16,13 @@ export const ACCENT_PRESETS = [
 	{ name: 'Purple', value: '#a77be0' }
 ] as const;
 
+// The base theme's --primary pair from app.css. The live tokens can hold the saved accent,
+// so a preview of "default" can't read them.
+export const DEFAULT_ACCENT = {
+	color: 'oklch(0.753 0.069 244.8)',
+	foreground: 'oklch(0.187 0.016 244.7)'
+};
+
 export const ACCENT_ERROR = 'Use a colour like #1a2b3c.';
 
 /** The server's rule: `#rrggbb`, case-insensitive. Returns it lowercased, or null if invalid. */
