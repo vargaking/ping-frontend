@@ -20,6 +20,8 @@
 		serverMuted?: boolean;
 		localMuted?: boolean;
 		streaming?: boolean;
+		/** A word on the tile about the person, such as "Ringing…". */
+		status?: string;
 		/** Shown in a menu opened from the tile. */
 		actions?: MenuAction[];
 		/** A video or screen-share stream. Replaces the avatar and fills the tile. */
@@ -39,6 +41,7 @@
 		serverMuted = false,
 		localMuted = false,
 		streaming = false,
+		status,
 		actions = [],
 		media,
 		onNameClick
@@ -47,7 +50,8 @@
 
 	const stateLabel = $derived(
 		(serverMuted ? ', server muted' : deafened ? ', deafened' : muted ? ', muted' : '') +
-			(localMuted ? ', muted for you' : '')
+			(localMuted ? ', muted for you' : '') +
+			(status ? `, ${status}` : '')
 	);
 </script>
 
@@ -70,6 +74,15 @@
 			{:else}
 				{initials(initialsFrom ?? name)}
 			{/if}
+		</span>
+	{/if}
+
+	{#if status}
+		<span
+			aria-hidden="true"
+			class="absolute top-2 left-2 rounded-md bg-background/80 px-2 py-0.5 text-xs text-muted-foreground"
+		>
+			{status}
 		</span>
 	{/if}
 
