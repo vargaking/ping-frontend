@@ -2,10 +2,13 @@
 	import { onMount, untrack } from 'svelte';
 	import { X } from 'lucide-svelte';
 	import { overlayState } from '$lib/states/overlayState.svelte';
+	import { announcementsState } from '$lib/states/announcementsState.svelte';
 	import { whatsNewState } from '$lib/states/whatsNewState.svelte';
 	import { formatEntryDate } from '$lib/utils/whatsNew';
+	import { ANNOUNCEMENT_LEVELS } from '$lib/types/announcement.types';
 
 	const entries = whatsNewState.entries.slice(0, 30);
+	const levelLabel = (level: string) => ANNOUNCEMENT_LEVELS.find((l) => l.value === level)?.label;
 
 	// Taken before the entries are marked seen, so the panel can still point out what is new.
 	const fresh = untrack(
@@ -33,6 +36,31 @@
 		</button>
 	</header>
 	<div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 scrollbar-stable max-md:p-4">
+		{#if announcementsState.listed.length > 0}
+			<section class="flex flex-col gap-3" aria-label="Announcements">
+				<h2 class="text-base font-semibold">Announcements</h2>
+				<ul class="flex flex-col gap-3">
+					{#each announcementsState.listed as announcement (announcement.id)}
+						<li class="flex flex-col gap-1 rounded-lg border border-border px-3 py-2.5">
+							<div class="flex items-center gap-2 text-xs text-text-subtle">
+								<span class="font-medium">{levelLabel(announcement.level)}</span>
+								<time datetime={announcement.created_at}>
+									{formatEntryDate(announcement.created_at.slice(0, 10))}
+								</time>
+								{#if announcement.ended}
+									<span class="rounded-full bg-accent px-2 py-0.5 text-[11px] leading-none"
+										>Ended</span
+									>
+								{/if}
+							</div>
+							<p class="text-sm break-words whitespace-pre-wrap text-muted-foreground">
+								{announcement.text}
+							</p>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 		{#each entries as entry (entry.id)}
 			<article class="flex flex-col gap-2">
 				<div class="flex items-center gap-2 text-xs text-text-subtle">

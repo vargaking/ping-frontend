@@ -55,6 +55,7 @@ import { replyState } from './replyState.svelte';
 import { Outbox } from './outboxState.svelte';
 import { HIDDEN_RESYNC_MS, resyncState } from './resyncState.svelte';
 import { updateState } from './updateState.svelte';
+import { announcementsState } from './announcementsState.svelte';
 
 /** Server close code for "no valid session" (see /ws in ping-server). */
 const WS_CLOSE_UNAUTHENTICATED = 4401;
@@ -885,6 +886,12 @@ class SocketState {
 				break;
 			case 'read_state':
 				this.handleReadState(message);
+				break;
+			case 'announcement':
+				announcementsState.apply(message.announcement);
+				break;
+			case 'announcement_ended':
+				announcementsState.markEnded(message.id, message.expires_at);
 				break;
 			case 'pong':
 				this.handlePong(message.t);
