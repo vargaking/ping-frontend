@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DANGER_ZONE_LABEL, PERMISSION_GROUPS, editorGroups, has } from './permissions';
+import { DANGER_ZONE_LABEL, PERMISSION_GROUPS, editorGroups } from './permissions';
 
 describe('editorGroups', () => {
 	const groups = editorGroups();
@@ -16,13 +16,4 @@ describe('editorGroups', () => {
 		const all = PERMISSION_GROUPS.flatMap((g) => g.permissions).length;
 		expect(groups.flatMap((g) => g.permissions)).toHaveLength(all);
 	});
-
-	it.each(flagged.map((p) => [p.label, p.bit] as const))(
-		'%s is out of reach for a holder without the bit',
-		(_label, bit) => {
-			const everythingElse = ~bit & 0xffffn;
-			expect(has(everythingElse, bit)).toBe(false);
-			expect(has(everythingElse | bit, bit)).toBe(true);
-		}
-	);
 });

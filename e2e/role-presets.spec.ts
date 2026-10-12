@@ -49,17 +49,17 @@ test('creating a role from a preset ticks its toggles and leaves the danger zone
 
 	await openRoles(owner.page, serverName);
 	await expect(
-		owner.page.getByRole('list', { name: 'Roles' }).getByText('Admin', { exact: true }),
-		'a new server should not come with an Admin role'
-	).toHaveCount(0);
+		owner.page.getByText('No custom roles yet.'),
+		'a new server should come with @everyone only'
+	).toBeVisible();
 
 	await createFromPreset(owner.page, 'Admins', 'Admin');
 	for (const label of OUTSIDE_DANGER) await expect(allowed(owner.page, label)).toBeChecked();
 	for (const label of DANGER) await expect(allowed(owner.page, label)).not.toBeChecked();
 	await expect(
-		owner.page.getByRole('region', { name: 'Danger zone' }),
+		owner.page.locator('section[aria-label]').last(),
 		'the danger zone should be the last group'
-	).toBeVisible();
+	).toHaveAttribute('aria-label', 'Danger zone');
 
 	await owner.page.getByRole('button', { name: 'All roles' }).click();
 	await createFromPreset(owner.page, 'Mods', 'Moderator');
