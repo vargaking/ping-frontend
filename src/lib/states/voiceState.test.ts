@@ -2,12 +2,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomEvent } from 'livekit-client';
 
 const senderStats = vi.hoisted(() => vi.fn(async () => []));
+const mocks = vi.hoisted(() => ({ desktop: undefined as Record<string, unknown> | undefined }));
+
+vi.mock('$lib/desktop', () => ({
+	get desktop() {
+		return mocks.desktop;
+	}
+}));
 
 vi.mock('livekit-client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('livekit-client')>()),
 	LocalVideoTrack: class {
 		source = '';
 		getSenderStats = senderStats;
+		constructor(public mediaStreamTrack: MediaStreamTrack) {}
+	},
+	LocalAudioTrack: class {
+		source = '';
+		stop = vi.fn();
 		constructor(public mediaStreamTrack: MediaStreamTrack) {}
 	}
 }));
@@ -415,5 +427,239 @@ describe('voiceState screen share readout', () => {
 
 		expect(voiceState.shareOutput).toBeNull();
 		expect(vi.getTimerCount()).toBe(0);
+	});
+});
+
+describe('voiceState screen share sound', () => {
+	const VIRTUAL_SOURCE = {
+		kind: 'audioinput',
+		label: 'vencord-screen-share',
+		deviceId: 'virtual-1'
+	};
+	const MICROPHONE = { kind: 'audioinput', label: 'Built-in Microphone', deviceId: 'mic-1' };
+
+	let startSystemAudio: ReturnType<typeof vi.fn>;
+	let stopSystemAudio: ReturnType<typeof vi.fn>;
+	let enumerateDevices: ReturnType<typeof vi.fn>;
+	let getUserMedia: ReturnType<typeof vi.fn>;
+	let soundTrack: { stop: ReturnType<typeof vi.fn> };
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		senderStats.mockClear();
+		voiceSettingsState.save({
+			screenPreset: '1080p30',
+			screenContent: 'detail',
+			screenSound: true
+		});
+		startSystemAudio = vi.fn(async () => ({ ok: true }));
+		stopSystemAudio = vi.fn();
+		soundTrack = { stop: vi.fn() };
+		enumerateDevices = vi.fn(async () => [MICROPHONE, VIRTUAL_SOURCE]);
+		getUserMedia = vi.fn(async () => ({ getAudioTracks: () => [soundTrack] }));
+		vi.stubGlobal('navigator', {
+			userAgent: 'Mozilla/5.0 (X11; Linux x86_64)',
+			mediaDevices: { enumerateDevices, getUserMedia }
+		});
+		useShell();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+		mocks.desktop = undefined;
+		internals.generation = 0;
+		voiceState.sharing = false;
+		voiceState.startingShare = false;
+		voiceState.shareOutput = null;
+		voiceState.shareSound = null;
+	});
+
+	function useShell(platform: 'linux' | 'win32' = 'linux') {
+		mocks.desktop = {
+			platform,
+			canShareAudio: true,
+			startSystemAudio,
+			stopSystemAudio
+		};
+	}
+
+	/** A room whose publishing marks the share live, and which holds a screen-share audio publication once one is published. */
+	function startableRoom() {
+		const live = sharingRoom();
+		const { localParticipant } = live;
+		let audioPublished = false;
+		const screen = localParticipant.getTrackPublication.getMockImplementation()!;
+		localParticipant.getTrackPublication.mockImplementation((source: string) =>
+			source === 'screen_share_audio'
+				? audioPublished
+					? { track: {} }
+					: undefined
+				: screen(source)
+		);
+		localParticipant.publishTrack.mockImplementation(async (track: unknown) => {
+			voiceState.sharing = true;
+			if ((track as { source?: string }).source === 'screen_share_audio') audioPublished = true;
+		});
+		Object.assign(voiceState, { room: live.room });
+		return live;
+	}
+
+	const published = (localParticipant: { publishTrack: { mock: { calls: unknown[][] } } }) =>
+		localParticipant.publishTrack.mock.calls.map(([track]) => track as { source: string });
+
+	it('links the sound before the capture and publishes it together with the video', async () => {
+		const { localParticipant } = startableRoom();
+
+		await voiceState.startScreenShare();
+
+		expect(startSystemAudio.mock.invocationCallOrder[0]).toBeLessThan(
+			localParticipant.createScreenTracks.mock.invocationCallOrder[0]
+		);
+		expect(localParticipant.createScreenTracks).toHaveBeenCalledWith(
+			expect.objectContaining({ audio: false })
+		);
+		expect(getUserMedia).toHaveBeenCalledWith({
+			audio: {
+				deviceId: { exact: 'virtual-1' },
+				echoCancellation: false,
+				noiseSuppression: false,
+				autoGainControl: false,
+				channelCount: { ideal: 2 }
+			}
+		});
+		expect(published(localParticipant).map((track) => track.source)).toEqual([
+			undefined,
+			'screen_share_audio'
+		]);
+		expect(voiceState.shareSound).toEqual({ on: true, text: 'Sound on' });
+		expect(stopSystemAudio).not.toHaveBeenCalled();
+	});
+
+	it('publishes the video alone and unlinks when the virtual source never shows up', async () => {
+		enumerateDevices.mockResolvedValue([MICROPHONE]);
+		const { localParticipant } = startableRoom();
+
+		const starting = voiceState.startScreenShare();
+		await vi.advanceTimersByTimeAsync(3500);
+		await starting;
+
+		expect(published(localParticipant)).toHaveLength(1);
+		expect(getUserMedia).not.toHaveBeenCalled();
+		expect(stopSystemAudio).toHaveBeenCalledOnce();
+		expect(voiceState.shareSound).toEqual({
+			on: false,
+			text: "No sound: the PC's sound couldn't be captured"
+		});
+	});
+
+	it('waits for a virtual source that appears a moment after the link', async () => {
+		enumerateDevices
+			.mockResolvedValueOnce([MICROPHONE])
+			.mockResolvedValueOnce([MICROPHONE])
+			.mockResolvedValue([MICROPHONE, VIRTUAL_SOURCE]);
+		const { localParticipant } = startableRoom();
+
+		const starting = voiceState.startScreenShare();
+		await vi.advanceTimersByTimeAsync(500);
+		await starting;
+
+		expect(published(localParticipant)).toHaveLength(2);
+		expect(stopSystemAudio).not.toHaveBeenCalled();
+	});
+
+	it('shares without sound when the shell cannot link it', async () => {
+		startSystemAudio.mockResolvedValue({ ok: false, reason: 'no PipeWire' });
+		const { localParticipant } = startableRoom();
+
+		await voiceState.startScreenShare();
+
+		expect(published(localParticipant)).toHaveLength(1);
+		expect(voiceState.shareSound?.on).toBe(false);
+		expect(stopSystemAudio).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			name: 'the picker is dismissed',
+			fail: (p: ReturnType<typeof sharingRoom>['localParticipant']) =>
+				p.createScreenTracks.mockRejectedValue(new DOMException('dismissed', 'NotAllowedError'))
+		},
+		{
+			name: 'publishing fails',
+			fail: (p: ReturnType<typeof sharingRoom>['localParticipant']) =>
+				p.publishTrack.mockRejectedValue(new Error('publish failed'))
+		}
+	])('unlinks when $name', async ({ fail }) => {
+		const { localParticipant } = startableRoom();
+		fail(localParticipant);
+
+		await voiceState.startScreenShare();
+
+		expect(startSystemAudio).toHaveBeenCalledOnce();
+		expect(stopSystemAudio).toHaveBeenCalledOnce();
+	});
+
+	it('unlinks when the share is unpublished, once', async () => {
+		startableRoom();
+		await voiceState.startScreenShare();
+		const handlers = new Map<string, (...args: unknown[]) => void>();
+		const emitter = {
+			on: (event: string, handler: (...args: unknown[]) => void) => {
+				handlers.set(event, handler);
+				return emitter;
+			},
+			once: () => emitter
+		};
+		internals.wireRoom(emitter, internals.generation);
+		const me = { identity: 'me', name: 'Me', attributes: {}, getTrackPublication: () => undefined };
+
+		handlers.get(RoomEvent.LocalTrackUnpublished)!({ source: 'screen_share', kind: 'video' }, me);
+		handlers.get(RoomEvent.LocalTrackUnpublished)!({ source: 'screen_share', kind: 'video' }, me);
+
+		expect(stopSystemAudio).toHaveBeenCalledOnce();
+	});
+
+	it('unlinks when leaving the call', async () => {
+		startableRoom();
+		await voiceState.startScreenShare();
+
+		await voiceState.leaveVoice();
+
+		expect(stopSystemAudio).toHaveBeenCalledOnce();
+	});
+
+	it('unlinks when changing the quality fails', async () => {
+		const { localParticipant } = startableRoom();
+		await voiceState.startScreenShare();
+		localParticipant.publishTrack.mockRejectedValueOnce(new Error('publish failed'));
+
+		await voiceState.setScreenQuality('1440p60');
+
+		expect(stopSystemAudio).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{ name: 'in a browser', shell: () => (mocks.desktop = undefined), audio: true },
+		{ name: 'on Windows', shell: () => useShell('win32'), audio: true },
+		{
+			name: 'on Linux with the sound switch off',
+			shell: () => voiceSettingsState.save({ screenSound: false }),
+			audio: false
+		}
+	])('does not link anything $name', async ({ shell, audio }) => {
+		shell();
+		const { localParticipant } = startableRoom();
+
+		await voiceState.startScreenShare();
+
+		expect(localParticipant.createScreenTracks).toHaveBeenCalledWith(
+			expect.objectContaining({ audio })
+		);
+		expect(startSystemAudio).not.toHaveBeenCalled();
+		expect(stopSystemAudio).not.toHaveBeenCalled();
+		expect(getUserMedia).not.toHaveBeenCalled();
 	});
 });

@@ -24,3 +24,28 @@ describe('saved screen quality', () => {
 		expect(state.screenPreset).toBe(expected);
 	});
 });
+
+describe('refreshDevices', () => {
+	it('leaves out the virtual nodes of the desktop screen-share sound', async () => {
+		const device = (kind: string, label: string) => ({ kind, label, deviceId: label });
+		vi.doMock('livekit-client', async (importOriginal) => ({
+			...(await importOriginal<typeof import('livekit-client')>()),
+			Room: {
+				getLocalDevices: async () => [
+					device('audioinput', 'Built-in Microphone'),
+					device('audioinput', 'vencord-screen-share'),
+					device('audioinput', 'Monitor of vencord-sink'),
+					device('audiooutput', 'Speakers'),
+					device('audiooutput', 'Vencord-Sink')
+				]
+			}
+		}));
+		const state = await loadWithSaved({});
+
+		await state.refreshDevices();
+
+		expect(state.inputs.map((d) => d.label)).toEqual(['Built-in Microphone']);
+		expect(state.outputs.map((d) => d.label)).toEqual(['Speakers']);
+		vi.doUnmock('livekit-client');
+	});
+});

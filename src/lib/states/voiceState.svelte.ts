@@ -21,6 +21,7 @@ import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { voicePeerAudioState, voiceStreamAudioState } from './voicePeerAudioState.svelte';
 import { DEFAULT_DEVICE, voiceSettingsState } from './voiceSettingsState.svelte';
+import { desktop } from '$lib/desktop';
 import { axiosClient } from '$lib/requests/axiosClient';
 import {
 	refreshVoicePresence,
@@ -81,6 +82,44 @@ const SCREEN_REPUBLISH_GRACE_MS = 1000;
 const SCREEN_OUTPUT_REFRESH_MS = 2000;
 const STORAGE_KEY = 'voice.selfState';
 const REJOIN_DELAYS_MS = [1000, 3000, 10000];
+/** The desktop app's virtual source for screen-share sound, named by venmic. */
+const SHARE_DEVICE_LABEL = 'vencord-screen-share';
+const SHARE_DEVICE_WAIT_MS = 3000;
+const SHARE_DEVICE_POLL_MS = 150;
+
+async function findShareDevice(): Promise<MediaDeviceInfo | undefined> {
+	const deadline = Date.now() + SHARE_DEVICE_WAIT_MS;
+	for (;;) {
+		const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+		const found = devices.find(
+			(d) => d.kind === 'audioinput' && d.label.toLowerCase().includes(SHARE_DEVICE_LABEL)
+		);
+		if (found || Date.now() >= deadline) return found;
+		await new Promise((resolve) => setTimeout(resolve, SHARE_DEVICE_POLL_MS));
+	}
+}
+
+/** The PC's sound as a screen-share audio track, or null when the virtual source never showed up or can't be opened. */
+async function openShareSoundTrack(): Promise<LocalAudioTrack | null> {
+	const device = await findShareDevice();
+	if (!device) return null;
+	const constraints = {
+		deviceId: { exact: device.deviceId },
+		echoCancellation: false,
+		noiseSuppression: false,
+		autoGainControl: false,
+		channelCount: { ideal: 2 }
+	};
+	try {
+		const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+		const track = new LocalAudioTrack(stream.getAudioTracks()[0], undefined, false);
+		track.source = Track.Source.ScreenShareAudio;
+		return track;
+	} catch (err) {
+		console.warn("Couldn't open the screen-share sound source:", err);
+		return null;
+	}
+}
 
 function mapQuality(quality: ConnectionQuality): VoiceQuality {
 	switch (quality) {
@@ -155,6 +194,8 @@ class VoiceState {
 	private leaving = false;
 	// Bumped by every join, rejoin and leave so superseded async work can tell.
 	private generation = 0;
+	// The shell has linked the PC's sound for the running share and must be told to unlink.
+	private systemAudioLinked = false;
 	private swappingScreen = false;
 	private screenRepublishQueued = false;
 	private screenStopQueued = false;
@@ -450,6 +491,7 @@ class VoiceState {
 				if (pub.kind === Track.Kind.Video && !this.swappingScreen) {
 					this.sharing = false;
 					this.shareSound = null;
+					this.releaseSystemAudio();
 					this.clearShareOutput();
 					this.screens.delete(p.identity);
 					const audio = p.getTrackPublication(Track.Source.ScreenShareAudio)?.track;
@@ -574,12 +616,19 @@ class VoiceState {
 		const env = soundEnv();
 		const requested = voiceSettingsState.screenSound;
 		// The browser's picker can still switch to a tab, so only a device that can't share sound at all skips it.
-		const askForAudio = requested && soundOption(env, 'browser').available;
+		const systemAudio =
+			requested &&
+			env.platform === 'linux' &&
+			env.desktop?.canShareAudio === true &&
+			!!desktop?.startSystemAudio;
+		// On Linux the sound comes from the shell's virtual source, not from the capture.
+		const askForAudio = requested && !systemAudio && soundOption(env, 'browser').available;
 		const { screenPreset, screenContent, screenSurface } = voiceSettingsState;
 		const browser = env.browser.kind;
 		this.startingShare = true;
 		let tracks: LocalTrack[] = [];
 		try {
+			if (systemAudio) await this.linkSystemAudio();
 			tracks = await room.localParticipant.createScreenTracks({
 				audio: askForAudio,
 				video: screenCaptureConstraints(
@@ -603,8 +652,14 @@ class VoiceState {
 				capture.mediaStreamTrack,
 				screenPreset
 			);
+			if (this.systemAudioLinked) {
+				const sound = await openShareSoundTrack();
+				if (sound) tracks.push(sound);
+				else this.releaseSystemAudio();
+			}
 			if (gen !== this.generation) {
 				tracks.forEach((track) => track.stop());
+				this.releaseSystemAudio();
 				return;
 			}
 			await this.publishScreenTracks(
@@ -625,12 +680,27 @@ class VoiceState {
 			}
 		} catch (err) {
 			tracks.forEach((track) => track.stop());
+			this.releaseSystemAudio();
 			if (isPickerCancel(err)) return;
 			console.warn('Screen share failed:', err);
 			toast.error(`Couldn't start screen share${err instanceof Error ? `: ${err.message}` : '.'}`);
 		} finally {
 			if (gen === this.generation) this.startingShare = false;
 		}
+	}
+
+	private async linkSystemAudio() {
+		this.systemAudioLinked = true;
+		const result = await desktop?.startSystemAudio?.().catch(() => null);
+		if (result?.ok) return;
+		console.warn("The PC's sound can't be linked:", result?.reason);
+		this.systemAudioLinked = false;
+	}
+
+	private releaseSystemAudio() {
+		if (!this.systemAudioLinked) return;
+		this.systemAudioLinked = false;
+		desktop?.stopSystemAudio?.();
 	}
 
 	async stopScreenShare() {
@@ -698,6 +768,7 @@ class VoiceState {
 			this.swappingScreen = false;
 			this.sharing = false;
 			this.shareSound = null;
+			this.releaseSystemAudio();
 			this.clearShareOutput();
 			this.screens.delete(lp.identity);
 			await this.stopScreenShare();
@@ -832,6 +903,7 @@ class VoiceState {
 		this.sharing = false;
 		this.startingShare = false;
 		this.shareSound = null;
+		this.releaseSystemAudio();
 		this.clearShareOutput();
 		this.selfPreview = false;
 		this.quality = 'unknown';
