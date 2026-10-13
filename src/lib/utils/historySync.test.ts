@@ -713,6 +713,67 @@ describe('saving data', () => {
 	});
 });
 
+describe('list only', () => {
+	it('downloads nothing and writes no posts', async () => {
+		fake.addChannel(1, 10, 8);
+		fake.addChannel(1, 11, 0, 'forum');
+		fake.addPost(1, 11, 100, 'A post', 3);
+		fake.addConversation(5, 4);
+
+		await sync({ listOnly: true });
+
+		expect(fake.pageCalls).toEqual([]);
+		expect(await db.messages.count()).toBe(0);
+		expect(await db.posts.count()).toBe(0);
+		expect(await db.threadSync.count()).toBe(0);
+	});
+
+	it('requests no forum posts and no conversations', async () => {
+		const posts = vi.spyOn(fake, 'posts');
+		const conversations = vi.spyOn(fake, 'conversations');
+		fake.addChannel(1, 11, 0, 'forum');
+		fake.addConversation(5, 4);
+
+		await sync({ listOnly: true });
+
+		expect(posts).not.toHaveBeenCalled();
+		expect(conversations).not.toHaveBeenCalled();
+	});
+
+	it('purges a server that is no longer in serverIds and a channel that left the listing', async () => {
+		fake.addChannel(1, 10, 4);
+		fake.addChannel(1, 11, 4);
+		fake.addChannel(2, 20, 4);
+		fake.addChannel(2, 21, 0, 'forum');
+		fake.addPost(2, 21, 100, 'Left behind', 3);
+		await sync({ serverIds: [1, 2] });
+
+		fake.channelsByServer.set(
+			1,
+			fake.channelsByServer.get(1)!.filter((c) => c.id !== 10)
+		);
+		await sync({ serverIds: [1], listOnly: true });
+
+		expect(await storedIds('10')).toEqual([]);
+		expect(await db.threadSync.get('10')).toBeUndefined();
+		expect(await storedIds('20')).toEqual([]);
+		expect(await storedIds('post:100')).toEqual([]);
+		expect(await db.posts.count()).toBe(0);
+		expect(await storedIds('11')).toHaveLength(4);
+	});
+
+	it('keeps the stored forum posts of a forum that is still listed', async () => {
+		fake.addChannel(1, 11, 0, 'forum');
+		fake.addPost(1, 11, 100, 'Kept', 3);
+		await sync();
+
+		await sync({ listOnly: true });
+
+		expect(await db.posts.count()).toBe(1);
+		expect(await storedIds('post:100')).toHaveLength(3);
+	});
+});
+
 describe('progress', () => {
 	it('counts threads with messages and the ones that are complete', async () => {
 		fake.addChannel(1, 10, 8);
@@ -915,6 +976,24 @@ describe('changes feed', () => {
 		expect(fake.feedCalls).toEqual([{ since: undefined, pagesBefore: 0 }]);
 		expect(readCursor(USER)).toBe('fresh');
 		expect(await storedIds('10')).toEqual(fake.ids('10').sort());
+	});
+
+	it('applies the changes without downloading when only listing', async () => {
+		fake.addChannel(1, 10, 4);
+		await sync({ userId: USER });
+		const [newest, , , oldest] = fake.ids('10');
+		fake.feedPages = [
+			{ reset: false, changes: [change(oldest, 'deleted')], cursor: 'next', has_more: false }
+		];
+		fake.feedCalls = [];
+		fake.pageCalls = [];
+
+		await sync({ userId: USER, listOnly: true });
+
+		expect(await db.messages.get(oldest)).toBeUndefined();
+		expect(await db.messages.get(newest)).toBeDefined();
+		expect(readCursor(USER)).toBe('next');
+		expect(fake.pageCalls).toEqual([]);
 	});
 
 	it('applies the changes before catching up, so catch-up sees the corrected rows', async () => {

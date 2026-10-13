@@ -2,7 +2,14 @@ import { historyApi } from '$lib/requests/history';
 import { normalizeError } from '$lib/requests/errors';
 import { db, localHistoryAvailable, localHistoryReady } from '$lib/utils/db';
 import { forgetSyncedChannels, runHistorySync, type HistoryApi } from '$lib/utils/historySync';
-import { removeCursor } from '$lib/utils/messageChanges';
+import {
+	browserSavesData,
+	DOWNLOAD_PREFERENCE_KEY,
+	downloadMode,
+	readDownloadPreference,
+	writeDownloadPreference
+} from '$lib/utils/historyPreference';
+import { removeCursor, resetLocalHistory } from '$lib/utils/messageChanges';
 import { serversState } from './serversState.svelte';
 import { usersState } from './usersState.svelte';
 
@@ -13,18 +20,18 @@ const RUN_GAP_MS = 60_000;
 const LOCK_RECHECK_MS = 60_000;
 const COUNT_EVERY_PAGES = 20;
 const LOCK_NAME = 'history-sync';
+const CLEARED_KEY = 'history:cleared';
 
-function saveData(): boolean {
-	if (typeof navigator === 'undefined') return false;
-	return (navigator as { connection?: { saveData?: boolean } }).connection?.saveData === true;
-}
-
-type Status = 'unavailable' | 'idle' | 'running' | 'done';
+type Status = 'unavailable' | 'off' | 'idle' | 'running' | 'done';
 
 /** Keeps the device's copy of every readable conversation current. One run at a time,
  *  and only one tab runs at all. */
 class HistorySyncState {
-	status = $state<Status>(localHistoryAvailable ? 'idle' : 'unavailable');
+	/** True or false once the person chose on this device, null before. */
+	private preference = $state<boolean | null>(readDownloadPreference());
+	status = $state<Status>(
+		!localHistoryAvailable ? 'unavailable' : this.preference === false ? 'off' : 'idle'
+	);
 	threads = $state(0);
 	complete = $state(0);
 	messages = $state(0);
@@ -36,12 +43,71 @@ class HistorySyncState {
 	private running: Promise<void> | null = null;
 	private queued = false;
 	private blocked = false;
+	private clearing = false;
 	private lastStartedAt: number | null = null;
 	private pages = 0;
 	private listingFailed = false;
 	private stops = 0;
 	/** Remembered because the signed-in user is already gone by the time stop() runs. */
 	private userId: number | null = null;
+
+	constructor() {
+		if (typeof window === 'undefined') return;
+		window.addEventListener('storage', (event) => {
+			if (event.key === DOWNLOAD_PREFERENCE_KEY) void this.followPreference();
+			else if (event.key === CLEARED_KEY) void this.followClear();
+		});
+	}
+
+	/** Whether the full download is switched on; an unset preference counts as on. */
+	get downloadOn(): boolean {
+		return this.preference !== false;
+	}
+
+	/** On with no choice made and the browser asking to save data: only the newest messages come. */
+	get savingData(): boolean {
+		return downloadMode(this.preference, browserSavesData()) === 'catchUp';
+	}
+
+	/** Turning it off keeps what is stored; the run still lists servers and channels so that
+	 *  what the person can no longer see is purged. */
+	async setDownload(on: boolean): Promise<void> {
+		if (this.downloadOn === on && this.preference !== null) return;
+		writeDownloadPreference(on);
+		this.preference = on;
+		await this.rerun();
+	}
+
+	/** Deletes every stored message and starts the download again, unless it is switched off.
+	 *  Other tabs stop writing first. */
+	async clear(): Promise<void> {
+		if (!localHistoryAvailable || this.blocked) return;
+		this.userId = usersState.loggedInUser?.id ?? this.userId;
+		const stops = this.stops;
+		try {
+			localStorage.setItem(CLEARED_KEY, String(Date.now()));
+		} catch {
+			// Without storage there is no other tab to tell.
+		}
+		this.clearing = true;
+		try {
+			await this.haltRun();
+			if (stops !== this.stops) return;
+			this.clearTimers();
+			this.queued = false;
+			// Waits for a run in another tab to notice the signal and let go of the lock.
+			await this.exclusively(async () => {
+				await resetLocalHistory();
+				if (this.userId != null) removeCursor(this.userId);
+			});
+		} catch (e) {
+			if (stops === this.stops) this.restart(this.downloadOn);
+			throw e;
+		} finally {
+			this.clearing = false;
+		}
+		if (stops === this.stops) this.afterClear();
+	}
 
 	/** Ask for a run. Requests made while one is waiting or running share a single run. */
 	request(): void {
@@ -58,10 +124,7 @@ class HistorySyncState {
 	async forgetChannels(serverId: number, channelIds: number[] | null): Promise<void> {
 		if (!localHistoryAvailable || this.blocked) return;
 		const stops = this.stops;
-		if (this.running) {
-			this.controller?.abort();
-			await this.running;
-		}
+		if (this.running) await this.haltRun();
 		if (stops !== this.stops) return;
 		try {
 			await forgetSyncedChannels(serverId, channelIds);
@@ -75,6 +138,60 @@ class HistorySyncState {
 		if (this.status === 'done') this.status = 'idle';
 		// A run before the server list loads would purge every server's local history.
 		if (serversState.loaded) this.scheduleStart(START_DELAY_MS);
+	}
+
+	private async haltRun(): Promise<void> {
+		if (!this.running) return;
+		this.controller?.abort();
+		await this.running;
+	}
+
+	private restingStatus(): Status {
+		if (!localHistoryAvailable || this.blocked) return 'unavailable';
+		return this.downloadOn ? 'idle' : 'off';
+	}
+
+	/** Starts over after a change to how much is downloaded. The run gap does not apply. */
+	private async rerun(): Promise<void> {
+		if (!localHistoryAvailable || this.blocked) return;
+		this.status = this.restingStatus();
+		const stops = this.stops;
+		await this.haltRun();
+		if (stops !== this.stops) return;
+		this.restart(true);
+	}
+
+	private restart(schedule: boolean) {
+		this.clearTimers();
+		this.retryDelay = RETRY_FIRST_MS;
+		this.lastStartedAt = null;
+		this.queued = false;
+		this.status = this.restingStatus();
+		// A run before the server list loads would purge every server's local history.
+		const ready = serversState.loaded && usersState.loggedInUser != null;
+		if (schedule && ready) this.scheduleStart(START_DELAY_MS);
+	}
+
+	private afterClear() {
+		this.threads = 0;
+		this.complete = 0;
+		this.messages = 0;
+		this.restart(this.downloadOn);
+	}
+
+	private async followPreference(): Promise<void> {
+		const preference = readDownloadPreference();
+		if (preference === this.preference) return;
+		this.preference = preference;
+		await this.rerun();
+	}
+
+	private async followClear(): Promise<void> {
+		if (!localHistoryAvailable || this.blocked) return;
+		const stops = this.stops;
+		await this.haltRun();
+		if (stops !== this.stops) return;
+		this.afterClear();
 	}
 
 	/** Starts a run after `minDelay`, and never sooner than RUN_GAP_MS after the last run began. */
@@ -102,7 +219,7 @@ class HistorySyncState {
 		this.threads = 0;
 		this.complete = 0;
 		this.messages = 0;
-		this.status = localHistoryAvailable && !this.blocked ? 'idle' : 'unavailable';
+		this.status = this.restingStatus();
 	}
 
 	private clearTimers() {
@@ -113,13 +230,13 @@ class HistorySyncState {
 	}
 
 	private start() {
-		if (this.running || this.blocked) return;
+		if (this.running || this.blocked || this.clearing) return;
 		this.clearTimers();
 		this.userId = usersState.loggedInUser?.id ?? this.userId;
 		this.lastStartedAt = Date.now();
 		const controller = new AbortController();
 		this.controller = controller;
-		this.status = 'running';
+		this.status = this.downloadOn ? 'running' : 'off';
 		this.running = this.execute(controller).finally(() => {
 			this.running = null;
 			this.controller = null;
@@ -149,7 +266,8 @@ class HistorySyncState {
 					preferServerId: serversState.selectedServerId,
 					signal: controller.signal,
 					userId: this.userId,
-					fullHistory: !saveData(),
+					fullHistory: downloadMode(this.preference, browserSavesData()) === 'full',
+					listOnly: !this.downloadOn,
 					onProgress: ({ threads, complete }) => {
 						this.threads = threads;
 						this.complete = complete;
@@ -168,7 +286,8 @@ class HistorySyncState {
 		await this.refreshCount();
 		if (lockMissed) await this.followOtherTab(controller.signal);
 		const finished = ranHere && !this.listingFailed && !controller.signal.aborted;
-		this.status = finished && this.complete === this.threads ? 'done' : 'idle';
+		if (!this.downloadOn) this.status = 'off';
+		else this.status = finished && this.complete === this.threads ? 'done' : 'idle';
 	}
 
 	/** Another tab is syncing: mirror its progress and look again later, in case it closes. */
@@ -185,6 +304,13 @@ class HistorySyncState {
 			this.retryTimer = null;
 			this.start();
 		}, LOCK_RECHECK_MS);
+	}
+
+	/** Waits for the lock, so no other tab is writing while `work` runs. */
+	private async exclusively(work: () => Promise<void>): Promise<void> {
+		const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+		if (!locks) return work();
+		return locks.request(LOCK_NAME, work);
 	}
 
 	/** False when another tab holds the lock, so this tab leaves the work to it. */
@@ -209,7 +335,7 @@ class HistorySyncState {
 		this.retryDelay = Math.min(this.retryDelay * 2, RETRY_MAX_MS);
 	}
 
-	private async refreshCount() {
+	async refreshCount() {
 		try {
 			this.messages = await db.messages.count();
 		} catch (e) {
@@ -250,6 +376,7 @@ export const historySyncState = new HistorySyncState();
 /** The one-line status shown to the person, or null when history isn't kept on this device. */
 export function historyStatusLabel(state: HistorySyncState = historySyncState): string | null {
 	if (state.status === 'unavailable') return null;
+	if (state.status === 'off') return 'Message history: download is off';
 	if (state.status === 'done') {
 		return `Message history: on this device, ${state.messages.toLocaleString()} messages`;
 	}
