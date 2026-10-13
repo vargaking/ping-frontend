@@ -140,7 +140,7 @@ const openContexts = new Map<BrowserContext, TestInfo>();
 
 /**
  * A hook declared in this module would only attach to the first spec file that loads it, so
- * contexts are instead closed once a later test asks for a user.
+ * contexts are instead closed once a later test asks for a new one.
  */
 async function closeContextsOfFinishedTests() {
 	const current = test.info();
@@ -153,11 +153,17 @@ async function closeContextsOfFinishedTests() {
 	);
 }
 
-export async function newUser(browser: Browser, name = 'user'): Promise<NewUser> {
+/** A browser context that is closed once a later test asks for a user or a context. */
+export async function newContext(browser: Browser): Promise<BrowserContext> {
 	await closeContextsOfFinishedTests();
 	const context = await browser.newContext();
 	openContexts.set(context, test.info());
 	context.once('close', () => openContexts.delete(context));
+	return context;
+}
+
+export async function newUser(browser: Browser, name = 'user'): Promise<NewUser> {
+	const context = await newContext(browser);
 	const user = await registerUser(context, name);
 	const page = await context.newPage();
 	return { context, page, user };

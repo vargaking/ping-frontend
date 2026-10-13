@@ -6,7 +6,8 @@ import {
 	registerUser,
 	seedMessages,
 	sendMessageViaUi,
-	uniqueName
+	uniqueName,
+	newContext
 } from './helpers';
 
 async function storedMessageCount(page: Page, word: string): Promise<number> {
@@ -29,7 +30,7 @@ async function storedMessageCount(page: Page, word: string): Promise<number> {
 }
 
 test('a stored message is found with Ctrl+K and opened in its channel', async ({ browser }) => {
-	const context = await browser.newContext();
+	const context = await newContext(browser);
 	await registerUser(context, 'searcher');
 	const page = await context.newPage();
 
@@ -68,7 +69,7 @@ test('a stored message is found with Ctrl+K and opened in its channel', async ({
 });
 
 test('a result far back opens in a window around it', async ({ browser }) => {
-	const context = await browser.newContext();
+	const context = await newContext(browser);
 	await registerUser(context, 'deepsearcher');
 	const page = await context.newPage();
 
@@ -124,7 +125,7 @@ test('a result far back opens in a window around it', async ({ browser }) => {
 });
 
 test('the top bar search bar opens the search dialog', async ({ browser }) => {
-	const context = await browser.newContext();
+	const context = await newContext(browser);
 	await registerUser(context, 'barsearcher');
 	const page = await context.newPage();
 
