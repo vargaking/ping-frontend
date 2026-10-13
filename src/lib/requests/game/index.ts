@@ -67,8 +67,6 @@ export const getGameLinkPreview = async (linkCode: string): Promise<GameLinkPrev
 };
 
 export const claimGameLink = async (linkCode: string): Promise<GameLink> => {
-	const response = await axiosClient.post<GameLink>(
-		`/api/game/link-codes/${code(linkCode)}/claim`
-	);
+	const response = await axiosClient.post<GameLink>(`/api/game/link-codes/${code(linkCode)}/claim`);
 	return response.data;
 };
