@@ -120,6 +120,18 @@ jobs:
       - run: npm ci
       - run: npm run dist:linux
 
+      - name: AppImage contains the venmic module
+        run: |
+          work=$(mktemp -d)
+          cd "$work"
+          "$GITHUB_WORKSPACE/desktop/release/Zet.AppImage" --appimage-extract >/dev/null
+          addon=$(find squashfs-root -path '*/app.asar.unpacked/*/venmic-addon-linux-x64/node-napi-v7.node')
+          if [ -z "$addon" ]; then
+            echo "::error::The AppImage has no venmic-addon-linux-x64/node-napi-v7.node outside app.asar."
+            exit 1
+          fi
+          echo "$addon"
+
       - uses: actions/upload-artifact@v4
         with:
           name: zet-linux

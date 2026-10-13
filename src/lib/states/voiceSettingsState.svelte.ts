@@ -35,6 +35,11 @@ const DEFAULTS: Prefs = {
 	screenSurface: 'monitor'
 };
 
+/** The desktop app's screen-share sound runs through virtual nodes named after venmic; they aren't devices to pick. */
+export function isVirtualShareDevice(device: MediaDeviceInfo): boolean {
+	return device.label.toLowerCase().includes('vencord');
+}
+
 function loadPrefs(): Prefs {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
@@ -111,8 +116,8 @@ class VoiceSettingsState {
 
 	async refreshDevices(requestPermission = false) {
 		const devices = await Room.getLocalDevices(undefined, requestPermission);
-		this.inputs = devices.filter((d) => d.kind === 'audioinput');
-		this.outputs = devices.filter((d) => d.kind === 'audiooutput');
+		this.inputs = devices.filter((d) => d.kind === 'audioinput' && !isVirtualShareDevice(d));
+		this.outputs = devices.filter((d) => d.kind === 'audiooutput' && !isVirtualShareDevice(d));
 		this.labelsHidden = devices.some((d) => d.kind === 'audioinput' && !d.label);
 	}
 

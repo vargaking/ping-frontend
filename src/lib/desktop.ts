@@ -25,6 +25,11 @@ export type DesktopBridge = {
 	frameless?: boolean;
 	/** Whether the shell can capture the PC's sound with a screen share. Shells before 0.3.0 don't say. */
 	canShareAudio?: boolean;
+	/** Why canShareAudio is false, when the shell knows (Linux without PipeWire). A short fragment such as "PipeWire isn't running". */
+	audioUnavailableReason?: string;
+	/** Linux: links the PC's sound, except Zet's own, into a virtual source until stopSystemAudio. Shells before 0.4.0 lack it. */
+	startSystemAudio?(): Promise<{ ok: boolean; reason?: string }>;
+	stopSystemAudio?(): void;
 	/** True when the OS shows its own chooser on every listing, as on Wayland. Shells before 0.3.1 don't say. */
 	systemPicker?: boolean;
 	/** Everything that can be shared, for the page's own picker. Shells before 0.3.0 lack it and ask through onPickScreenSource instead. */

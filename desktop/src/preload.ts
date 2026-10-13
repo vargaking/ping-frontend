@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const versionArg = process.argv.find((arg) => arg.startsWith('--zet-version='));
+const audioReasonArg = process.argv.find((arg) => arg.startsWith('--zet-share-audio-reason='));
 
 type ScreenSource = {
 	id: string;
@@ -31,7 +32,10 @@ const bridge = {
 	version: versionArg ? versionArg.slice('--zet-version='.length) : '',
 	platform: process.platform as 'win32' | 'darwin' | 'linux',
 	frameless: true,
-	canShareAudio: process.platform === 'win32',
+	canShareAudio: process.argv.includes('--zet-share-audio=1'),
+	audioUnavailableReason: audioReasonArg
+		? decodeURIComponent(audioReasonArg.slice('--zet-share-audio-reason='.length))
+		: undefined,
 	systemPicker: process.argv.includes('--zet-system-picker'),
 	setUnread(state: { count: number; unread: boolean }) {
 		ipcRenderer.send('shell:unread', state);
@@ -50,6 +54,12 @@ const bridge = {
 	},
 	listScreenSources(): Promise<ScreenSource[]> {
 		return ipcRenderer.invoke('shell:list-sources');
+	},
+	startSystemAudio(): Promise<{ ok: boolean; reason?: string }> {
+		return ipcRenderer.invoke('shell:system-audio-start');
+	},
+	stopSystemAudio() {
+		ipcRenderer.send('shell:system-audio-stop');
 	},
 	shareDialogClosed() {
 		ipcRenderer.send('shell:share-dialog-closed');
