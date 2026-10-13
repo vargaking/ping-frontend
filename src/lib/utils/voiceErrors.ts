@@ -4,13 +4,23 @@ import { ConnectionError } from 'livekit-client';
 /** The page can't use the microphone at all: not HTTPS/localhost, or no media API. */
 export class InsecureContextError extends Error {}
 
+/** The call ended before the token was asked for. */
+export function isCallEnded(err: unknown): boolean {
+	return err instanceof AxiosError && err.response?.status === 409;
+}
+
 /** Toast text for a failed join: token request, LiveKit connect, or environment. */
-export function describeVoiceError(err: unknown): string {
+export function describeVoiceError(err: unknown, kind: 'channel' | 'call' = 'channel'): string {
 	if (err instanceof InsecureContextError) return 'Voice needs a secure connection (HTTPS).';
 	if (err instanceof AxiosError) {
 		const status = err.response?.status;
 		if (status === 503) return "Voice isn't set up on this server.";
-		if (status === 403 || status === 404) return "You don't have access to this voice channel.";
+		if (kind === 'call') {
+			if (status === 409) return 'This call has ended.';
+			if (status === 403 || status === 404) return "You can't join this call.";
+		} else if (status === 403 || status === 404) {
+			return "You don't have access to this voice channel.";
+		}
 		if (!err.response) return "Couldn't reach the server.";
 	}
 	if (err instanceof ConnectionError) return "Couldn't reach the voice server.";

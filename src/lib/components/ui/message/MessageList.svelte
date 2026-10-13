@@ -1,6 +1,7 @@
 <script lang="ts">
 	import MessageGroup from './MessageGroup.svelte';
-	import { continuesGroup } from '$lib/utils/messageGroups';
+	import CallRow from './CallRow.svelte';
+	import { buildRenderItems } from '$lib/utils/messageItems';
 	import DateDivider from './DateDivider.svelte';
 	import UnreadDivider from './UnreadDivider.svelte';
 	import EmptyState from '$lib/components/ui/feedback/EmptyState.svelte';
@@ -185,66 +186,7 @@
 	let unreadBoundaryId = $state<string | null>(null);
 	let unreadAnchorId = $state<string | null>(null);
 
-	function dayKey(ts: string) {
-		return new Date(ts).toDateString();
-	}
-
-	function dayLabel(ts: string) {
-		const d = new Date(ts);
-		const today = new Date();
-		const yesterday = new Date();
-		yesterday.setDate(today.getDate() - 1);
-		if (d.toDateString() === today.toDateString()) return 'Today';
-		if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-		return d.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
-	}
-
-	type RenderItem =
-		| { kind: 'date'; key: string; label: string }
-		| { kind: 'unread'; key: string }
-		| { kind: 'group'; key: string; messages: MessageType[] };
-
-	const items = $derived.by<RenderItem[]>(() => {
-		const result: RenderItem[] = [];
-		let lastDay: string | null = null;
-		let group: MessageType[] | null = null;
-		let unreadInserted = false;
-
-		const flush = () => {
-			if (group) {
-				result.push({
-					kind: 'group',
-					key: `g-${group[0].id}`,
-					messages: group
-				});
-				group = null;
-			}
-		};
-
-		for (const m of messagesState.messages(threadKey)) {
-			const day = dayKey(m.timestamp);
-			if (day !== lastDay) {
-				flush();
-				result.push({ kind: 'date', key: `d-${day}`, label: dayLabel(m.timestamp) });
-				lastDay = day;
-			}
-
-			if (!unreadInserted && unreadAnchorId != null && m.id === unreadAnchorId) {
-				flush();
-				result.push({ kind: 'unread', key: `u-${m.id}` });
-				unreadInserted = true;
-			}
-
-			if (group && continuesGroup(group[group.length - 1], m)) {
-				group.push(m);
-			} else {
-				flush();
-				group = [m];
-			}
-		}
-		flush();
-		return result;
-	});
+	const items = $derived(buildRenderItems(messagesState.messages(threadKey), unreadAnchorId));
 
 	const scrollToBottom = () => {
 		messageWrapper?.scrollTo({ top: messageWrapper.scrollHeight });
@@ -1074,6 +1016,8 @@
 						<DateDivider label={item.label} />
 					{:else if item.kind === 'unread'}
 						<UnreadDivider />
+					{:else if item.kind === 'call'}
+						<CallRow message={item.message} />
 					{:else}
 						<MessageGroup messages={item.messages} onJumpToMessage={jumpToMessage} />
 					{/if}
