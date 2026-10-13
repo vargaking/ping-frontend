@@ -2,6 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import TopBar from '$lib/components/ui/shell/TopBar.svelte';
+	import AnnouncementBanner from '$lib/components/announcements/AnnouncementBanner.svelte';
 	import ServerRail from '$lib/components/ui/shell/ServerRail.svelte';
 	import ChannelSidebar from '$lib/components/ui/shell/ChannelSidebar.svelte';
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
@@ -262,6 +263,7 @@
 	class="app-shell-root flex h-screen w-screen flex-col overflow-hidden bg-rail pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)]"
 >
 	<TopBar />
+	<AnnouncementBanner />
 	{#if phoneState.phone}
 		<VoiceDock compact />
 	{/if}
