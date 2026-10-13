@@ -2,12 +2,15 @@ import { AxiosError } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Call } from '$lib/types/call.types';
 
+const goto = vi.hoisted(() => vi.fn());
+
 const requests = vi.hoisted(() => ({
 	getActiveCalls: vi.fn(),
 	startCall: vi.fn(),
 	declineCall: vi.fn()
 }));
 
+vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/requests/calls/getActiveCalls', () => ({ getActiveCalls: requests.getActiveCalls }));
 vi.mock('$lib/requests/calls/startCall', () => ({ startCall: requests.startCall }));
 vi.mock('$lib/requests/calls/declineCall', () => ({ declineCall: requests.declineCall }));
@@ -62,6 +65,7 @@ beforeEach(() => {
 	vi.setSystemTime(NOW);
 	usersState.loggedInUser = { id: ME } as typeof usersState.loggedInUser;
 	Object.values(requests).forEach((fn) => fn.mockReset());
+	goto.mockReset();
 	requests.getActiveCalls.mockResolvedValue([]);
 	vi.mocked(toast.error).mockReset();
 });
@@ -337,6 +341,90 @@ describe('start and decline', () => {
 
 		expect(callsState.forConversation(5)).toBeNull();
 		expect(callsState.byConversation[5].state).toBe('declined');
+	});
+});
+
+describe('the incoming call', () => {
+	it('is the newest of several ringing calls', () => {
+		callsState.apply(call({ id: 10, conversation_id: 5 }));
+		callsState.apply(call({ id: 12, conversation_id: 7 }));
+		callsState.apply(call({ id: 11, conversation_id: 6 }));
+		expect(callsState.incomingCall?.id).toBe(12);
+	});
+
+	it('is none once the newest is answered elsewhere', () => {
+		callsState.apply(call());
+		callsState.apply(call({ state: 'active' }));
+		expect(callsState.incomingCall).toBeNull();
+	});
+});
+
+describe('accepting and declining from the banner', () => {
+	it('joins the room and opens the call view', async () => {
+		const ringing = call();
+		callsState.apply(ringing);
+		const joinCall = vi.spyOn(voiceState, 'joinCall').mockResolvedValue();
+
+		await callsState.accept(ringing);
+
+		expect(joinCall).toHaveBeenCalledWith(ringing);
+		expect(goto).toHaveBeenCalledWith('/app/direct/5/call/');
+		expect(callsState.accepting).toBeNull();
+	});
+
+	it('answers once while the join is in progress', async () => {
+		const ringing = call();
+		let connected!: () => void;
+		const joinCall = vi
+			.spyOn(voiceState, 'joinCall')
+			.mockReturnValue(new Promise((resolve) => (connected = resolve)));
+
+		const first = callsState.accept(ringing);
+		expect(callsState.accepting).toBe(10);
+		await callsState.accept(ringing);
+		connected();
+		await first;
+
+		expect(joinCall).toHaveBeenCalledOnce();
+		expect(goto).toHaveBeenCalledOnce();
+	});
+
+	it('leaves a later accept alone when an old join finishes after a logout', async () => {
+		let connected!: () => void;
+		vi.spyOn(voiceState, 'joinCall')
+			.mockReturnValueOnce(new Promise((resolve) => (connected = resolve)))
+			.mockReturnValue(new Promise(() => {}));
+
+		const first = callsState.accept(call());
+		callsState.reset();
+		void callsState.accept(call({ id: 20 }));
+		connected();
+		await first;
+
+		expect(callsState.accepting).toBe(20);
+	});
+
+	it('declines through the server and drops the banner', async () => {
+		callsState.apply(call());
+		requests.declineCall.mockResolvedValue(call({ state: 'declined', reason: 'declined' }));
+		const joinCall = vi.spyOn(voiceState, 'joinCall').mockResolvedValue();
+
+		await callsState.decline(10);
+
+		expect(requests.declineCall).toHaveBeenCalledWith(10);
+		expect(callsState.incomingCall).toBeNull();
+		expect(joinCall).not.toHaveBeenCalled();
+		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('keeps the banner and says so when the decline fails', async () => {
+		callsState.apply(call());
+		requests.declineCall.mockRejectedValue(axiosError(500));
+
+		await callsState.decline(10);
+
+		expect(toast.error).toHaveBeenCalled();
+		expect(callsState.incomingCall?.id).toBe(10);
 	});
 });
 
