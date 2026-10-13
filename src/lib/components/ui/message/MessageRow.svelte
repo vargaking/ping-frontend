@@ -6,6 +6,7 @@
 	import MessageEditor from './MessageEditor.svelte';
 	import MessageAttachments from './MessageAttachments.svelte';
 	import LinkEmbed from './LinkEmbed.svelte';
+	import InviteCard from './InviteCard.svelte';
 	import MessageReactions from './MessageReactions.svelte';
 	import ReactionPicker from './ReactionPicker.svelte';
 	import ActionContextMenu from '$lib/components/ui/context-menu/ActionContextMenu.svelte';
@@ -19,6 +20,7 @@
 	import { refreshReplyQuotes } from '$lib/utils/replies';
 	import { mentionCandidates, refreshMentionCandidates } from '$lib/utils/mentions';
 	import { messagePlainText, parseMessageContent } from '$lib/utils/messageContent';
+	import { findInviteCode, ownInviteCode } from '$lib/utils/messageInvites';
 	import { socketState } from '$lib/states/socketState.svelte';
 	import { phoneState } from '$lib/states/phoneState.svelte';
 	import {
@@ -43,7 +45,10 @@
 	});
 
 	const attachments = $derived(message.attachments ?? []);
-	const embeds = $derived(message.embeds ?? []);
+	const inviteCode = $derived(findInviteCode(message.content, window.location.origin));
+	const embeds = $derived(
+		(message.embeds ?? []).filter((embed) => !ownInviteCode(embed.url, window.location.origin))
+	);
 	const hasText = $derived(messagePlainText(message.content) !== '');
 
 	const hoverTime = $derived(
@@ -186,6 +191,11 @@
 								<LinkEmbed {embed} />
 							</div>
 						{/each}
+						{#if inviteCode}
+							<div class="mt-1.5">
+								<InviteCard code={inviteCode} />
+							</div>
+						{/if}
 						<MessageReactions {message} />
 					</div>
 					{#if failed}

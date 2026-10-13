@@ -1,6 +1,7 @@
 import { unfurl } from '$lib/requests/unfurl';
 import type { Embed } from '$lib/types/messages.types';
 import { firstLinkHref } from '$lib/utils/linkify';
+import { ownInviteCode } from '$lib/utils/messageInvites';
 
 const DEBOUNCE_MS = 400;
 
@@ -14,6 +15,8 @@ export class LinkPreview {
 	private timer: ReturnType<typeof setTimeout> | undefined;
 	private controller: AbortController | undefined;
 
+	constructor(private ownOrigin: () => string = () => window.location.origin) {}
+
 	/** Call on every edit with the message's plain text. */
 	update(text: string) {
 		const url = firstLinkHref(text);
@@ -26,6 +29,8 @@ export class LinkPreview {
 			this.dismissedUrl = null;
 			return;
 		}
+		// Receivers draw invite links as a live card of their own.
+		if (ownInviteCode(url, this.ownOrigin())) return;
 		if (url === this.dismissedUrl) return;
 
 		this.dismissedUrl = null;
