@@ -104,6 +104,7 @@ test('making a channel private takes it away from a member without a reload', as
 	const server = await createServer(owner.context, uniqueName('Guild'));
 	const general = await createChannel(owner.context, server.id, 'general');
 	const secret = await createChannel(owner.context, server.id, 'secret');
+	await createRole(owner.context, server.id, 'Admin');
 	await joinInvite(member.context, (await createInvite(owner.context, server.id)).id);
 
 	await member.page.goto(channelPath(server.id, secret.id));
@@ -391,6 +392,7 @@ test('rows stay open or closed as the user left them', async ({ browser }) => {
 	await setMemberRoles(owner.context, server.id, manager.user.id, [managers.id]);
 	const mods = await createRole(owner.context, server.id, 'Mods');
 	const helpers = await createRole(owner.context, server.id, 'Helpers');
+	await createRole(owner.context, server.id, 'Admin');
 	await putOverwrite(owner.context, 'channels', channel.id, 'roles', mods.id, '0', SEND);
 	await putOverwrite(owner.context, 'channels', channel.id, 'roles', helpers.id, '0', SEND);
 
