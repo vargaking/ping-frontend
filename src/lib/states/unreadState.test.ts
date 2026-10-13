@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Channel } from '$lib/types/channel.types';
 import type { Conversation } from '$lib/types/conversation.types';
 
 const markChannelRead = vi.hoisted(() => vi.fn());
@@ -207,5 +208,63 @@ describe('active and reading threads', () => {
 		unreadState.reset();
 		expect(unreadState.isActive('1')).toBe(false);
 		expect(unreadState.isReading('1')).toBe(false);
+	});
+});
+
+describe('channel snapshots', () => {
+	const channel = (overrides: Partial<Channel> = {}): Channel => ({
+		id: 1,
+		name: 'general',
+		channel_settings: {},
+		type: 'text',
+		group_id: null,
+		position: 0,
+		last_read_message_id: 'm0',
+		last_message_id: 'm9',
+		...overrides
+	});
+
+	function mentionLive(times: number) {
+		for (let i = 0; i < times; i++) {
+			unreadState.noteChannelMessage(1, 1, `m${i + 1}`, { mentionsMe: true });
+		}
+	}
+
+	it.each([
+		{ local: 2, snapshot: 1 },
+		{ local: 0, snapshot: 3 }
+	])('takes the snapshot count ($snapshot) over the local one ($local)', ({ local, snapshot }) => {
+		mentionLive(local);
+		unreadState.noteFetchedChannels(1, [channel({ mention_count: snapshot })]);
+		expect(unreadState.channelMentions(1)).toBe(snapshot);
+	});
+
+	it('resets the count when the snapshot says the channel is read', () => {
+		mentionLive(2);
+		unreadState.noteFetchedChannels(1, [channel({ last_read_message_id: 'm9', mention_count: 0 })]);
+		expect(unreadState.channelMentions(1)).toBe(0);
+	});
+
+	it('keeps the local count when the snapshot has none and the channel is unread', () => {
+		mentionLive(2);
+		unreadState.noteFetchedChannels(1, [channel()]);
+		expect(unreadState.channelMentions(1)).toBe(2);
+	});
+
+	it('adds live mentions on top until the next snapshot', () => {
+		unreadState.noteFetchedChannels(1, [channel({ mention_count: 1 })]);
+		unreadState.noteChannelMessage(1, 1, 'm10', { mentionsMe: true });
+		expect(unreadState.channelMentions(1)).toBe(2);
+
+		unreadState.noteFetchedChannels(1, [channel({ last_message_id: 'm10', mention_count: 2 })]);
+		expect(unreadState.channelMentions(1)).toBe(2);
+	});
+
+	it.each([
+		{ mention_count: 3, expected: 3 },
+		{ mention_count: undefined, expected: 0 }
+	])('seeds a new channel with $expected mentions', ({ mention_count, expected }) => {
+		unreadState.noteNewChannel(1, channel({ mention_count }));
+		expect(unreadState.channelMentions(1)).toBe(expected);
 	});
 });

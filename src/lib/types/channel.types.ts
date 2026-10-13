@@ -10,6 +10,8 @@ export type Channel = {
 	/** Message uuids, null when nothing has been read/sent yet. */
 	last_read_message_id?: string | null;
 	last_message_id?: string | null;
+	/** Mentions of me after my read marker. */
+	mention_count?: number;
 	/** @everyone can't view it. */
 	private?: boolean;
 };
