@@ -29,7 +29,8 @@
 					label: 'Voice channels',
 					detail: "mute, deafen, device settings, who's in a call at a glance"
 				},
-				{ label: 'Screen sharing', detail: 'up to 1080p' },
+				{ label: 'Screen sharing', detail: 'up to 1440p' },
+				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' },
 				{ label: 'Direct messages' },
 				{ label: 'Notifications', detail: 'while Zeta is open, and push when it is closed' },
 				{ label: 'More voice controls', detail: 'per-person volume, server mute, disconnect' },
@@ -42,10 +43,7 @@
 			tier: 'Next up',
 			note: 'in progress',
 			dot: 'next',
-			items: [
-				{ label: 'Mobile apps', detail: 'iOS and Android' },
-				{ label: 'Sharper screen sharing', detail: '1440p and ultrawide' }
-			]
+			items: [{ label: 'Mobile apps', detail: 'iOS and Android' }]
 		},
 		{
 			tier: 'Later',

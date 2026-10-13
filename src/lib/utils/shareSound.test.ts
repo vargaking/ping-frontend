@@ -93,6 +93,22 @@ describe('soundOption', () => {
 		});
 	});
 
+	it('desktop on Linux that can capture sound leaves Zet out', () => {
+		expect(soundOption(env('linux', chrome, { canShareAudio: true }), 'window')).toEqual({
+			available: true,
+			note: 'Includes everything this PC plays except Zet, not only what you pick.'
+		});
+	});
+
+	it('desktop without sound gives the reason when it has one', () => {
+		expect(
+			soundOption(
+				env('linux', chrome, { canShareAudio: false, reason: "PipeWire isn't running" }),
+				'monitor'
+			)
+		).toEqual({ available: false, note: "Sound isn't available: PipeWire isn't running." });
+	});
+
 	it('desktop wins over browser checks', () => {
 		const firefoxLike = { kind: 'firefox', name: 'Firefox' } as const;
 		expect(
@@ -184,6 +200,25 @@ describe('soundResult', () => {
 		expect(soundResult(env(platform, chrome, { canShareAudio: false }), base)).toEqual({
 			on: false,
 			text
+		});
+	});
+
+	it('desktop without sound gives the reason when it has one', () => {
+		expect(
+			soundResult(
+				env('linux', chrome, { canShareAudio: false, reason: "PipeWire isn't running" }),
+				{
+					...base,
+					requested: false
+				}
+			)
+		).toEqual({ on: false, text: "No sound: PipeWire isn't running" });
+	});
+
+	it('desktop on Linux that captured nothing says the sound could not be captured', () => {
+		expect(soundResult(env('linux', chrome, { canShareAudio: true }), base)).toEqual({
+			on: false,
+			text: "No sound: the PC's sound couldn't be captured"
 		});
 	});
 

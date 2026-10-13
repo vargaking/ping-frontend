@@ -8,7 +8,7 @@ export type SoundEnv = {
 	browser: { kind: BrowserKind; name: string };
 	platform: Platform;
 	/** Set inside the desktop app; the shell says whether it can capture sound. */
-	desktop: { canShareAudio: boolean } | null;
+	desktop: { canShareAudio: boolean; reason?: string } | null;
 };
 
 export const SURFACES: Surface[] = ['browser', 'window', 'monitor'];
@@ -46,7 +46,10 @@ export function soundEnv(): SoundEnv {
 			browser: { kind: 'chromium', name: 'Zet' },
 			platform,
 			// Shells before 0.3.0 don't report it, and only capture sound on Windows.
-			desktop: { canShareAudio: desktop.canShareAudio ?? desktop.platform === 'win32' }
+			desktop: {
+				canShareAudio: desktop.canShareAudio ?? desktop.platform === 'win32',
+				reason: desktop.audioUnavailableReason
+			}
 		};
 	}
 	const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
@@ -56,10 +59,22 @@ export function soundEnv(): SoundEnv {
 export function soundOption(env: SoundEnv, surface: Surface): { available: boolean; note: string } {
 	const { browser, platform } = env;
 	if (env.desktop?.canShareAudio) {
-		return { available: true, note: 'Includes everything this PC plays, not only what you pick.' };
+		return {
+			available: true,
+			note:
+				platform === 'linux'
+					? 'Includes everything this PC plays except Zet, not only what you pick.'
+					: 'Includes everything this PC plays, not only what you pick.'
+		};
 	}
 	if (env.desktop) {
-		return { available: false, note: `Sound isn't available on ${OS_NAMES[platform]} yet.` };
+		const { reason } = env.desktop;
+		return {
+			available: false,
+			note: reason
+				? `Sound isn't available: ${reason}.`
+				: `Sound isn't available on ${OS_NAMES[platform]} yet.`
+		};
 	}
 	if (browser.kind === 'firefox' || browser.kind === 'safari') {
 		return { available: false, note: `${browser.name} can't share sound.` };
@@ -101,7 +116,7 @@ export function soundResult(
 
 	if (captured.audioTracks > 0) return { on: true, text: 'Sound on' };
 	if (env.desktop && !env.desktop.canShareAudio) {
-		return no(`sound isn't available on ${OS_NAMES[platform]} yet`);
+		return no(env.desktop.reason ?? `sound isn't available on ${OS_NAMES[platform]} yet`);
 	}
 	if (!env.desktop && (browser.kind === 'firefox' || browser.kind === 'safari')) {
 		return no(`${browser.name} can't share sound`);

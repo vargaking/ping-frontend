@@ -18,6 +18,7 @@
 		type ScreenContent,
 		type ScreenPresetId
 	} from '$lib/utils/screenShare';
+	import { screenOutputText } from '$lib/utils/screenOutput';
 	import * as Tooltip from '$lib/components/ui/tooltip/index';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import {
@@ -29,6 +30,7 @@
 		ScreenShare,
 		ScreenShareOff,
 		ChevronUp,
+		Monitor,
 		Volume2,
 		VolumeOff
 	} from 'lucide-svelte';
@@ -237,6 +239,17 @@
 					<VolumeOff size={14} strokeWidth={1.75} class="mt-px shrink-0" />
 				{/if}
 				<span class="min-w-0 flex-1">{text}</span>
+			</div>
+		{/if}
+
+		{#if voiceState.sharing && voiceState.shareOutput}
+			<div
+				class="mb-2 flex items-start gap-2 rounded-md bg-muted px-2 py-1.5 text-xs text-foreground {compact
+					? 'col-span-2'
+					: ''}"
+			>
+				<Monitor size={14} strokeWidth={1.75} class="mt-px shrink-0" />
+				<span class="min-w-0 flex-1">{screenOutputText(voiceState.shareOutput)}</span>
 			</div>
 		{/if}
 

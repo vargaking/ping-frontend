@@ -13,6 +13,7 @@ import path from 'node:path';
 import { assetPath } from './assets';
 import { appUrl } from './config';
 import { nameLauncherWindow, registerLauncher } from './launcher';
+import { createLinuxAudio, type AudioStatus } from './linuxAudio';
 import { getLaunchAtLogin, setLaunchAtLogin } from './login';
 import { pickSource } from './picker';
 import { listSources, toScreenSource } from './sources';
@@ -33,8 +34,32 @@ const ALLOWED_PERMISSIONS = new Set([
 	'display-capture'
 ]);
 
-/** Loopback capture of the PC's sound is only supported on Windows. */
-const CAN_SHARE_AUDIO = process.platform === 'win32';
+/** Zet's own sound is left out of what Linux shares; Windows has no such step. */
+const linuxAudio =
+	process.platform === 'linux'
+		? createLinuxAudio({
+				// Optional dependency: absent or unloadable means no sound, not no app.
+				load: () => require('@vencord/venmic'),
+				processes: () => app.getAppMetrics(),
+				appNames: () => [...new Set([app.getName(), 'Zet'])]
+			})
+		: null;
+
+/** Whether the PC's sound can go with a share, and if not on Linux, why. Null where it never can. */
+function shareAudioStatus(): AudioStatus | null {
+	if (process.platform === 'win32') return { ok: true };
+	return linuxAudio?.status() ?? null;
+}
+
+function shareAudioArguments(): string[] {
+	const status = shareAudioStatus();
+	if (!status) return [];
+	return [
+		status.ok
+			? '--zet-share-audio=1'
+			: `--zet-share-audio-reason=${encodeURIComponent(status.reason)}`
+	];
+}
 
 /** On Wayland the OS chooser opens on every listing and returns only what was picked. */
 const SYSTEM_PICKER =
@@ -116,6 +141,15 @@ function registerIpc() {
 		const sources = await listSources(mainWindow.getMediaSourceId());
 		if (generation === keptGeneration) keptSources = sources;
 		return sources.map(toScreenSource);
+	});
+
+	ipcMain.handle('shell:system-audio-start', (event): AudioStatus => {
+		if (!fromApp(event) || !linuxAudio) return { ok: false, reason: "sound isn't available here" };
+		return linuxAudio.start();
+	});
+
+	ipcMain.on('shell:system-audio-stop', (event) => {
+		if (fromApp(event)) linuxAudio?.stop();
 	});
 
 	ipcMain.on('shell:share-dialog-closed', (event) => {
@@ -208,7 +242,7 @@ function registerSession() {
 		}
 		callback({
 			video: source,
-			audio: request.audioRequested && CAN_SHARE_AUDIO ? 'loopback' : undefined
+			audio: request.audioRequested && process.platform === 'win32' ? 'loopback' : undefined
 		});
 	});
 }
@@ -237,7 +271,8 @@ function createWindow() {
 			preload: path.join(__dirname, 'preload.js'),
 			additionalArguments: [
 				`--zet-version=${app.getVersion()}`,
-				...(SYSTEM_PICKER ? ['--zet-system-picker'] : [])
+				...(SYSTEM_PICKER ? ['--zet-system-picker'] : []),
+				...shareAudioArguments()
 			],
 			contextIsolation: true,
 			sandbox: true,
@@ -263,8 +298,12 @@ function createWindow() {
 
 	const { webContents } = win;
 
-	webContents.on('did-navigate', resetPagePicker);
-	webContents.on('render-process-gone', resetPagePicker);
+	const resetPage = () => {
+		resetPagePicker();
+		linuxAudio?.stop();
+	};
+	webContents.on('did-navigate', resetPage);
+	webContents.on('render-process-gone', resetPage);
 
 	webContents.on('did-fail-load', (_event, errorCode, _description, validatedUrl, isMainFrame) => {
 		if (!isMainFrame || errorCode === -3 || validatedUrl.startsWith('file:')) return;
@@ -299,6 +338,7 @@ if (!app.requestSingleInstanceLock()) {
 
 	app.on('before-quit', () => {
 		quitting = true;
+		linuxAudio?.stop();
 	});
 
 	app.on('activate', showWindow);

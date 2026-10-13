@@ -18,6 +18,10 @@ ZET_URL=https://preview.example.com npm start
 
 `npm run dist:win` builds the Windows installer into `release/Zet-Setup.exe`. `npm run dist:linux` builds `release/Zet.AppImage`. On GNOME the tray needs the AppIndicator extension; without it, closing the window hides it and launching Zet again brings it back.
 
+## Sound in screen share
+
+Windows shares the PC's sound as is. Linux needs PipeWire (with `pipewire-pulse`): the app links everything the system plays, except Zet itself, into a temporary virtual source (venmic, licence in `licenses/venmic.txt`). Without PipeWire the sound switch in the share dialog is off and says why. The virtual source exists only while a share runs.
+
 ## Releasing
 
 Nobody pushes tags. To release a new shell version, bump `version` in `package.json` in your PR.
