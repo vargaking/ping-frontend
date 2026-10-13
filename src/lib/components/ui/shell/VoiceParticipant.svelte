@@ -3,6 +3,8 @@
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 	import { MicOff, HeadphoneOff, VolumeX } from 'lucide-svelte';
+	import GameBadge from '$lib/components/ui/voice/GameBadge.svelte';
+	import type { PlayingAs } from '$lib/types/game.types';
 
 	type Props = {
 		name: string;
@@ -17,6 +19,7 @@
 		serverMuted?: boolean;
 		localMuted?: boolean;
 		streaming?: boolean;
+		game?: PlayingAs | null;
 	} & HTMLButtonAttributes;
 
 	let {
@@ -30,13 +33,15 @@
 		serverMuted = false,
 		localMuted = false,
 		streaming = false,
+		game = null,
 		...rest
 	}: Props = $props();
 	let button = $state<HTMLElement | null>(null);
 
 	const stateLabel = $derived(
 		(serverMuted ? ', server muted' : deafened ? ', deafened' : muted ? ', muted' : '') +
-			(localMuted ? ', muted for you' : '')
+			(localMuted ? ', muted for you' : '') +
+			(game ? `, playing ${game.name} as ${game.playerName}` : '')
 	);
 </script>
 
@@ -70,6 +75,9 @@
 		>
 			LIVE
 		</span>
+	{/if}
+	{#if game}
+		<GameBadge {game} />
 	{/if}
 	{#if localMuted}
 		<VolumeX size={14} strokeWidth={1.75} class="shrink-0 text-text-subtle" aria-hidden="true" />

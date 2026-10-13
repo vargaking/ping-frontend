@@ -47,6 +47,7 @@
 			serverMuted={member.serverMuted}
 			localMuted={member.localMuted}
 			streaming={member.streaming}
+			game={member.game}
 		/>
 	{/snippet}
 </ActionContextMenu>

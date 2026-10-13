@@ -3,6 +3,8 @@
 	import { avatarToneClass, initials } from '$lib/utils/avatar';
 	import type { Snippet } from 'svelte';
 	import { MicOff, HeadphoneOff, VolumeX, Ellipsis } from 'lucide-svelte';
+	import GameBadge from './GameBadge.svelte';
+	import type { PlayingAs } from '$lib/types/game.types';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import ActionDropdownItems from '$lib/components/ui/dropdown-menu/ActionDropdownItems.svelte';
 	import type { MenuAction } from '$lib/utils/menuActions';
@@ -20,6 +22,7 @@
 		serverMuted?: boolean;
 		localMuted?: boolean;
 		streaming?: boolean;
+		game?: PlayingAs | null;
 		/** Shown in a menu opened from the tile. */
 		actions?: MenuAction[];
 		/** A video or screen-share stream. Replaces the avatar and fills the tile. */
@@ -39,6 +42,7 @@
 		serverMuted = false,
 		localMuted = false,
 		streaming = false,
+		game = null,
 		actions = [],
 		media,
 		onNameClick
@@ -47,7 +51,8 @@
 
 	const stateLabel = $derived(
 		(serverMuted ? ', server muted' : deafened ? ', deafened' : muted ? ', muted' : '') +
-			(localMuted ? ', muted for you' : '')
+			(localMuted ? ', muted for you' : '') +
+			(game ? `, playing ${game.name} as ${game.playerName}` : '')
 	);
 </script>
 
@@ -115,6 +120,11 @@
 					class="shrink-0 rounded-md bg-destructive px-1.5 py-0.5 text-[11px] font-semibold text-white"
 				>
 					LIVE
+				</span>
+			{/if}
+			{#if game}
+				<span class="flex shrink-0 rounded-md bg-background/80 px-1.5 py-1">
+					<GameBadge {game} />
 				</span>
 			{/if}
 		</span>

@@ -24,6 +24,7 @@ import { notificationsState } from './notificationsState.svelte';
 import { documentFocusState, type ActivityState } from '$lib/utils/documentFocus.svelte';
 import { reportActivity } from '$lib/utils/push';
 import { voicePresenceState } from './voicePresenceState.svelte';
+import { gameVoiceState } from './gameVoiceState.svelte';
 import { overwritesState } from './overwritesState.svelte';
 import { playMentionChime, playMessageBlip } from '$lib/utils/notificationSound';
 import { notifyChannelMessage, showThreadNotification } from '$lib/utils/desktopNotification';
@@ -156,6 +157,9 @@ class SocketState {
 			// Voice frames sent while we were offline are gone, so refetch.
 			const serverId = serversState.selectedServerId;
 			if (this.hasConnected && serverId != null) voicePresenceState.load(serverId);
+			if (this.hasConnected && voiceState.channelId != null) {
+				void gameVoiceState.load(voiceState.channelId);
+			}
 			if (this.hasConnected) {
 				forumState.markStale();
 				void resyncState.request('reconnect');
@@ -882,6 +886,12 @@ class SocketState {
 				break;
 			case 'voice_state':
 				voicePresenceState.apply(message.server_id, message.channel_id, message.participants);
+				break;
+			case 'game_session':
+				gameVoiceState.applySession(message);
+				break;
+			case 'game_mix':
+				gameVoiceState.applyMix(message);
 				break;
 			case 'read_state':
 				this.handleReadState(message);
