@@ -3,6 +3,8 @@
 	import { voiceState } from '$lib/states/voiceState.svelte';
 	import { micIssueText } from '$lib/utils/voiceErrors';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { conversationsState } from '$lib/states/conversationsState.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
 	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
 	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
@@ -37,21 +39,28 @@
 	let { compact = false }: { compact?: boolean } = $props();
 
 	const channelName = $derived.by(() => {
-		const { channelId, serverId } = voiceState;
+		const { channelId, serverId, callConversationId } = voiceState;
+		if (callConversationId != null) {
+			const other = conversationsState.conversations[callConversationId]?.other_user;
+			return (other && (usersState.users[other.id] ?? other).username) || 'Call';
+		}
 		if (channelId == null) return 'Voice';
 		const live = serverId != null ? serversState.channels[serverId]?.[channelId]?.name : undefined;
 		return live ?? voiceState.channelName ?? 'Voice';
 	});
 	const channelHref = $derived(
-		voiceState.serverId != null && voiceState.channelId != null
-			? `/app/server/${voiceState.serverId}/voice/${voiceState.channelId}/`
-			: null
+		voiceState.callConversationId != null
+			? `/app/direct/${voiceState.callConversationId}/call/`
+			: voiceState.serverId != null && voiceState.channelId != null
+				? `/app/server/${voiceState.serverId}/voice/${voiceState.channelId}/`
+				: null
 	);
 
-	// The call's server, which may not be the one being browsed.
+	// The call's server, which may not be the one being browsed. A DM call has no server to ask.
 	const canShare = $derived(
 		screenShareSupported() &&
-			serversState.canIn(Permission.STREAM, voiceState.channelId, voiceState.serverId)
+			(voiceState.callId != null ||
+				serversState.canIn(Permission.STREAM, voiceState.channelId, voiceState.serverId))
 	);
 
 	// Capture phase, so the shortcuts still work while the composer has focus.

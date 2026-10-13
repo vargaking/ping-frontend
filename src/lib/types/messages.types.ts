@@ -1,5 +1,6 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Attachment } from './attachment.types';
+import type { CallMeta } from './call.types';
 
 /** Original author of a message brought in from elsewhere; the row's owner is a shared account. */
 export type ImportedAuthor = { id: string; name: string };
@@ -22,6 +23,8 @@ export type MessageType = {
 	reactions?: Reaction[];
 	reply_to?: ReplyRef | null;
 	embeds?: Embed[];
+	/** Set on the row a call leaves in a DM. */
+	call?: CallMeta;
 	/** Only set on our own unsent messages; undefined means the server has it. */
 	status?: 'pending' | 'failed';
 };

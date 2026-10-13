@@ -172,10 +172,11 @@ export function openCategorySettings(groupId: number) {
 	overlayState.open(SettingsModal, { category: 'category', groupId });
 }
 
-/** Channel and category settings have tabs for channel managers and role managers. */
+/** Channel and category settings have tabs for channel managers, deleters and role managers. */
 export function canOpenChannelSettings(serverId: number | null | undefined): boolean {
 	return (
 		serversState.can(Permission.MANAGE_CHANNELS, serverId) ||
+		serversState.can(Permission.DELETE_CHANNELS, serverId) ||
 		serversState.can(Permission.MANAGE_ROLES, serverId)
 	);
 }
@@ -377,23 +378,23 @@ export function channelGroupActions(
 		});
 	}
 	if (manage) {
-		actions.push(
-			{
-				id: 'rename',
-				label: 'Rename category',
-				icon: Pencil,
-				group: 'manage',
-				run: () => promptRenameGroup(group)
-			},
-			{
-				id: 'delete',
-				label: 'Delete category',
-				icon: Trash2,
-				group: 'danger',
-				destructive: true,
-				run: () => confirmDeleteGroup(group)
-			}
-		);
+		actions.push({
+			id: 'rename',
+			label: 'Rename category',
+			icon: Pencil,
+			group: 'manage',
+			run: () => promptRenameGroup(group)
+		});
+	}
+	if (serversState.can(Permission.DELETE_CHANNELS, group.server_id)) {
+		actions.push({
+			id: 'delete',
+			label: 'Delete category',
+			icon: Trash2,
+			group: 'danger',
+			destructive: true,
+			run: () => confirmDeleteGroup(group)
+		});
 	}
 	return actions;
 }

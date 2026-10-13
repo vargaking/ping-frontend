@@ -2,15 +2,18 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import TopBar from '$lib/components/ui/shell/TopBar.svelte';
+	import AnnouncementBanner from '$lib/components/announcements/AnnouncementBanner.svelte';
 	import ServerRail from '$lib/components/ui/shell/ServerRail.svelte';
 	import ChannelSidebar from '$lib/components/ui/shell/ChannelSidebar.svelte';
 	import DirectSidebar from '$lib/components/ui/shell/DirectSidebar.svelte';
 	import VoiceDock from '$lib/components/ui/shell/VoiceDock.svelte';
 	import Overlay from '$lib/components/ui/Overlay.svelte';
 	import ProfileCardHost from '$lib/components/profile/ProfileCardHost.svelte';
+	import CallHost from '$lib/components/calls/CallHost.svelte';
 	import SearchDialog from '$lib/components/search/SearchDialog.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
+	import ServerAccent from '$lib/components/servers/ServerAccent.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
 	import InstallPrompt from '$lib/components/notifications/InstallPrompt.svelte';
 	import UpdateNotice from '$lib/components/notifications/UpdateNotice.svelte';
@@ -261,6 +264,7 @@
 	class="app-shell-root flex h-screen w-screen flex-col overflow-hidden bg-rail pr-[env(safe-area-inset-right,0px)] pl-[env(safe-area-inset-left,0px)]"
 >
 	<TopBar />
+	<AnnouncementBanner />
 	{#if phoneState.phone}
 		<VoiceDock compact />
 	{/if}
@@ -292,8 +296,10 @@
 {#if phoneState.touch && shellViewportState.showInfo}<LayoutInfo />{/if}
 <Overlay />
 <ProfileCardHost />
+<CallHost />
 <UpdateNotice />
 <InstallPrompt />
 <PushPrompt />
 <MicPrompt />
 <ShareScreenDialog />
+<ServerAccent />

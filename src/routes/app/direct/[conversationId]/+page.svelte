@@ -43,7 +43,7 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-	<DirectHeader user={otherUser} />
+	<DirectHeader user={otherUser} {conversationId} />
 
 	{#if conversationId != null}
 		{@const id = conversationId}

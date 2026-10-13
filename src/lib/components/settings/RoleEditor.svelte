@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
-	import { PERMISSION_GROUPS, parseMask } from '$lib/permissions';
+	import { DANGER_ZONE_LABEL, editorGroups, has, parseMask } from '$lib/permissions';
 	import { updateRole, type RoleUpdate } from '$lib/requests/servers/updateRole';
 	import { deleteRole } from '$lib/requests/servers/deleteRole';
 	import { fieldErrorsFrom, getErrorMessage } from '$lib/requests/errors';
@@ -20,10 +20,11 @@
 	import SettingsTextField from './SettingsTextField.svelte';
 	import SettingsSwitch from './SettingsSwitch.svelte';
 	import PermissionToggle from './PermissionToggle.svelte';
-	import { ArrowLeft } from 'lucide-svelte';
+	import { ArrowLeft, TriangleAlert } from 'lucide-svelte';
 
 	let { role, onback }: { role: Role; onback: () => void } = $props();
 
+	const groups = editorGroups();
 	const serverId = $derived(serversState.selectedServer?.id);
 	const roles = $derived(serverId != null ? (serversState.roles[serverId] ?? []) : []);
 	const myMask = $derived(serverId != null ? serversState.maskOf(serverId) : 0n);
@@ -231,15 +232,21 @@
 				</div>
 			{/if}
 
-			{#each PERMISSION_GROUPS as group (group.label)}
+			{#each groups as group (group.label)}
+				{@const isDanger = group.label === DANGER_ZONE_LABEL}
 				<section class="flex flex-col gap-4" aria-label={group.label}>
 					<h3
 						class="border-b border-border pb-2 text-xs font-medium tracking-[0.02em] text-text-subtle"
 					>
 						{group.label}
 					</h3>
+					{#if isDanger}
+						<p class="-mt-1 text-xs text-text-subtle">
+							These can't be undone or hand over control. Grant them to few people.
+						</p>
+					{/if}
 					{#each group.permissions as perm (perm.bit)}
-						{@const unheld = (myMask & perm.bit) !== perm.bit}
+						{@const unheld = !has(myMask, perm.bit)}
 						{#if role.is_default}
 							<SettingsSwitch
 								label={perm.label}
@@ -257,6 +264,12 @@
 								disabled={locked || unheld}
 								onchange={(next) => setState(perm.bit, next)}
 							/>
+						{/if}
+						{#if isDanger && role.is_default && has(allow, perm.bit)}
+							<p class="-mt-2 flex items-start gap-1.5 text-xs text-destructive" role="status">
+								<TriangleAlert size={14} strokeWidth={1.75} class="mt-px shrink-0" />
+								Everyone in the server, including new members, will get “{perm.label}”.
+							</p>
 						{/if}
 					{/each}
 				</section>

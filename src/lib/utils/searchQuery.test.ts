@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { FILTER_HINTS, hasFilters, parseSearchQuery } from './searchQuery';
+import {
+	FILTER_HINTS,
+	hasFilters,
+	parseSearchQuery,
+	readTerms,
+	termAt,
+	type Term
+} from './searchQuery';
 import { tokenize } from './searchText';
 
 const at = (y: number, m: number, d = 1) => new Date(y, m - 1, d).getTime();
@@ -172,4 +179,112 @@ describe('FILTER_HINTS', () => {
 			expect(hasFilters(parseSearchQuery(example))).toBe(true);
 		}
 	);
+});
+
+describe('readTerms', () => {
+	type Expected = Partial<Term> & Pick<Term, 'raw' | 'start' | 'end'>;
+
+	it.each<[string, string, Expected[]]>([
+		[
+			'words',
+			'mirage  smokes',
+			[
+				{ raw: 'mirage', start: 0, end: 6, filter: null, value: null },
+				{ raw: 'smokes', start: 8, end: 14, filter: null, value: null }
+			]
+		],
+		[
+			'a filter, any case',
+			'FROM:Dani',
+			[{ raw: 'FROM:Dani', start: 0, end: 9, filter: 'from', value: 'Dani', applied: true }]
+		],
+		[
+			'a quoted value',
+			'x from:"Old Name" y',
+			[
+				{ raw: 'x', start: 0, end: 1 },
+				{
+					raw: 'from:"Old Name"',
+					start: 2,
+					end: 17,
+					filter: 'from',
+					value: 'Old Name',
+					quoted: true,
+					closed: true,
+					applied: true
+				},
+				{ raw: 'y', start: 18, end: 19 }
+			]
+		],
+		[
+			'an unclosed quote',
+			'from:"Old Name',
+			[
+				{
+					raw: 'from:"Old Name',
+					start: 0,
+					end: 14,
+					value: 'Old Name',
+					quoted: true,
+					closed: false,
+					applied: true
+				}
+			]
+		],
+		[
+			'text glued after the quote',
+			'from:"a"b c',
+			[
+				{ raw: 'from:"a"b', start: 0, end: 9, filter: 'from', value: null, applied: false },
+				{ raw: 'c', start: 10, end: 11 }
+			]
+		],
+		[
+			'a second from:',
+			'from:a from:b',
+			[
+				{ raw: 'from:a', start: 0, end: 6, applied: true },
+				{ raw: 'from:b', start: 7, end: 13, filter: 'from', value: 'b', applied: false }
+			]
+		],
+		[
+			'an unknown kind',
+			'has:pdf',
+			[{ raw: 'has:pdf', start: 0, end: 7, filter: 'has', applied: false }]
+		],
+		[
+			'a bad date',
+			'before:2026-02-30',
+			[{ raw: 'before:2026-02-30', start: 0, end: 17, applied: false }]
+		],
+		[
+			'a filter being typed',
+			'from:',
+			[{ raw: 'from:', start: 0, end: 5, filter: 'from', value: '', applied: false }]
+		],
+		[
+			'an unknown filter name',
+			'in:general',
+			[{ raw: 'in:general', start: 0, end: 10, filter: null }]
+		]
+	])('reads %s', (_name, input, expected) => {
+		const terms = readTerms(input);
+		expect(terms).toHaveLength(expected.length);
+		expected.forEach((want, i) => expect(terms[i]).toMatchObject(want));
+	});
+});
+
+describe('termAt', () => {
+	it.each<[string, number, string | null]>([
+		['has:image mirage', 9, 'has:image'],
+		['has:image mirage', 16, 'mirage'],
+		['has:image mirage', 4, 'has:image'],
+		['has:image mirage', 0, null],
+		['has:image mirage', 9, 'has:image'],
+		['has:image mirage', 10, null],
+		['has:image   mirage', 11, null],
+		['', 0, null]
+	])('in %j with the caret at %i finds %j', (input, caret, raw) => {
+		expect(termAt(input, caret)?.raw ?? null).toBe(raw);
+	});
 });
