@@ -13,7 +13,9 @@ export const Permission = {
 	MANAGE_SERVER: 1n << 10n,
 	MANAGE_ROLES: 1n << 11n,
 	MUTE_MEMBERS: 1n << 12n,
-	MOVE_MEMBERS: 1n << 13n
+	MOVE_MEMBERS: 1n << 13n,
+	DELETE_CHANNELS: 1n << 14n,
+	MAP_IMPORTED_AUTHORS: 1n << 15n
 } as const;
 
 export function parseMask(mask: string): bigint {
@@ -39,7 +41,13 @@ export const CHANNEL_BITS =
 	Permission.SPEAK |
 	Permission.STREAM;
 
-export type PermissionInfo = { bit: bigint; label: string; description: string };
+/** `danger` permissions are shown apart in the role editor and never ticked by a preset. */
+export type PermissionInfo = {
+	bit: bigint;
+	label: string;
+	description: string;
+	danger?: boolean;
+};
 
 export const PERMISSION_GROUPS: { label: string; permissions: PermissionInfo[] }[] = [
 	{
@@ -96,7 +104,13 @@ export const PERMISSION_GROUPS: { label: string; permissions: PermissionInfo[] }
 			{
 				bit: Permission.MANAGE_CHANNELS,
 				label: 'Manage channels',
-				description: 'Create, edit and delete channels.'
+				description: 'Create, edit and reorder channels and categories.'
+			},
+			{
+				bit: Permission.DELETE_CHANNELS,
+				label: 'Delete channels',
+				description: 'Delete channels and categories. Deleting a channel removes its messages.',
+				danger: true
 			},
 			{
 				bit: Permission.MANAGE_INVITES,
@@ -111,7 +125,8 @@ export const PERMISSION_GROUPS: { label: string; permissions: PermissionInfo[] }
 			{
 				bit: Permission.MANAGE_SERVER,
 				label: 'Manage server',
-				description: 'Change server settings.'
+				description: 'Change server settings.',
+				danger: true
 			},
 			{
 				bit: Permission.MANAGE_ROLES,
@@ -121,3 +136,18 @@ export const PERMISSION_GROUPS: { label: string; permissions: PermissionInfo[] }
 		]
 	}
 ];
+
+export const DANGER_ZONE_LABEL = 'Danger zone';
+
+/** The groups as the role editor shows them: flagged permissions leave their group for a last one. */
+export function editorGroups(
+	groups: typeof PERMISSION_GROUPS = PERMISSION_GROUPS
+): typeof PERMISSION_GROUPS {
+	const normal = groups
+		.map((g) => ({ ...g, permissions: g.permissions.filter((p) => !p.danger) }))
+		.filter((g) => g.permissions.length > 0);
+	const danger = groups.flatMap((g) => g.permissions.filter((p) => p.danger));
+	return danger.length > 0
+		? [...normal, { label: DANGER_ZONE_LABEL, permissions: danger }]
+		: normal;
+}

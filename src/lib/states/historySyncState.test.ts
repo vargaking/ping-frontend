@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { historyApi } from '$lib/requests/history';
 import { db, localHistoryReady } from '$lib/utils/db';
+import { resetLocalHistory } from '$lib/utils/messageChanges';
 import {
 	forgetSyncedChannels,
 	runHistorySync,
@@ -24,7 +25,13 @@ vi.mock('$lib/utils/historySync', () => ({
 	forgetSyncedChannels: vi.fn()
 }));
 
+vi.mock('$lib/utils/messageChanges', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/utils/messageChanges')>()),
+	resetLocalHistory: vi.fn()
+}));
+
 const runMock = vi.mocked(runHistorySync);
+const resetMock = vi.mocked(resetLocalHistory);
 const forgetMock = vi.mocked(forgetSyncedChannels);
 const readyMock = vi.mocked(localHistoryReady);
 const syncRowsMock = vi.mocked(db.threadSync.toArray);
@@ -54,6 +61,8 @@ beforeEach(() => {
 	readyMock.mockResolvedValue(true);
 	forgetMock.mockReset();
 	forgetMock.mockResolvedValue(undefined);
+	resetMock.mockReset();
+	resetMock.mockResolvedValue(undefined);
 	syncRowsMock.mockReset();
 	syncRowsMock.mockResolvedValue([]);
 	vi.stubGlobal('navigator', { locks: undefined });
@@ -331,6 +340,14 @@ describe('historyStatusLabel', () => {
 	it('waits before anything was reported', () => {
 		expect(historyStatusLabel()).toBe('Message history: waiting');
 	});
+
+	it('says the download is off', async () => {
+		stubLocalStorage();
+		await historySyncState.setDownload(false);
+
+		expect(historyStatusLabel()).toBe('Message history: download is off');
+		await historySyncState.setDownload(true);
+	});
 });
 
 describe('forgetChannels', () => {
@@ -498,5 +515,323 @@ describe('changes feed', () => {
 		await historySyncState.stop();
 
 		expect(storage.size).toBe(2);
+	});
+});
+
+function stubLocalStorage(initial: [string, string][] = []) {
+	const storage = new Map(initial);
+	vi.stubGlobal('localStorage', {
+		getItem: (key: string) => storage.get(key) ?? null,
+		setItem: (key: string, value: string) => void storage.set(key, value),
+		removeItem: (key: string) => void storage.delete(key)
+	});
+	return storage;
+}
+
+const signedIn = (id = 5) => (usersState.loggedInUser = { id } as never);
+
+describe('download switch', () => {
+	let storage: Map<string, string>;
+
+	beforeEach(() => {
+		storage = stubLocalStorage();
+		signedIn();
+	});
+
+	afterEach(() => historySyncState.setDownload(true));
+
+	it('runs list-only and never walks for history while off', async () => {
+		await historySyncState.setDownload(false);
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(runMock).toHaveBeenCalledTimes(1);
+		const options = runMock.mock.calls[0][0] as HistorySyncOptions;
+		expect(options.listOnly).toBe(true);
+		expect(options.fullHistory).toBe(false);
+		expect(historySyncState.status).toBe('off');
+		expect(storage.get('history:download')).toBe('off');
+	});
+
+	it('stays off while a list-only run is going and after it', async () => {
+		const run = deferred();
+		runMock.mockReturnValueOnce(run.promise);
+		await historySyncState.setDownload(false);
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(historySyncState.status).toBe('off');
+
+		run.resolve();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(historySyncState.status).toBe('off');
+	});
+
+	it('aborts a run in flight when turned off, keeps what is stored and lists only after', async () => {
+		let signal!: AbortSignal;
+		runMock.mockImplementationOnce(
+			(options) =>
+				new Promise<void>((resolve) => {
+					signal = options.signal;
+					options.signal.addEventListener('abort', () => resolve(), { once: true });
+				})
+		);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(historySyncState.status).toBe('running');
+
+		await historySyncState.setDownload(false);
+
+		expect(signal.aborted).toBe(true);
+		expect(resetMock).not.toHaveBeenCalled();
+		expect(historySyncState.status).toBe('off');
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(2);
+		expect((runMock.mock.calls[1][0] as HistorySyncOptions).listOnly).toBe(true);
+	});
+
+	it('starts a full run 3 s after being turned on, however recently the last one began', async () => {
+		await historySyncState.setDownload(false);
+		await vi.advanceTimersByTimeAsync(3000);
+		await vi.advanceTimersByTimeAsync(10 * SECOND);
+
+		await historySyncState.setDownload(true);
+		expect(historySyncState.status).toBe('idle');
+		await vi.advanceTimersByTimeAsync(2999);
+		expect(runMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+
+		expect(runMock).toHaveBeenCalledTimes(2);
+		const options = runMock.mock.calls[1][0] as HistorySyncOptions;
+		expect(options.listOnly).toBe(false);
+		expect(options.fullHistory).toBe(true);
+	});
+
+	it('starts nothing for a switch change before the server list has loaded', async () => {
+		serversState.loaded = false;
+
+		await historySyncState.setDownload(false);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(runMock).not.toHaveBeenCalled();
+	});
+});
+
+const storageEvent = (key: string) => Object.assign(new Event('storage'), { key });
+
+async function freshTab(storage: Map<string, string>, connection?: { saveData: boolean }) {
+	vi.resetModules();
+	const tabs = new EventTarget();
+	vi.stubGlobal('window', tabs);
+	vi.stubGlobal('navigator', { locks: undefined, connection });
+	const { localHistoryReady: ready } = await import('$lib/utils/db');
+	vi.mocked(ready).mockResolvedValue(true);
+	const { serversState: servers } = await import('./serversState.svelte');
+	const { usersState: users } = await import('./usersState.svelte');
+	servers.servers = { 1: { id: 1, name: 'one' } } as never;
+	servers.loaded = true;
+	users.loggedInUser = { id: 5 } as never;
+	const { historySyncState: fresh } = await import('./historySyncState.svelte');
+	const { runHistorySync: run } = await import('$lib/utils/historySync');
+	const { resetLocalHistory: reset } = await import('$lib/utils/messageChanges');
+	return {
+		state: fresh,
+		run: vi.mocked(run),
+		reset: vi.mocked(reset),
+		change(key: string, value: string) {
+			storage.set(key, value);
+			tabs.dispatchEvent(storageEvent(key));
+		}
+	};
+}
+
+describe('another tab changes the switch or clears', () => {
+	let storage: Map<string, string>;
+
+	beforeEach(() => {
+		storage = stubLocalStorage();
+	});
+
+	it('follows the switch', async () => {
+		const tab = await freshTab(storage);
+		expect(tab.state.status).toBe('idle');
+
+		tab.change('history:download', 'off');
+		await vi.advanceTimersByTimeAsync(0);
+		expect(tab.state.downloadOn).toBe(false);
+		expect(tab.state.status).toBe('off');
+
+		tab.change('history:download', 'on');
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(tab.state.downloadOn).toBe(true);
+		expect(tab.run).toHaveBeenCalledTimes(1);
+		expect((tab.run.mock.calls[0][0] as HistorySyncOptions).listOnly).toBe(false);
+		await tab.state.stop();
+	});
+
+	it('starts off when the switch was already off', async () => {
+		storage.set('history:download', 'off');
+		const tab = await freshTab(storage);
+
+		expect(tab.state.status).toBe('off');
+		expect(tab.state.downloadOn).toBe(false);
+	});
+
+	it('stops writing when a clear starts, and starts over once it is done', async () => {
+		const tab = await freshTab(storage);
+		let signal!: AbortSignal;
+		tab.run.mockImplementationOnce(
+			(options) =>
+				new Promise<void>((resolve) => {
+					signal = options.signal;
+					options.signal.addEventListener('abort', () => resolve(), { once: true });
+				})
+		);
+		tab.state.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		tab.state.threads = 4;
+
+		tab.change('history:cleared', '1');
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(signal.aborted).toBe(true);
+		expect(tab.state.threads).toBe(0);
+		expect(tab.reset).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(tab.run).toHaveBeenCalledTimes(2);
+		await tab.state.stop();
+	});
+});
+
+describe('browser data saver', () => {
+	let storage: Map<string, string>;
+
+	beforeEach(() => {
+		storage = stubLocalStorage();
+	});
+
+	it('limits the download to the newest messages when nothing was chosen', async () => {
+		const tab = await freshTab(storage, { saveData: true });
+		tab.state.request();
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect((tab.run.mock.calls[0][0] as HistorySyncOptions).fullHistory).toBe(false);
+		expect(tab.state.savingData).toBe(true);
+		await tab.state.stop();
+	});
+
+	it('gives way to an explicit choice to download everything', async () => {
+		const tab = await freshTab(storage, { saveData: true });
+		await tab.state.setDownload(true);
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect((tab.run.mock.calls[0][0] as HistorySyncOptions).fullHistory).toBe(true);
+		expect(tab.state.savingData).toBe(false);
+		await tab.state.stop();
+	});
+});
+
+describe('clear', () => {
+	let storage: Map<string, string>;
+
+	beforeEach(() => {
+		storage = stubLocalStorage([['historyChangesCursor:5', 'cursor-5']]);
+		signedIn();
+	});
+
+	afterEach(() => historySyncState.setDownload(true));
+
+	it('aborts the run and waits for it, then wipes, drops the cursor and downloads again', async () => {
+		const order: string[] = [];
+		runMock.mockImplementationOnce(async (options) => {
+			await new Promise<void>((resolve) =>
+				options.signal.addEventListener('abort', () => resolve(), { once: true })
+			);
+			order.push('run ended');
+		});
+		resetMock.mockImplementation(async () => {
+			order.push('wiped');
+			expect(storage.has('historyChangesCursor:5')).toBe(true);
+		});
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(3000);
+		historySyncState.threads = 6;
+		historySyncState.complete = 2;
+
+		await historySyncState.clear();
+
+		expect(order).toEqual(['run ended', 'wiped']);
+		expect(storage.has('historyChangesCursor:5')).toBe(false);
+		expect(storage.has('history:cleared')).toBe(true);
+		expect(historySyncState.threads).toBe(0);
+		expect(historySyncState.status).toBe('idle');
+		expect(runMock).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('wipes only once other tabs have let go of the sync lock', async () => {
+		const order: string[] = [];
+		const request = vi.fn(async (_name: string, callback: (lock: object) => Promise<void>) => {
+			order.push('lock taken');
+			await callback({});
+			order.push('lock released');
+		});
+		vi.stubGlobal('navigator', { locks: { request } });
+		resetMock.mockImplementation(async () => void order.push('wiped'));
+
+		await historySyncState.clear();
+
+		expect(order).toEqual(['lock taken', 'wiped', 'lock released']);
+	});
+
+	it('starts no download while the switch is off', async () => {
+		await historySyncState.setDownload(false);
+		await vi.advanceTimersByTimeAsync(3000);
+		runMock.mockClear();
+
+		await historySyncState.clear();
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(resetMock).toHaveBeenCalledTimes(1);
+		expect(runMock).not.toHaveBeenCalled();
+		expect(historySyncState.status).toBe('off');
+	});
+
+	it('keeps the cursor and still resumes when wiping fails', async () => {
+		resetMock.mockRejectedValue(new Error('quota'));
+
+		await expect(historySyncState.clear()).rejects.toThrow('quota');
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(storage.has('historyChangesCursor:5')).toBe(true);
+		expect(runMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('starts no run while the wipe is under way', async () => {
+		let finishReset!: () => void;
+		resetMock.mockImplementation(() => new Promise<void>((resolve) => (finishReset = resolve)));
+
+		const clearing = historySyncState.clear();
+		await vi.advanceTimersByTimeAsync(0);
+		historySyncState.request();
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+		expect(runMock).not.toHaveBeenCalled();
+
+		finishReset();
+		await clearing;
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(runMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('starts nothing when stopped meanwhile', async () => {
+		let finishReset!: () => void;
+		resetMock.mockImplementation(() => new Promise<void>((resolve) => (finishReset = resolve)));
+
+		const clearing = historySyncState.clear();
+		await vi.advanceTimersByTimeAsync(0);
+		await historySyncState.stop();
+		finishReset();
+		await clearing;
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(runMock).not.toHaveBeenCalled();
 	});
 });

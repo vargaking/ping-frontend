@@ -24,6 +24,12 @@ set `LOCAL_IP` to change the backend host). The backend is yours to start.
 
 Each test registers fresh users with unique names, so runs don't need a clean database.
 
+`announcements.spec.ts` makes a user a platform admin by running the server's
+`app.scripts.platform_admin` script. Playwright's environment needs `DB_CONNECTION_STRING`
+(the e2e database), `PING_SERVER_DIR` (the ping-server checkout; defaults to `./ping-server`,
+then `../ping-server`) and `PING_SERVER_PYTHON` (a python with the server's dependencies;
+defaults to `python`).
+
 ## Debugging
 
 Failed tests keep a trace and a screenshot in `test-results/`.

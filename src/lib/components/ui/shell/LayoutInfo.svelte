@@ -88,7 +88,7 @@
 <div
 	aria-hidden="true"
 	data-layout-info
-	class="pointer-events-none fixed top-[calc(env(safe-area-inset-top,0px)+2.75rem+var(--call-bar)+0.25rem)] right-[calc(env(safe-area-inset-right,0px)+0.25rem)] z-40 max-w-[calc(100vw-0.5rem)] rounded bg-black/85 px-1.5 py-1 font-mono text-[10px] leading-tight text-white"
+	class="pointer-events-none fixed top-[calc(env(safe-area-inset-top,0px)+2.75rem+var(--call-bar)+var(--announcement-bar)+0.25rem)] right-[calc(env(safe-area-inset-right,0px)+0.25rem)] z-40 max-w-[calc(100vw-0.5rem)] rounded bg-black/85 px-1.5 py-1 font-mono text-[10px] leading-tight text-white"
 >
 	{#each rows as [name, value] (name)}
 		<div class="flex justify-between gap-3"><span class="opacity-60">{name}</span>{value}</div>

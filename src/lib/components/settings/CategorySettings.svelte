@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { Permission } from '$lib/permissions';
 	import { overlayState } from '$lib/states/overlayState.svelte';
 	import { renameChannelGroup } from '$lib/requests/channels/renameChannelGroup';
 	import { getErrorMessage } from '$lib/requests/errors';
@@ -12,6 +13,8 @@
 
 	let { groupId }: { groupId: number } = $props();
 
+	const canEdit = $derived(serversState.can(Permission.MANAGE_CHANNELS));
+	const canDelete = $derived(serversState.can(Permission.DELETE_CHANNELS));
 	const group = $derived(
 		serversState.selectedServerLayout.groups.find((g) => g.group.id === groupId)?.group ?? null
 	);
@@ -63,23 +66,27 @@
 
 {#if group}
 	<SettingsForm {dirty} {saving} onsave={save} onreset={reset}>
-		<SettingsTextField
-			id="category-name"
-			label="Category name"
-			bind:value={name}
-			{error}
-			oninput={() => (error = undefined)}
-			maxlength={100}
-		/>
-		<DangerZone
-			consequence="Deleting this category moves its channels to the top of the list. No channels or messages are deleted."
-			actionLabel="Delete category"
-			confirmTitle="Delete {group.name}?"
-			confirmDescription="Its channels move to the top of the list and lose the category's permissions."
-			onconfirm={async () => {
-				await deleteGroup(group);
-				overlayState.close();
-			}}
-		/>
+		<fieldset disabled={!canEdit} class="contents">
+			<SettingsTextField
+				id="category-name"
+				label="Category name"
+				bind:value={name}
+				{error}
+				oninput={() => (error = undefined)}
+				maxlength={100}
+			/>
+		</fieldset>
+		{#if canDelete}
+			<DangerZone
+				consequence="Deleting this category moves its channels to the top of the list. No channels or messages are deleted."
+				actionLabel="Delete category"
+				confirmTitle="Delete {group.name}?"
+				confirmDescription="Its channels move to the top of the list and lose the category's permissions."
+				onconfirm={async () => {
+					await deleteGroup(group);
+					overlayState.close();
+				}}
+			/>
+		{/if}
 	</SettingsForm>
 {/if}

@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '$lib/types/auth.types';
 import type { StoredMessage, StoredPost } from '$lib/types/localHistory.types';
 import type { MessageType } from '$lib/types/messages.types';
@@ -614,17 +614,26 @@ describe('filters', () => {
 				.filter(wanted)
 				.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0) || (a.id < b.id ? 1 : -1));
 
+		const channel = (channelId: number): SearchScope => ({ kind: 'channel', channelId });
+
 		it.each([
-			['the scope when it is smaller than the flag', 'has:image', server(1), ['[server_id+ts]']],
+			['the flag for a server scope, whatever its size', 'has:image', server(1), ['[hasImage+ts]']],
 			['the flag when it is smaller than the scope', 'has:video', server(2), ['[hasVideo+ts]']],
 			['the flag when everywhere', 'has:image', EVERYWHERE, ['[hasImage+ts]']],
-			['every author key that has rows', 'from:dani', server(2), ['[fromKey+ts]', '[fromKey+ts]']],
+			['every author key, uncounted', 'from:dani', server(2), ['[fromKey+ts]', '[fromKey+ts]']],
 			['the time index for a date window alone', 'after:2000-01-01', EVERYWHERE, ['ts']],
-			['nothing when the words are fewer than the range', 'rare has:image', EVERYWHERE, []],
 			[
-				'the flag when the words are more than it',
+				'the server index for a date window in a server',
+				'after:2000-01-01',
+				server(1),
+				['[server_id+ts]']
+			],
+			['nothing, loading the few word matches directly', 'rare has:image', EVERYWHERE, []],
+			['nothing, whatever the lone flag holds', 'common has:video', EVERYWHERE, []],
+			[
+				'the flag when it is smaller than the words',
 				'common has:video',
-				EVERYWHERE,
+				channel(10),
 				['[hasVideo+ts]']
 			]
 		] as [string, string, SearchScope, string[]][])(
@@ -634,6 +643,16 @@ describe('filters', () => {
 				expect(used).toEqual(indexes);
 			}
 		);
+
+		it('walks a channel that is smaller than a broad flag', async () => {
+			await db.messages.bulkPut([
+				message('c11a', 'common', { ...withImage, channel_id: 11 }),
+				message('c11b', 'common', { channel_id: 11 })
+			]);
+			const { rows, indexes } = await walked('has:image', channel(11));
+			expect(indexes).toEqual(['[channel_id+ts]']);
+			expect(rows.map((row) => row.id)).toEqual(['c11a']);
+		});
 
 		it.each([
 			['has:image', server(1), (r: StoredMessage) => r.server_id === 1 && r.hasImage === 1],
@@ -650,10 +669,44 @@ describe('filters', () => {
 			}
 		);
 
-		it('reads nothing when a flag has no rows in the window', async () => {
+		it('walks a flag with no rows once and finds nothing', async () => {
 			const { rows, indexes } = await walked('has:link', EVERYWHERE);
 			expect(rows).toEqual([]);
-			expect(indexes).toEqual([]);
+			expect(indexes).toEqual(['[hasLink+ts]']);
+		});
+
+		describe('counting', () => {
+			const count = vi.spyOn(Object.getPrototypeOf(db.messages.toCollection()), 'count');
+			afterAll(() => count.mockRestore());
+			const counted = async (input: string, scope: SearchScope) => {
+				count.mockClear();
+				await pageMessages(
+					parseSearchQuery(input).words,
+					scope,
+					filtersOf(input, [dani, importer])
+				);
+				return count.mock.calls.length;
+			};
+
+			it.each([
+				['one flag', 'has:image', EVERYWHERE],
+				['one flag in a server', 'has:image', server(1)],
+				['an author in a server', 'from:dani', server(2)],
+				['a date window alone', 'after:2000-01-01', EVERYWHERE],
+				['a date window in a server', 'after:2000-01-01', server(1)],
+				['a date window in a channel', 'after:2000-01-01', channel(10)]
+			] as [string, string, SearchScope][])('does not count %s', async (_, input, scope) => {
+				expect(await counted(input, scope)).toBe(0);
+			});
+
+			it.each([
+				['two flags', 'has:image has:video', EVERYWHERE, 2],
+				['two flags in a server, not the server', 'has:image has:video', server(1), 2],
+				['a flag in a channel, and the channel', 'has:image', channel(10), 2],
+				['an author and a flag in a server', 'from:dani has:image', server(1), 3]
+			] as [string, string, SearchScope, number][])('counts %s', async (_, input, scope, calls) => {
+				expect(await counted(input, scope)).toBe(calls);
+			});
 		});
 	});
 

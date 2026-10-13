@@ -4,6 +4,7 @@
 	import AccountSettings from './AccountSettings.svelte';
 	import NotificationSettings from './NotificationSettings.svelte';
 	import ServerRequestsSettings from './ServerRequestsSettings.svelte';
+	import StorageSettings from './StorageSettings.svelte';
 	import VoiceSettings from './VoiceSettings.svelte';
 	import ServerSettings from './ServerSettings.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
@@ -64,6 +65,8 @@
 			: null
 	);
 	const canManageChannels = $derived(serversState.can(Permission.MANAGE_CHANNELS));
+	const canDeleteChannels = $derived(serversState.can(Permission.DELETE_CHANNELS));
+	const canSeeOverview = $derived(canManageChannels || canDeleteChannels);
 	const canManageRoles = $derived(serversState.can(Permission.MANAGE_ROLES));
 
 	onMount(() => void serverRequestState.ensureLoaded());
@@ -71,9 +74,9 @@
 	const sections = $derived.by<Section[]>(() => {
 		const out: Section[] = [];
 
-		if (group && (canManageChannels || canManageRoles)) {
+		if (group && (canSeeOverview || canManageRoles)) {
 			const groupTabs: Tab[] = [];
-			if (canManageChannels) {
+			if (canSeeOverview) {
 				groupTabs.push({
 					id: 'category-general',
 					label: 'Category overview',
@@ -93,9 +96,9 @@
 			out.push({ scope: 'category', label: group.name, tabs: groupTabs });
 		}
 
-		if (channel && (canManageChannels || canManageRoles)) {
+		if (channel && (canSeeOverview || canManageRoles)) {
 			const channelTabs: Tab[] = [];
-			if (canManageChannels) {
+			if (canSeeOverview) {
 				channelTabs.push({
 					id: 'channel-general',
 					label: 'Channel overview',
@@ -197,6 +200,12 @@
 				label: 'Notifications',
 				scope: 'account',
 				render: notifications
+			},
+			{
+				id: 'account-storage',
+				label: 'Storage',
+				scope: 'account',
+				render: storage
 			}
 		];
 		if (serverRequestState.waitlist) {
@@ -289,6 +298,9 @@
 {/snippet}
 {#snippet notifications()}
 	<NotificationSettings />
+{/snippet}
+{#snippet storage()}
+	<StorageSettings />
 {/snippet}
 {#snippet serverRequests()}
 	<ServerRequestsSettings />

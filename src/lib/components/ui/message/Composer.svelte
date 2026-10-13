@@ -304,7 +304,7 @@
 
 		const messages = messagesState.messages(threadKey(target));
 		for (let i = messages.length - 1; i >= 0; i--) {
-			if (messages[i].user_id === me.id && !messages[i].status) {
+			if (messages[i].user_id === me.id && !messages[i].status && !messages[i].call) {
 				messageEditState.start(messages[i].id);
 				return;
 			}

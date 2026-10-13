@@ -7,7 +7,8 @@ import { voiceState, type VoicePeer } from './voiceState.svelte';
 
 export interface VoiceMember {
 	userId: number;
-	channelId: number;
+	/** Null for a member of a DM call. */
+	channelId: number | null;
 	/** Null until presence or the call says which server the channel is in. */
 	serverId: number | null;
 	self: boolean;
@@ -28,6 +29,8 @@ export interface VoiceMember {
 	/** Shown until usersState has the user. */
 	fallbackName?: string;
 	fallbackAvatar?: string | null;
+	/** Shown on the tile, like "Ringing…". */
+	status?: string;
 }
 
 /**

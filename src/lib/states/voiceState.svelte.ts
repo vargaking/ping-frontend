@@ -25,10 +25,13 @@ import {
 	refreshVoicePresence,
 	refreshVoicePresenceOnUnload
 } from '$lib/requests/voice/refreshVoicePresence';
+import { getCallToken } from '$lib/requests/calls/getCallToken';
+import { refreshCall, refreshCallOnUnload } from '$lib/requests/calls/refreshCall';
 import {
 	InsecureContextError,
 	classifyMicError,
 	describeVoiceError,
+	isCallEnded,
 	type MicIssue
 } from '$lib/utils/voiceErrors';
 import {
@@ -65,6 +68,11 @@ export interface ScreenStream {
 	/** The sharer is publishing sound with the video. */
 	sound: boolean;
 }
+
+/** What the user is connected to: a voice channel, or the call in a DM. */
+export type VoiceTarget =
+	| { kind: 'channel'; serverId: number; channelId: number }
+	| { kind: 'call'; callId: number; conversationId: number };
 
 /** Participant attribute other clients read to show someone as deafened. */
 const DEAFENED_ATTR = 'deafened';
@@ -107,6 +115,9 @@ class VoiceState {
 	/** The call's server and channel name, kept for when another server is open. */
 	serverId: number | null = $state(null);
 	channelName: string | null = $state(null);
+	/** Set instead of the channel fields while in a DM call. */
+	callId: number | null = $state(null);
+	callConversationId: number | null = $state(null);
 	connected: boolean = $state(false);
 	connecting: boolean = $state(false);
 	/** LiveKit is recovering the connection, or a rejoin is in progress. */
@@ -177,14 +188,63 @@ class VoiceState {
 			this.deafened = saved.deafened;
 
 			// Fire-and-forget: just enough for others' voice lists to update quickly.
-			window.addEventListener('pagehide', () => {
-				if (this.room) {
-					this.leaving = true;
-					this.room.disconnect();
-					if (this.channelId != null) refreshVoicePresenceOnUnload(this.channelId);
-				}
-			});
+			window.addEventListener('pagehide', () => this.onPageHide());
 		}
+	}
+
+	private onPageHide() {
+		if (!this.room) return;
+		const target = this.target;
+		this.leaving = true;
+		this.room.disconnect();
+		if (target) this.refreshTargetOnUnload(target);
+	}
+
+	/** Derived from the fields, so a channel set by hand in a test is still a target. */
+	get target(): VoiceTarget | null {
+		if (this.callId != null && this.callConversationId != null) {
+			return { kind: 'call', callId: this.callId, conversationId: this.callConversationId };
+		}
+		if (this.channelId != null && this.serverId != null) {
+			return { kind: 'channel', serverId: this.serverId, channelId: this.channelId };
+		}
+		return null;
+	}
+
+	isInCall(conversationId: number): boolean {
+		return this.callConversationId === conversationId;
+	}
+
+	private setTarget(target: VoiceTarget) {
+		if (target.kind === 'channel') {
+			this.channelId = target.channelId;
+			this.serverId = target.serverId;
+			this.channelName = serversState.channels[target.serverId]?.[target.channelId]?.name ?? null;
+			this.callId = null;
+			this.callConversationId = null;
+		} else {
+			this.callId = target.callId;
+			this.callConversationId = target.conversationId;
+			this.channelId = null;
+			this.serverId = null;
+			this.channelName = null;
+		}
+	}
+
+	private fetchToken(target: VoiceTarget): Promise<{ token: string; url: string }> {
+		return target.kind === 'channel'
+			? axiosClient.post('/api/voice/token', { channel_id: target.channelId }).then((r) => r.data)
+			: getCallToken(target.callId);
+	}
+
+	private refreshTarget(target: VoiceTarget) {
+		if (target.kind === 'channel') refreshVoicePresence(target.channelId);
+		else refreshCall(target.callId);
+	}
+
+	private refreshTargetOnUnload(target: VoiceTarget) {
+		if (target.kind === 'channel') refreshVoicePresenceOnUnload(target.channelId);
+		else refreshCallOnUnload(target.callId);
 	}
 
 	private persistSelfState() {
@@ -725,7 +785,7 @@ class VoiceState {
 
 	private handleDisconnected(r: Room, reason?: DisconnectReason) {
 		if (r !== this.room) return;
-		const channelId = this.channelId;
+		const target = this.target;
 
 		if (this.leaving || reason === DisconnectReason.CLIENT_INITIATED) {
 			this.cleanup();
@@ -740,11 +800,12 @@ class VoiceState {
 			reason === DisconnectReason.ROOM_CLOSED
 		) {
 			this.cleanup();
-			toast('The voice channel was closed.');
-		} else if (channelId == null) {
+			// The server deletes a call's room when the call ends.
+			if (target?.kind !== 'call') toast('The voice channel was closed.');
+		} else if (target == null) {
 			this.cleanup();
 		} else {
-			this.rejoin(channelId);
+			this.rejoin(target);
 		}
 	}
 
@@ -782,13 +843,15 @@ class VoiceState {
 		this.channelId = null;
 		this.serverId = null;
 		this.channelName = null;
+		this.callId = null;
+		this.callConversationId = null;
 		this.connected = false;
 		this.connecting = false;
 		this.reconnecting = false;
 		this.leaving = false;
 	}
 
-	private async dropRoom(room: Room, channelId: number) {
+	private async dropRoom(room: Room, target: VoiceTarget) {
 		// Detached first, so its Disconnected event is seen as stale.
 		if (this.room === room) this.room = null;
 		try {
@@ -796,10 +859,10 @@ class VoiceState {
 		} catch {
 			/* ignore */
 		}
-		refreshVoicePresence(channelId);
+		this.refreshTarget(target);
 	}
 
-	private async rejoin(channelId: number) {
+	private async rejoin(target: VoiceTarget) {
 		const gen = ++this.generation;
 		if (this.sharing) toast('Screen share stopped when the connection dropped.');
 		this.resetRoom();
@@ -811,9 +874,14 @@ class VoiceState {
 			await new Promise((resolve) => setTimeout(resolve, delay));
 			if (gen !== this.generation) return;
 			try {
-				await this.connect(channelId, gen);
+				await this.connect(target, gen);
 				return;
 			} catch (err) {
+				if (gen !== this.generation) return;
+				if (target.kind === 'call' && isCallEnded(err)) {
+					this.cleanup();
+					return;
+				}
 				console.warn('Voice rejoin failed:', err);
 			}
 		}
@@ -866,16 +934,32 @@ class VoiceState {
 	}
 
 	/** Joins a channel. `options` replaces the saved mute and deafen choice for this join. */
-	async joinVoice(
+	joinVoice(
 		serverId: number,
 		channelId: number,
 		options?: { muted?: boolean; deafened?: boolean }
 	) {
+		return this.join({ kind: 'channel', serverId, channelId }, options);
+	}
+
+	/** Joins the room of a DM call. Does nothing when already in that call. */
+	async joinCall(
+		call: { id: number; conversation_id: number },
+		options?: { muted?: boolean; deafened?: boolean }
+	) {
+		if (this.callId === call.id) return;
+		await this.join(
+			{ kind: 'call', callId: call.id, conversationId: call.conversation_id },
+			options
+		);
+	}
+
+	private async join(target: VoiceTarget, options?: { muted?: boolean; deafened?: boolean }) {
 		if (!usersState.loggedInUser) return;
 
-		// Already connected somewhere: leave first. Leaving bumps the generation,
-		// so this attempt's own is taken afterwards.
-		if (this.room) await this.leaveVoice();
+		// Already connected, or rejoining, somewhere: leave first. Leaving bumps the
+		// generation, so this attempt's own is taken afterwards.
+		if (this.room || this.target) await this.leaveVoice();
 		if (options) {
 			this.muted = options.muted ?? this.muted;
 			this.deafened = options.deafened ?? this.deafened;
@@ -885,26 +969,27 @@ class VoiceState {
 
 		this.connecting = true;
 		this.reconnecting = false;
-		this.channelId = channelId;
-		this.serverId = serverId;
-		this.channelName = serversState.channels[serverId]?.[channelId]?.name ?? null;
+		this.setTarget(target);
 
 		try {
-			await this.connect(channelId, gen);
+			await this.connect(target, gen);
 		} catch (err) {
+			// A newer join owns the state now.
+			if (gen !== this.generation) return;
 			console.warn('Error joining voice:', err);
-			toast.error(describeVoiceError(err));
+			toast.error(describeVoiceError(err, target.kind));
 			this.cleanup();
 		}
 	}
 
 	/** A stale attempt (gen no longer current) bails out quietly without touching state. */
-	private async connect(channelId: number, gen: number) {
+	private async connect(target: VoiceTarget, gen: number) {
 		if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
 			throw new InsecureContextError();
 		}
 		const fresh = !this.reconnecting;
-		const gameLoad = gameVoiceState.load(channelId);
+		const gameLoad =
+			target.kind === 'channel' ? gameVoiceState.load(target.channelId) : Promise.resolve();
 
 		// 0. On a fresh join, explain the mic prompt first. A rejoin never asks again.
 		if (fresh) {
@@ -918,10 +1003,7 @@ class VoiceState {
 
 		// 1. Get a LiveKit token from ping-server (membership checked there).
 		// The game session is known before the room connects, so no track starts at full volume.
-		const [{ token, url }] = await Promise.all([
-			axiosClient.post('/api/voice/token', { channel_id: channelId }).then((r) => r.data),
-			gameLoad
-		]);
+		const [{ token, url }] = await Promise.all([this.fetchToken(target), gameLoad]);
 		if (gen !== this.generation) return;
 
 		// 2. Connect to LiveKit.
@@ -933,12 +1015,12 @@ class VoiceState {
 		this.wireRoom(room, gen);
 		// The server knows about us from here on, well before media is up.
 		room.once(RoomEvent.SignalConnected, () => {
-			if (gen === this.generation) refreshVoicePresence(channelId);
+			if (gen === this.generation) this.refreshTarget(target);
 		});
 
 		try {
 			await room.connect(url, token);
-			if (gen !== this.generation) return await this.dropRoom(room, channelId);
+			if (gen !== this.generation) return await this.dropRoom(room, target);
 			// Only a connected room is current. A failed attempt emits Disconnected
 			// before connect() rejects, and that must not count as a lost connection.
 			this.room = room;
@@ -948,11 +1030,11 @@ class VoiceState {
 			try {
 				await this.applySelfState();
 			} catch (err) {
-				if (gen !== this.generation) return await this.dropRoom(room, channelId);
+				if (gen !== this.generation) return await this.dropRoom(room, target);
 				this.setMicError(classifyMicError(err));
 				await this.applySelfState().catch(() => {});
 			}
-			if (gen !== this.generation) return await this.dropRoom(room, channelId);
+			if (gen !== this.generation) return await this.dropRoom(room, target);
 			if (this.micError) void this.watchMic();
 
 			// 4. Seed the peers map: self + everyone already in the room.
@@ -970,7 +1052,7 @@ class VoiceState {
 			if (fresh && this.deafened) toast("You're deafened");
 			else if (fresh && this.muted) toast("You're muted");
 		} catch (err) {
-			await this.dropRoom(room, channelId);
+			await this.dropRoom(room, target);
 			if (gen !== this.generation) return;
 			throw err;
 		}
@@ -989,7 +1071,7 @@ class VoiceState {
 	async leaveVoice() {
 		this.leaving = true;
 		this.generation++;
-		const channelId = this.channelId;
+		const target = this.target;
 		if (this.room) {
 			this.stopLocalTracks(this.room);
 			try {
@@ -997,9 +1079,14 @@ class VoiceState {
 			} catch {
 				/* ignore */
 			}
-			if (channelId != null) refreshVoicePresence(channelId);
+			if (target) this.refreshTarget(target);
 		}
 		this.cleanup();
+	}
+
+	/** The server ended this call: leave quietly. The generation bump also stops a rejoin loop. */
+	async endCall(callId: number) {
+		if (this.callId === callId) await this.leaveVoice();
 	}
 }
 
