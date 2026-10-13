@@ -39,13 +39,15 @@
 	);
 	const active = $derived(live ? live.integration_id === integration.id : integration.active);
 
-	async function save(change: GameIntegrationUpdate) {
-		if (saving) return;
+	async function save(change: GameIntegrationUpdate): Promise<boolean> {
+		if (saving) return false;
 		saving = true;
 		try {
 			onchange(await updateGameIntegration(integration.id, change));
+			return true;
 		} catch (e) {
 			toast.error(`Couldn't update ${integration.name}: ${getErrorMessage(e)}`);
+			return false;
 		} finally {
 			saving = false;
 		}
@@ -107,7 +109,11 @@
 			class={selectClass}
 			value={integration.voice_channel_id ?? ''}
 			disabled={saving}
-			onchange={(e) => save({ voice_channel_id: Number(e.currentTarget.value) })}
+			onchange={async (e) => {
+				const select = e.currentTarget;
+				const saved = await save({ voice_channel_id: Number(select.value) });
+				if (!saved) select.value = String(integration.voice_channel_id ?? '');
+			}}
 		>
 			{#if integration.voice_channel_id == null}
 				<option value="" disabled>Pick a voice channel</option>

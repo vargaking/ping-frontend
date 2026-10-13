@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('livekit-client', async (importOriginal) => ({
@@ -251,5 +252,34 @@ describe('voiceState game volume', () => {
 		gameVoiceState.applySession({ ...frame([4, 7]), channel_id: 12 });
 
 		expect(volume(7)).toBeUndefined();
+	});
+
+	it('sets a new track to the game level right after its element exists', () => {
+		const calls: string[] = [];
+		const room = new EventEmitter();
+		const participant = {
+			identity: '7',
+			setVolume: (volume: number, source: string) => calls.push(`${source}:${volume}`)
+		};
+		const track = {
+			kind: 'audio',
+			source: 'microphone',
+			sid: 'TR_1',
+			attach: () => {
+				calls.push('attach');
+				return {};
+			}
+		};
+		vi.stubGlobal('document', { body: { appendChild: vi.fn() } });
+		usersState.loggedInUser = { id: 4 } as typeof usersState.loggedInUser;
+		Object.assign(voiceState, { channelId: CHANNEL });
+		gameVoiceState.applySession(frame([4, 7]));
+		calls.length = 0;
+
+		(voiceState as unknown as { wireRoom: (r: unknown, gen: number) => void }).wireRoom(room, 0);
+		room.emit('trackSubscribed', track, {}, participant);
+
+		expect(calls.filter((c) => c !== 'screen_share_audio:1')).toEqual(['attach', 'microphone:0']);
+		vi.unstubAllGlobals();
 	});
 });

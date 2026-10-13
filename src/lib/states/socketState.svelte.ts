@@ -157,8 +157,9 @@ class SocketState {
 			// Voice frames sent while we were offline are gone, so refetch.
 			const serverId = serversState.selectedServerId;
 			if (this.hasConnected && serverId != null) voicePresenceState.load(serverId);
-			if (this.hasConnected && voiceState.channelId != null) {
-				void gameVoiceState.load(voiceState.channelId);
+			if (this.hasConnected) {
+				gameVoiceState.dropExcept(voiceState.channelId);
+				if (voiceState.channelId != null) void gameVoiceState.load(voiceState.channelId);
 			}
 			if (this.hasConnected) {
 				forumState.markStale();

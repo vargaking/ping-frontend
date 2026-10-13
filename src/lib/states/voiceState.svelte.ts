@@ -474,6 +474,8 @@ class VoiceState {
 					return;
 				}
 				this.attachTrack(track);
+				// A new element starts at full volume, whatever the track was set to before.
+				if (track.kind === Track.Kind.Audio) this.seedPeerAudio(p);
 			}
 		)
 			.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub: TrackPublication, p) => {
@@ -902,7 +904,6 @@ class VoiceState {
 			throw new InsecureContextError();
 		}
 		const fresh = !this.reconnecting;
-		// Runs alongside the connection; peers are seeded after it so nobody starts at full volume.
 		const gameLoad = gameVoiceState.load(channelId);
 
 		// 0. On a fresh join, explain the mic prompt first. A rejoin never asks again.
@@ -916,9 +917,11 @@ class VoiceState {
 		}
 
 		// 1. Get a LiveKit token from ping-server (membership checked there).
-		const { token, url } = await axiosClient
-			.post('/api/voice/token', { channel_id: channelId })
-			.then((r) => r.data);
+		// The game session is known before the room connects, so no track starts at full volume.
+		const [{ token, url }] = await Promise.all([
+			axiosClient.post('/api/voice/token', { channel_id: channelId }).then((r) => r.data),
+			gameLoad
+		]);
 		if (gen !== this.generation) return;
 
 		// 2. Connect to LiveKit.
@@ -953,8 +956,6 @@ class VoiceState {
 			if (this.micError) void this.watchMic();
 
 			// 4. Seed the peers map: self + everyone already in the room.
-			await gameLoad;
-			if (gen !== this.generation) return await this.dropRoom(room, channelId);
 			this.upsertPeer(room.localParticipant);
 			room.remoteParticipants.forEach((p) => {
 				this.seedPeerAudio(p);

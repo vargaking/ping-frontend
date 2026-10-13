@@ -134,3 +134,38 @@ describe('gameVoiceState.load', () => {
 		expect(gameVoiceState.session(CHANNEL)).toBeNull();
 	});
 });
+
+describe('gameVoiceState.reset', () => {
+	it('keeps a load that started before it from restoring the session', async () => {
+		let finish!: (value: GameSession | null) => void;
+		fetchSession.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+		const loading = gameVoiceState.load(CHANNEL);
+
+		gameVoiceState.reset();
+		finish(session());
+		await loading;
+
+		expect(gameVoiceState.session(CHANNEL)).toBeNull();
+	});
+});
+
+describe('gameVoiceState.dropExcept', () => {
+	it('forgets every session and mix but the kept channel', () => {
+		gameVoiceState.applySession(session());
+		gameVoiceState.applyMix({ channel_id: CHANNEL, integration_id: 3, gains: { '7': 0.4 } });
+		gameVoiceState.applySession(session({ channel_id: 12, integration_id: 5 }));
+		gameVoiceState.applyMix({ channel_id: 12, integration_id: 5, gains: { '7': 0.9 } });
+
+		gameVoiceState.dropExcept(CHANNEL);
+
+		expect(gameVoiceState.session(12)).toBeNull();
+		expect(gameVoiceState.factor(ME, 12, 7)).toBe(1);
+		expect(gameVoiceState.factor(ME, CHANNEL, 7)).toBe(0.4);
+	});
+
+	it('forgets everything when no channel is kept', () => {
+		gameVoiceState.applySession(session());
+		gameVoiceState.dropExcept(null);
+		expect(gameVoiceState.session(CHANNEL)).toBeNull();
+	});
+});

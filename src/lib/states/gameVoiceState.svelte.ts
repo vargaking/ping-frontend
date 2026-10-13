@@ -13,6 +13,8 @@ class GameVoiceState {
 	private myGains = new Map<number, Record<string, number>>();
 	/** Bumped by every frame, so a load that started earlier can tell it is stale. */
 	private frameSeq = new Map<number, number>();
+	/** Bumped by reset(), so a load that started before it can't bring the old session back. */
+	private epoch = 0;
 	/** Called with the channel whenever its session or my gains change. */
 	onChange: ((channelId: number) => void) | null = null;
 
@@ -59,6 +61,7 @@ class GameVoiceState {
 	/** Fetch the session for a channel joined after it started. */
 	async load(channelId: number) {
 		const seq = this.frameSeq.get(channelId) ?? 0;
+		const epoch = this.epoch;
 		let session: GameSession | null;
 		try {
 			session = await getGameSession(channelId);
@@ -66,7 +69,7 @@ class GameVoiceState {
 			console.warn('Failed to load game session', error);
 			return;
 		}
-		if ((this.frameSeq.get(channelId) ?? 0) !== seq) return;
+		if (epoch !== this.epoch || (this.frameSeq.get(channelId) ?? 0) !== seq) return;
 		if (session?.active) {
 			this.sessions.set(channelId, session);
 		} else {
@@ -76,7 +79,18 @@ class GameVoiceState {
 		this.onChange?.(channelId);
 	}
 
+	/** After a reconnect, frames may have been missed; keep only the channel that is being reloaded. */
+	dropExcept(channelId: number | null) {
+		for (const id of [...this.sessions.keys()]) {
+			if (id !== channelId) this.sessions.delete(id);
+		}
+		for (const id of [...this.myGains.keys()]) {
+			if (id !== channelId) this.myGains.delete(id);
+		}
+	}
+
 	reset() {
+		this.epoch++;
 		this.sessions.clear();
 		this.myGains.clear();
 		this.frameSeq.clear();
