@@ -7,6 +7,7 @@
 	import type { ServerMember } from '$lib/types/server.types';
 	import type { AuthorMapping, ImportAuthor } from '$lib/types/serverImport.types';
 	import {
+		canApplyAuthors,
 		count,
 		listCapped,
 		mappedCount,
@@ -25,6 +26,8 @@
 		actionLabel: string;
 		alwaysShowAction: boolean;
 		busy: boolean;
+		/** The last hand-over failed, so the saved mapping can be applied again as it is. */
+		retryable?: boolean;
 		error: string | null;
 		onaction: () => void;
 	};
@@ -38,6 +41,7 @@
 		actionLabel,
 		alwaysShowAction,
 		busy,
+		retryable = false,
 		error,
 		onaction
 	}: Props = $props();
@@ -212,7 +216,11 @@
 					<p role="alert" class="text-xs text-destructive">{error}</p>
 				{/if}
 				<div>
-					<Button variant="secondary" disabled={!dirty || busy} onclick={onaction}>
+					<Button
+						variant="secondary"
+						disabled={!canApplyAuthors(dirty, retryable) || busy}
+						onclick={onaction}
+					>
 						{busy ? 'Saving…' : actionLabel}
 					</Button>
 				</div>

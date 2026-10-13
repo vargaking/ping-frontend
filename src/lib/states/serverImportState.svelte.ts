@@ -8,7 +8,9 @@ import { getErrorMessage, normalizeError } from '$lib/requests/errors';
 import { formatBytes } from '$lib/requests/attachments/uploadAttachment';
 import type {
 	AuthorMapping,
+	HolderImportFrame,
 	Import,
+	ImportAuthorChange,
 	ImportLimits,
 	PrivateSelection
 } from '$lib/types/serverImport.types';
@@ -19,6 +21,7 @@ import {
 	pollInterval,
 	UPLOAD_ACTIVE_MS
 } from '$lib/utils/serverImport';
+import { importedAuthorsState } from './importedAuthorsState.svelte';
 import {
 	abortableSleep,
 	isSameUpload,
@@ -40,6 +43,8 @@ export type UploadView = {
 export type ServerImportEntry = {
 	limits: ImportLimits | null;
 	import: Import | null;
+	/** Recent author changes of the finished import, newest first. */
+	changes: ImportAuthorChange[];
 	loadStatus: 'loading' | 'ready' | 'error';
 	loadError: string | null;
 	/** Set while this tab holds the file and is sending it, or has paused. */
@@ -51,6 +56,7 @@ export type ServerImportEntry = {
 const EMPTY: ServerImportEntry = {
 	limits: null,
 	import: null,
+	changes: [],
 	loadStatus: 'loading',
 	loadError: null,
 	upload: null,
@@ -108,6 +114,7 @@ class ServerImportState {
 			) {
 				entry.limits = limits;
 			}
+			entry.changes = response.changes ?? [];
 			entry.loadStatus = 'ready';
 			entry.loadError = null;
 			this.store(serverId, response.import);
@@ -128,7 +135,9 @@ class ServerImportState {
 	}
 
 	/** Apply a server_import_updated frame. */
-	applyFrame(serverId: number, incoming: Import): void {
+	applyFrame(serverId: number, incoming: Import | HolderImportFrame): void {
+		importedAuthorsState.applyFrame(serverId, incoming);
+		if (!('filename' in incoming)) return;
 		const entry = this.entries[serverId];
 		if (!entry) return;
 		const { merged, refetch } = mergeImportFrame(entry.import, incoming);
@@ -349,11 +358,11 @@ class ServerImportState {
 	/** Save the author mapping; a finished import then hands the messages over. */
 	async saveAuthors(serverId: number, mapping: AuthorMapping): Promise<Import> {
 		const current = this.requireImport(serverId);
-		const saved = await saveImportAuthors(
+		const saved = (await saveImportAuthors(
 			serverId,
 			current.id,
 			mappingPayload(current.authors, mapping)
-		);
+		)) as Import;
 		this.storeAnswer(serverId, saved);
 		return saved;
 	}

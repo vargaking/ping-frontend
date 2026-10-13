@@ -132,6 +132,13 @@ export const PERMISSION_GROUPS: { label: string; permissions: PermissionInfo[] }
 				bit: Permission.MANAGE_ROLES,
 				label: 'Manage roles',
 				description: 'Create and edit roles below their own, and assign them.'
+			},
+			{
+				bit: Permission.MAP_IMPORTED_AUTHORS,
+				label: 'Match imported authors',
+				description:
+					'Change which member imported messages belong to. The member can then edit and delete them.',
+				danger: true
 			}
 		]
 	}

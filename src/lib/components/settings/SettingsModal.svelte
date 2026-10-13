@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AccountSettings from './AccountSettings.svelte';
 	import NotificationSettings from './NotificationSettings.svelte';
@@ -13,12 +13,15 @@
 	import ServerMembers from './ServerMembers.svelte';
 	import RolesSettings from './RolesSettings.svelte';
 	import ServerImport from './ServerImport.svelte';
+	import ImportedAuthors from './ImportedAuthors.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import ChannelPermissions from './ChannelPermissions.svelte';
 	import CategorySettings from './CategorySettings.svelte';
 	import ForumTagsSettings from './ForumTagsSettings.svelte';
 	import { forumState } from '$lib/states/forumState.svelte';
 	import { serversState } from '$lib/states/serversState.svelte';
+	import { importedAuthorsState } from '$lib/states/importedAuthorsState.svelte';
+	import { showImportedAuthors } from '$lib/utils/serverImport';
 	import { serverRequestState } from '$lib/states/serverRequestState.svelte';
 	import { SERVER_REQUESTS_TAB } from '$lib/types/serverRequest.types';
 	import { Permission } from '$lib/permissions';
@@ -67,6 +70,19 @@
 	const canDeleteChannels = $derived(serversState.can(Permission.DELETE_CHANNELS));
 	const canSeeOverview = $derived(canManageChannels || canDeleteChannels);
 	const canManageRoles = $derived(serversState.can(Permission.MANAGE_ROLES));
+	const canMapAuthors = $derived(
+		!serversState.isSelectedServerOwner && serversState.can(Permission.MAP_IMPORTED_AUTHORS)
+	);
+
+	const importedAuthorsStatus = $derived(
+		server?.id != null ? importedAuthorsState.of(server.id).status : 'missing'
+	);
+
+	// load() writes the entry it reads, so it runs untracked: only a new server or a new right should refetch.
+	$effect(() => {
+		const id = server?.id;
+		if (id != null && canMapAuthors) untrack(() => void importedAuthorsState.load(id));
+	});
 
 	onMount(() => void serverRequestState.ensureLoaded());
 
@@ -159,6 +175,20 @@
 					scope: 'server',
 					form: true,
 					render: serverRoles
+				});
+			}
+			if (
+				showImportedAuthors(
+					serversState.isSelectedServerOwner,
+					canMapAuthors,
+					importedAuthorsStatus
+				)
+			) {
+				tabs.push({
+					id: 'server-imported-authors',
+					label: 'Imported authors',
+					scope: 'server',
+					render: importedAuthors
 				});
 			}
 			if (serversState.isSelectedServerOwner) {
@@ -274,6 +304,9 @@
 {/snippet}
 {#snippet serverRoles()}
 	<RolesSettings />
+{/snippet}
+{#snippet importedAuthors()}
+	<ImportedAuthors />
 {/snippet}
 {#snippet serverImport()}
 	<ServerImport />

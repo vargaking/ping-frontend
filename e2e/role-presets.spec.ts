@@ -16,7 +16,7 @@ const OUTSIDE_DANGER = [
 	'Kick members',
 	'Manage roles'
 ];
-const DANGER = ['Delete channels', 'Manage server'];
+const DANGER = ['Delete channels', 'Manage server', 'Match imported authors'];
 const MODERATION = ['Manage messages', 'Kick members', 'Mute members', 'Move members'];
 
 const allowed = (page: Page, label: string) =>
