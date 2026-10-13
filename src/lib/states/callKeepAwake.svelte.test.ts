@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('$lib/requests/voice/refreshVoicePresence', () => ({
-	refreshVoicePresence: vi.fn(),
-	refreshVoicePresenceOnUnload: vi.fn()
-}));
-
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function fakeSentinel() {
@@ -53,8 +48,13 @@ function stubBrowser(wakeLock: { request: unknown } | undefined) {
 	});
 }
 
-async function load(wakeLock: { request: unknown } | undefined = { request }) {
+async function freshModules() {
 	vi.resetModules();
+	vi.doMock('./voiceState.svelte', async () => await import('../../test/voiceState.svelte'));
+}
+
+async function load(wakeLock: { request: unknown } | undefined = { request }) {
+	await freshModules();
 	stubBrowser(wakeLock);
 	const { phoneState } = await import('./phoneState.svelte');
 	const { voiceState } = await import('./voiceState.svelte');
@@ -250,7 +250,7 @@ describe('phone note', () => {
 		await settle();
 		first.callKeepAwake.dismissNote();
 
-		vi.resetModules();
+		await freshModules();
 		const { phoneState } = await import('./phoneState.svelte');
 		const { voiceState } = await import('./voiceState.svelte');
 		const { callKeepAwake } = await import('./callKeepAwake.svelte');
