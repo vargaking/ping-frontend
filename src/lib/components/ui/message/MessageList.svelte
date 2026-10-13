@@ -968,7 +968,7 @@
 	>
 		{#if loadState === 'loading'}
 			<div class="px-8 pt-6 max-md:px-3">
-				<LoadingList rows={6} avatar />
+				<LoadingList rows={6} avatar avatarSize="md" />
 			</div>
 		{:else if loadState === 'error'}
 			<div class="flex h-full items-center justify-center px-8 max-md:px-3">
@@ -994,7 +994,7 @@
 			>
 				<div bind:this={topSentinel} aria-hidden="true"></div>
 				{#if older.slow}
-					<LoadingList rows={3} avatar label="Loading older messages…" />
+					<LoadingList rows={3} avatar avatarSize="md" label="Loading older messages…" />
 				{:else if older.failed}
 					<div
 						class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px] text-text-subtle"
@@ -1023,7 +1023,7 @@
 					{/if}
 				{/each}
 				{#if newer.slow}
-					<LoadingList rows={3} avatar label="Loading newer messages…" />
+					<LoadingList rows={3} avatar avatarSize="md" label="Loading newer messages…" />
 				{:else if newer.failed}
 					<div
 						class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[13px] text-text-subtle"

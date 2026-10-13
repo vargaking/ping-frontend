@@ -77,7 +77,7 @@
 		class="mt-0.5 block rounded-[10px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 		onclick={(e) => openCard(e.currentTarget)}
 	>
-		<Avatar {user} name={imported?.name} size="md" rounded="rounded-[10px]" className="h-9 w-9" />
+		<Avatar {user} name={imported?.name} size="md" rounded="rounded-[10px]" />
 	</button>
 {/snippet}
 
