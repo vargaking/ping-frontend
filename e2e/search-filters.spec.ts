@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { channelPath, createChannel, createServer, registerUser, uniqueName } from './helpers';
+import {
+	channelPath,
+	createChannel,
+	createServer,
+	registerUser,
+	uniqueName,
+	newContext
+} from './helpers';
 import { activeFilters, replaceQuery } from './search-suggestions.helpers';
 
 const PIXEL = Buffer.from(
@@ -28,7 +35,7 @@ async function storedImageCount(page: Page): Promise<number> {
 test('an image is found with from: and has:image and opened in its channel', async ({
 	browser
 }) => {
-	const context = await browser.newContext();
+	const context = await newContext(browser);
 	const me = await registerUser(context, 'filterer');
 	const page = await context.newPage();
 

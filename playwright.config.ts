@@ -7,7 +7,7 @@ export default defineConfig({
 	workers: 1,
 	globalSetup: './e2e/global-setup.ts',
 	retries: process.env.CI ? 1 : 0,
-	reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+	reporter: process.env.CI ? [['list'], ['github'], ['html', { open: 'never' }]] : 'list',
 	use: {
 		baseURL,
 		ignoreHTTPSErrors: true,

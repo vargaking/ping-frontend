@@ -5,7 +5,8 @@ import {
 	createServer,
 	registerUser,
 	sendMessageViaUi,
-	uniqueName
+	uniqueName,
+	newContext
 } from './helpers';
 import { activeFilters } from './search-suggestions.helpers';
 
@@ -29,7 +30,7 @@ async function storedMessageCount(page: Page): Promise<number> {
 
 /** A signed-in user with one stored message, and the search dialog open. */
 async function openSearch(browser: Browser) {
-	const context = await browser.newContext();
+	const context = await newContext(browser);
 	const me = await registerUser(context, 'suggester');
 	const page = await context.newPage();
 	const server = await createServer(context, uniqueName('Guild'));

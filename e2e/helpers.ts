@@ -1,9 +1,11 @@
 import {
 	expect,
+	test,
 	type APIRequestContext,
 	type Browser,
 	type BrowserContext,
-	type Page
+	type Page,
+	type TestInfo
 } from '@playwright/test';
 
 export type TestUser = { id: number; username: string; password: string };
@@ -134,8 +136,34 @@ export async function openConversation(context: BrowserContext, userId: number) 
 	);
 }
 
-export async function newUser(browser: Browser, name = 'user'): Promise<NewUser> {
+const openContexts = new Map<BrowserContext, TestInfo>();
+
+/**
+ * A hook declared in this module would only attach to the first spec file that loads it, so
+ * contexts are instead closed once a later test asks for a new one.
+ */
+async function closeContextsOfFinishedTests() {
+	const current = test.info();
+	const finished = [...openContexts].filter(([, owner]) => owner !== current);
+	await Promise.all(
+		finished.map(([context]) => {
+			openContexts.delete(context);
+			return context.close().catch(() => {});
+		})
+	);
+}
+
+/** A browser context that is closed once a later test asks for a user or a context. */
+export async function newContext(browser: Browser): Promise<BrowserContext> {
+	await closeContextsOfFinishedTests();
 	const context = await browser.newContext();
+	openContexts.set(context, test.info());
+	context.once('close', () => openContexts.delete(context));
+	return context;
+}
+
+export async function newUser(browser: Browser, name = 'user'): Promise<NewUser> {
+	const context = await newContext(browser);
 	const user = await registerUser(context, name);
 	const page = await context.newPage();
 	return { context, page, user };
