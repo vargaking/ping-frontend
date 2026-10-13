@@ -9,6 +9,13 @@
 	import { ICON_TYPES, iconProblem } from '$lib/utils/serverIcon';
 	import { avatarTone, graphemes, toneClass, TONE_COUNT } from '$lib/utils/avatar';
 	import type { ServerSettings } from '$lib/types/server.types';
+	import {
+		ACCENT_ERROR,
+		ACCENT_PRESETS,
+		DEFAULT_ACCENT,
+		parseAccent,
+		readableAccent
+	} from '$lib/utils/accent';
 	import { Check } from 'lucide-svelte';
 	import Button from '$lib/components/ui/button/button.svelte';
 	import ServerIcon from '$lib/components/ui/avatar/ServerIcon.svelte';
@@ -23,6 +30,7 @@
 	const savedTone = $derived(server?.icon_tone ?? avatarTone(server?.id ?? ''));
 
 	const savedWelcome = $derived(server?.server_profile?.welcome_message ?? '');
+	const savedAccent = $derived(server?.server_profile?.accent ?? '');
 	const textChannels = $derived(
 		serversState.selectedServerChannelsList.filter((c) => c.type === 'text')
 	);
@@ -54,7 +62,15 @@
 	let baselineWelcome = $state<string | null>(null);
 	let landing = $state(WELCOME_SCREEN);
 	let baselineLanding = $state<string | null>(null);
-	let errors = $state<{ name?: string; icon?: string; iconText?: string; welcome?: string }>({});
+	let accent = $state('');
+	let baselineAccent = $state<string | null>(null);
+	let errors = $state<{
+		name?: string;
+		icon?: string;
+		iconText?: string;
+		welcome?: string;
+		accent?: string;
+	}>({});
 	let saving = $state(false);
 	let fileInput: HTMLInputElement | undefined = $state();
 
@@ -70,6 +86,13 @@
 	);
 	const welcomeChanged = $derived(baselineWelcome !== null && welcome !== baselineWelcome);
 	const landingChanged = $derived(baselineLanding !== null && landing !== baselineLanding);
+	// Text that isn't a valid hex still counts as typed, so it shows as unsaved.
+	const typedAccent = $derived(parseAccent(accent) ?? accent.trim());
+	const accentChanged = $derived(baselineAccent !== null && typedAccent !== baselineAccent);
+	const shownAccent = $derived.by(() => {
+		const picked = parseAccent(accent);
+		return picked ? readableAccent(picked) : null;
+	});
 	const dirty = $derived(
 		nameChanged ||
 			iconFile !== null ||
@@ -77,7 +100,8 @@
 			toneChanged ||
 			dropsImage ||
 			welcomeChanged ||
-			landingChanged
+			landingChanged ||
+			accentChanged
 	);
 
 	// While the name is untouched, follow the saved value (e.g. a rename that
@@ -128,8 +152,23 @@
 		});
 	});
 
+	$effect(() => {
+		const next = savedAccent;
+		untrack(() => {
+			if (baselineAccent === null || typedAccent === baselineAccent) {
+				accent = next;
+				baselineAccent = next;
+			}
+		});
+	});
+
 	function limitIconText(typed: string): string {
 		return graphemes(typed.replace(/\s/g, '')).slice(0, ICON_TEXT_MAX).join('');
+	}
+
+	function chooseAccent(next: string) {
+		accent = next;
+		errors.accent = undefined;
 	}
 
 	function chooseMode(mode: 'image' | 'text') {
@@ -173,6 +212,8 @@
 		baselineWelcome = savedWelcome;
 		landing = savedLanding;
 		baselineLanding = savedLanding;
+		accent = savedAccent;
+		baselineAccent = savedAccent;
 		removeImage = false;
 		setIcon(null);
 		errors = {};
@@ -185,6 +226,11 @@
 		const trimmed = name.trim();
 		if (!trimmed) {
 			errors = { name: "Server name can't be empty." };
+			return;
+		}
+
+		if (accent.trim() && !parseAccent(accent)) {
+			errors = { accent: ACCENT_ERROR };
 			return;
 		}
 
@@ -249,6 +295,21 @@
 				failed = true;
 				errors.welcome = fieldErrorsFrom(e).welcome_message ?? getErrorMessage(e);
 				toast.error(`Couldn't save the welcome settings: ${getErrorMessage(e)}`);
+			}
+		}
+
+		if (accentChanged) {
+			try {
+				const updated = await updateServer(serverId, {
+					server_profile: { accent: parseAccent(accent) }
+				});
+				serversState.patchServer(serverId, { server_profile: updated.server_profile });
+				accent = updated.server_profile?.accent ?? '';
+				baselineAccent = accent;
+			} catch (e) {
+				failed = true;
+				errors.accent = getErrorMessage(e);
+				toast.error(`Couldn't save the accent colour: ${getErrorMessage(e)}`);
 			}
 		}
 
@@ -415,6 +476,62 @@
 						<option value={String(channel.id)}>Open #{channel.name}</option>
 					{/each}
 				</select>
+			</div>
+		</div>
+
+		<div class="flex max-w-md flex-col gap-5">
+			<h3 class="text-sm font-semibold">Accent colour</h3>
+			<div class="flex flex-col gap-3">
+				<div role="group" aria-label="Preset colours" class="flex flex-wrap items-center gap-2">
+					{#each ACCENT_PRESETS as preset (preset.value)}
+						<button
+							type="button"
+							aria-label={preset.name}
+							aria-pressed={typedAccent === preset.value}
+							onclick={() => chooseAccent(preset.value)}
+							style:background-color={preset.value}
+							class="h-7 w-7 rounded-full ring-offset-2 ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:h-9 pointer-coarse:w-9 {typedAccent ===
+							preset.value
+								? 'ring-2 ring-foreground'
+								: ''}"
+						></button>
+					{/each}
+					<input
+						type="color"
+						aria-label="Pick a colour"
+						value={parseAccent(accent) ?? ACCENT_PRESETS[0].value}
+						oninput={(e) => chooseAccent(e.currentTarget.value)}
+						class="h-7 w-9 cursor-pointer rounded-md border border-input bg-transparent p-0.5 pointer-coarse:h-9"
+					/>
+				</div>
+				<SettingsTextField
+					id="server-accent"
+					label="Hex colour"
+					bind:value={accent}
+					maxlength={7}
+					placeholder="Default"
+					error={errors.accent}
+					hint="Like #1a2b3c. Leave empty for the default."
+					oninput={() => (errors.accent = undefined)}
+				/>
+				<div class="flex items-center gap-3">
+					<span
+						aria-hidden="true"
+						style:background-color={shownAccent?.color ?? DEFAULT_ACCENT.color}
+						style:color={shownAccent?.foreground ?? DEFAULT_ACCENT.foreground}
+						class="flex h-8 items-center rounded-lg px-3 text-[13px] font-medium"
+					>
+						Preview
+					</span>
+					{#if shownAccent?.adjusted}
+						<p class="text-xs text-text-subtle" role="status">
+							Shown as {shownAccent.color} so it stays readable.
+						</p>
+					{/if}
+					{#if accent}
+						<Button variant="ghost" onclick={() => chooseAccent('')}>Use default</Button>
+					{/if}
+				</div>
 			</div>
 		</div>
 

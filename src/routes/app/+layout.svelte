@@ -11,6 +11,7 @@
 	import SearchDialog from '$lib/components/search/SearchDialog.svelte';
 	import MicPrompt from '$lib/components/voice/MicPrompt.svelte';
 	import ShareScreenDialog from '$lib/components/voice/ShareScreenDialog.svelte';
+	import ServerAccent from '$lib/components/servers/ServerAccent.svelte';
 	import PushPrompt from '$lib/components/notifications/PushPrompt.svelte';
 	import InstallPrompt from '$lib/components/notifications/InstallPrompt.svelte';
 	import UpdateNotice from '$lib/components/notifications/UpdateNotice.svelte';
@@ -297,3 +298,4 @@
 <PushPrompt />
 <MicPrompt />
 <ShareScreenDialog />
+<ServerAccent />
