@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { channelPath, createChannel, createServer, registerUser, uniqueName } from './helpers';
+import { activeFilters, replaceQuery } from './search-suggestions.helpers';
 
 const PIXEL = Buffer.from(
 	'iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAAH0lEQVR4nGM4YWNDFcQwatCoQaMGjRo0atCoQQNvEACSR9AfWEHUdAAAAABJRU5ErkJggg==',
@@ -58,14 +59,16 @@ test('an image is found with from: and has:image and opened in its channel', asy
 	await expect(search).toBeFocused();
 
 	await search.fill(`from:${me.username} has:image`);
+	await expect(activeFilters(page)).toHaveText([`from:${me.username}`]);
+	await expect(search).toHaveValue('has:image');
 	const result = page.getByRole('option').filter({ hasText: '#general' });
 	await expect(result).toBeVisible();
 	await expect(result.locator('img')).toBeVisible();
 
-	await search.fill('from:nobody-here has:image');
+	await replaceQuery(page, search, 'from:nobody-here has:image');
 	await expect(page.getByText('Nothing found.')).toBeVisible();
 
-	await search.fill(`from:${me.username} has:image`);
+	await replaceQuery(page, search, `from:${me.username} has:image`);
 	await expect(result).toBeVisible();
 	await search.press('Enter');
 

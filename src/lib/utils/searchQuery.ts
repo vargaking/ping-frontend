@@ -14,30 +14,64 @@ export type SearchQuery = {
 };
 
 const HAS_KINDS: HasKind[] = ['file', 'image', 'video', 'link'];
-const FILTER_NAMES = new Set(['from', 'has', 'before', 'after', 'during']);
+const FILTER_NAMES = new Set<FilterName>(['from', 'has', 'before', 'after', 'during']);
 const FILTER_START = /([a-z]+):/iy;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONTH = /^(\d{4})-(\d{2})$/;
 const MIN_YEAR = 1000;
 
-type Term = { raw: string; filter: string | null; value: string | null };
+export type FilterName = 'from' | 'has' | 'before' | 'after' | 'during';
 
-function readTerm(input: string, start: number): { term: Term; end: number } {
+export type Term = {
+	raw: string;
+	/** Offset in the input. */
+	start: number;
+	/** Exclusive. */
+	end: number;
+	/** Lowercased; null for a word. */
+	filter: FilterName | null;
+	/** Unquoted; null for a word, or when text is glued after the closing quote. */
+	value: string | null;
+	quoted: boolean;
+	/** False only for a quoted value whose closing quote is missing. */
+	closed: boolean;
+	/** Whether the parser took it as a filter: not a second `from:`, an unknown kind, a bad date or an empty value. */
+	applied: boolean;
+};
+
+type RawTerm = Omit<Term, 'applied'>;
+
+function isFilterName(name: string | undefined): name is FilterName {
+	return FILTER_NAMES.has(name as FilterName);
+}
+
+function readTerm(input: string, start: number): RawTerm {
 	FILTER_START.lastIndex = start;
 	const head = FILTER_START.exec(input);
 	const name = head?.[1].toLowerCase();
-	if (!head || !name || !FILTER_NAMES.has(name)) {
+	if (!head || !isFilterName(name)) {
 		const end = nextBlank(input, start);
-		return { term: { raw: input.slice(start, end), filter: null, value: null }, end };
+		return {
+			raw: input.slice(start, end),
+			start,
+			end,
+			filter: null,
+			value: null,
+			quoted: false,
+			closed: true
+		};
 	}
 
 	const valueStart = start + head[0].length;
+	const quoted = input[valueStart] === '"';
 	let value: string | null;
 	let end: number;
-	if (input[valueStart] === '"') {
+	let closed = true;
+	if (quoted) {
 		const close = input.indexOf('"', valueStart + 1);
-		value = input.slice(valueStart + 1, close < 0 ? undefined : close);
-		end = close < 0 ? input.length : close + 1;
+		closed = close >= 0;
+		value = input.slice(valueStart + 1, closed ? close : undefined);
+		end = closed ? close + 1 : input.length;
 		if (end < input.length && !/\s/.test(input[end])) {
 			value = null;
 			end = nextBlank(input, end);
@@ -46,27 +80,12 @@ function readTerm(input: string, start: number): { term: Term; end: number } {
 		end = nextBlank(input, valueStart);
 		value = input.slice(valueStart, end);
 	}
-	return { term: { raw: input.slice(start, end), filter: name, value }, end };
+	return { raw: input.slice(start, end), start, end, filter: name, value, quoted, closed };
 }
 
 function nextBlank(input: string, from: number): number {
 	const blank = input.slice(from).search(/\s/);
 	return blank < 0 ? input.length : from + blank;
-}
-
-function splitTerms(input: string): Term[] {
-	const terms: Term[] = [];
-	let i = 0;
-	while (i < input.length) {
-		if (/\s/.test(input[i])) {
-			i++;
-			continue;
-		}
-		const { term, end } = readTerm(input, i);
-		terms.push(term);
-		i = end;
-	}
-	return terms;
 }
 
 /** Local midnight of a real calendar date, or null. A month is given as day 1. */
@@ -104,24 +123,47 @@ function parseMonth(value: string): Window | null {
 	return since === null ? null : { since, until: nextMonthStart(year, month) };
 }
 
-/** Pulls the filters out of a typed query; anything that isn't a valid filter stays a word. */
-export function parseSearchQuery(input: string): SearchQuery {
+function read(input: string): { query: SearchQuery; terms: Term[] } {
 	const query: SearchQuery = { words: [], from: null, has: [], since: null, until: null };
 	const wordTerms: string[] = [];
+	const terms: Term[] = [];
 
-	const terms = splitTerms(input);
-	terms.forEach(({ raw, filter, value }, i) => {
-		if (applyFilter(query, filter, value)) return;
+	let i = 0;
+	while (i < input.length) {
+		if (/\s/.test(input[i])) {
+			i++;
+			continue;
+		}
+		const term = readTerm(input, i);
+		const applied = applyFilter(query, term.filter, term.value);
+		terms.push({ ...term, applied });
+		i = term.end;
+		if (applied) continue;
 		// A filter whose value is still being typed searches for nothing yet.
 		const typing =
-			filter !== null && raw.endsWith(':') && i === terms.length - 1 && !/\s$/.test(input);
-		if (!typing) wordTerms.push(raw);
-	});
+			term.filter !== null && term.raw.endsWith(':') && i >= input.length && !/\s$/.test(input);
+		if (!typing) wordTerms.push(term.raw);
+	}
 	query.words = tokenize(wordTerms.join(' '));
-	return query;
+	return { query, terms };
 }
 
-function applyFilter(query: SearchQuery, filter: string | null, value: string | null): boolean {
+/** Pulls the filters out of a typed query; anything that isn't a valid filter stays a word. */
+export function parseSearchQuery(input: string): SearchQuery {
+	return read(input).query;
+}
+
+/** Every word and filter in the input, with where it sits. */
+export function readTerms(input: string): Term[] {
+	return read(input).terms;
+}
+
+/** The term the caret is in or right after, if any. */
+export function termAt(input: string, caret: number): Term | null {
+	return readTerms(input).find((term) => term.start < caret && caret <= term.end) ?? null;
+}
+
+function applyFilter(query: SearchQuery, filter: FilterName | null, value: string | null): boolean {
 	if (filter === null || value === null) return false;
 	switch (filter) {
 		case 'from': {
