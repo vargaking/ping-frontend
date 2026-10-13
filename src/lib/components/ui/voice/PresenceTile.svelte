@@ -33,6 +33,7 @@
 	localMuted={member.localMuted}
 	{actions}
 	streaming={member.streaming}
+	game={member.game}
 	status={member.status}
 	onNameClick={(anchor) =>
 		profileCardState.toggle(

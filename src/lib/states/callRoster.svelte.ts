@@ -35,6 +35,7 @@ export function callRoster(call: Call | null, conversationId: number): VoiceMemb
 			localMuted: voicePeerAudioState.get(userId).muted,
 			speaking: false,
 			streaming: false,
+			game: null,
 			fallbackName: self ? undefined : peer?.username,
 			fallbackAvatar: peer?.profile?.avatar,
 			status: !present && ringing ? 'Ringing…' : undefined

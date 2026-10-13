@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { AxiosError } from 'axios';
 import { DisconnectReason } from 'livekit-client';
 import { toast } from 'svelte-sonner';
@@ -35,6 +36,8 @@ import {
 import { voiceState, type VoiceTarget } from './voiceState.svelte';
 import { voiceSettingsState } from './voiceSettingsState.svelte';
 import { usersState } from './usersState.svelte';
+import { gameVoiceState } from './gameVoiceState.svelte';
+import { voicePeerAudioState } from './voicePeerAudioState.svelte';
 
 function fakeRoom(disconnect: () => Promise<void>) {
 	const stopMic = vi.fn();
@@ -481,5 +484,99 @@ describe('voiceState call target', () => {
 		await expect(internals().fetchToken(c.target)).resolves.toMatchObject({ token: 't' });
 
 		c.asked();
+	});
+});
+
+describe('voiceState game volume', () => {
+	const CHANNEL = 9;
+
+	function inCallWith(...ids: number[]) {
+		const volumes = new Map<number, number[]>();
+		const remoteParticipants = new Map(
+			ids.map((id) => [
+				String(id),
+				{
+					identity: String(id),
+					setVolume: (volume: number, source: string) => {
+						if (source === 'microphone') volumes.set(id, [...(volumes.get(id) ?? []), volume]);
+					}
+				}
+			])
+		);
+		Object.assign(voiceState, { room: { remoteParticipants }, channelId: CHANNEL });
+		usersState.loggedInUser = { id: 4 } as typeof usersState.loggedInUser;
+		return (id: number) => volumes.get(id)?.at(-1);
+	}
+
+	const frame = (players: number[], hearSpectators = false) => ({
+		server_id: 1,
+		channel_id: CHANNEL,
+		integration_id: 3,
+		name: 'Minecraft',
+		active: true,
+		players_hear_spectators: hearSpectators,
+		players: players.map((user_id) => ({ user_id, player_name: `p${user_id}` }))
+	});
+
+	afterEach(() => {
+		gameVoiceState.reset();
+		voicePeerAudioState.set(7, { volume: 1, muted: false });
+		usersState.loggedInUser = null;
+		Object.assign(voiceState, { room: null, channelId: null });
+	});
+
+	it('plays a player at their own volume times the game gain, and restores it when the game ends', () => {
+		const volume = inCallWith(7, 99);
+		voicePeerAudioState.set(7, { volume: 0.5 });
+
+		gameVoiceState.applySession(frame([4, 7]));
+		gameVoiceState.applyMix({ channel_id: CHANNEL, integration_id: 3, gains: { '7': 0.5 } });
+
+		expect(volume(7)).toBe(0.25);
+		expect(volume(99)).toBe(0);
+
+		gameVoiceState.applyMix({ channel_id: CHANNEL, integration_id: 3, gains: { '7': 1 } });
+		expect(volume(7)).toBe(0.5);
+
+		gameVoiceState.applySession({ ...frame([]), active: false });
+		expect(volume(7)).toBe(0.5);
+		expect(volume(99)).toBe(1);
+	});
+
+	it('leaves a call in another channel alone', () => {
+		const volume = inCallWith(7);
+
+		gameVoiceState.applySession({ ...frame([4, 7]), channel_id: 12 });
+
+		expect(volume(7)).toBeUndefined();
+	});
+
+	it('sets a new track to the game level right after its element exists', () => {
+		const calls: string[] = [];
+		const room = new EventEmitter();
+		const participant = {
+			identity: '7',
+			setVolume: (volume: number, source: string) => calls.push(`${source}:${volume}`)
+		};
+		const track = {
+			kind: 'audio',
+			source: 'microphone',
+			sid: 'TR_1',
+			attach: () => {
+				calls.push('attach');
+				return {};
+			}
+		};
+		vi.stubGlobal('document', { body: { appendChild: vi.fn() } });
+		usersState.loggedInUser = { id: 4 } as typeof usersState.loggedInUser;
+		Object.assign(voiceState, { channelId: CHANNEL });
+		gameVoiceState.applySession(frame([4, 7]));
+		calls.length = 0;
+
+		(voiceState as unknown as { wireRoom: (r: unknown, gen: number) => void }).wireRoom(room, 0);
+		room.emit('trackSubscribed', track, {}, participant);
+
+		expect(calls.filter((c) => c !== 'screen_share_audio:1')).toEqual(['attach', 'microphone:0']);
+		vi.unstubAllGlobals();
 	});
 });

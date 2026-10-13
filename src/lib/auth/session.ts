@@ -15,6 +15,7 @@ import { searchState } from '$lib/states/searchState.svelte';
 import { overwritesState } from '$lib/states/overwritesState.svelte';
 import { voiceState } from '$lib/states/voiceState.svelte';
 import { voicePresenceState } from '$lib/states/voicePresenceState.svelte';
+import { gameVoiceState } from '$lib/states/gameVoiceState.svelte';
 import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 import { replyState } from '$lib/states/replyState.svelte';
 import { messageEditState } from '$lib/states/messageEditState.svelte';
@@ -59,6 +60,7 @@ export async function clearSession(): Promise<void> {
 	await leaveVoiceForLogout();
 	shareDialogState.close();
 	voicePresenceState.reset();
+	gameVoiceState.reset();
 
 	usersState.reset();
 

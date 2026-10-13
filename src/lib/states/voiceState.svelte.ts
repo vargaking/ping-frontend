@@ -18,6 +18,7 @@ import type { VoiceQuality } from './connectionState.svelte';
 import { usersState } from './usersState.svelte';
 import { serversState } from './serversState.svelte';
 import { voicePeerAudioState, voiceStreamAudioState } from './voicePeerAudioState.svelte';
+import { gameVoiceState } from './gameVoiceState.svelte';
 import { DEFAULT_DEVICE, voiceSettingsState } from './voiceSettingsState.svelte';
 import { axiosClient } from '$lib/requests/axiosClient';
 import {
@@ -178,6 +179,9 @@ class VoiceState {
 	}
 
 	constructor() {
+		gameVoiceState.onChange = (channelId) => {
+			if (channelId === this.channelId) this.applyAllPeerAudio();
+		};
 		if (typeof window !== 'undefined') {
 			const saved = loadSelfState();
 			this.muted = saved.muted;
@@ -424,10 +428,19 @@ class VoiceState {
 		if (p) this.seedPeerAudio(p);
 	}
 
+	/** Everyone in the call again, e.g. after a game changes who can hear whom. */
+	private applyAllPeerAudio() {
+		this.room?.remoteParticipants.forEach((p) => this.seedPeerAudio(p));
+	}
+
 	/** Voice and screen share sound are separate sources, each with its own level. */
 	private seedPeerAudio(p: RemoteParticipant) {
 		const userId = Number(p.identity);
-		p.setVolume(voicePeerAudioState.level(userId), Track.Source.Microphone);
+		const game =
+			this.channelId == null
+				? 1
+				: gameVoiceState.factor(usersState.loggedInUser?.id, this.channelId, userId);
+		p.setVolume(voicePeerAudioState.level(userId) * game, Track.Source.Microphone);
 		p.setVolume(voiceStreamAudioState.level(userId), Track.Source.ScreenShareAudio);
 	}
 
@@ -521,6 +534,8 @@ class VoiceState {
 					return;
 				}
 				this.attachTrack(track);
+				// A new element starts at full volume, whatever the track was set to before.
+				if (track.kind === Track.Kind.Audio) this.seedPeerAudio(p);
 			}
 		)
 			.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub: TrackPublication, p) => {
@@ -973,6 +988,8 @@ class VoiceState {
 			throw new InsecureContextError();
 		}
 		const fresh = !this.reconnecting;
+		const gameLoad =
+			target.kind === 'channel' ? gameVoiceState.load(target.channelId) : Promise.resolve();
 
 		// 0. On a fresh join, explain the mic prompt first. A rejoin never asks again.
 		if (fresh) {
@@ -985,7 +1002,8 @@ class VoiceState {
 		}
 
 		// 1. Get a LiveKit token from ping-server (membership checked there).
-		const { token, url } = await this.fetchToken(target);
+		// The game session is known before the room connects, so no track starts at full volume.
+		const [{ token, url }] = await Promise.all([this.fetchToken(target), gameLoad]);
 		if (gen !== this.generation) return;
 
 		// 2. Connect to LiveKit.

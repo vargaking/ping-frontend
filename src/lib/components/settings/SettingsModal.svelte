@@ -13,6 +13,7 @@
 	import ServerMembers from './ServerMembers.svelte';
 	import RolesSettings from './RolesSettings.svelte';
 	import ServerImport from './ServerImport.svelte';
+	import ServerGames from './ServerGames.svelte';
 	import ChannelSettings from './ChannelSettings.svelte';
 	import ChannelPermissions from './ChannelPermissions.svelte';
 	import CategorySettings from './CategorySettings.svelte';
@@ -161,6 +162,14 @@
 					render: serverRoles
 				});
 			}
+			if (serversState.can(Permission.MANAGE_SERVER)) {
+				tabs.push({
+					id: 'server-games',
+					label: 'Games',
+					scope: 'server',
+					render: serverGames
+				});
+			}
 			if (serversState.isSelectedServerOwner) {
 				tabs.push({
 					id: 'server-import',
@@ -274,6 +283,9 @@
 {/snippet}
 {#snippet serverRoles()}
 	<RolesSettings />
+{/snippet}
+{#snippet serverGames()}
+	<ServerGames />
 {/snippet}
 {#snippet serverImport()}
 	<ServerImport />

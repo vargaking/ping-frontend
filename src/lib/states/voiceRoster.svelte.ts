@@ -1,4 +1,6 @@
+import type { PlayingAs } from '$lib/types/game.types';
 import { usersState } from './usersState.svelte';
+import { gameVoiceState } from './gameVoiceState.svelte';
 import { voicePeerAudioState } from './voicePeerAudioState.svelte';
 import { voicePresenceState } from './voicePresenceState.svelte';
 import { voiceState, type VoicePeer } from './voiceState.svelte';
@@ -22,6 +24,8 @@ export interface VoiceMember {
 	speaking: boolean;
 	/** False until LiveKit knows. */
 	streaming: boolean;
+	/** They are playing in a running game session tied to this channel. */
+	game: PlayingAs | null;
 	/** Shown until usersState has the user. */
 	fallbackName?: string;
 	fallbackAvatar?: string | null;
@@ -42,6 +46,12 @@ export function voiceRoster(channelId: number): VoiceMember[] {
 		voicePresenceState.serverOf(channelId) ??
 		(voiceState.channelId === channelId ? voiceState.serverId : null);
 
+	const gameOf = (userId: number) => {
+		const name = gameVoiceState.session(channelId)?.name;
+		const playerName = gameVoiceState.playerName(channelId, userId);
+		return name != null && playerName != null ? { name, playerName } : null;
+	};
+
 	const member = (userId: number, state: Partial<VoiceMember> = {}): VoiceMember => ({
 		userId,
 		channelId,
@@ -54,6 +64,7 @@ export function voiceRoster(channelId: number): VoiceMember[] {
 		localMuted: voicePeerAudioState.get(userId).muted,
 		speaking: false,
 		streaming: false,
+		game: gameOf(userId),
 		...state
 	});
 

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { voiceState } from '$lib/states/voiceState.svelte';
+	import { gameVoiceState } from '$lib/states/gameVoiceState.svelte';
+	import { usersState } from '$lib/states/usersState.svelte';
 	import { micIssueText } from '$lib/utils/voiceErrors';
 	import { serversState } from '$lib/states/serversState.svelte';
 	import { conversationsState } from '$lib/states/conversationsState.svelte';
-	import { usersState } from '$lib/states/usersState.svelte';
 	import { VOICE_SHORTCUTS, matchVoiceShortcut } from '$lib/utils/voiceShortcuts';
 	import { shareDialogState } from '$lib/states/shareDialogState.svelte';
 	import { voiceSettingsState } from '$lib/states/voiceSettingsState.svelte';
@@ -53,6 +54,14 @@
 				? `/app/server/${voiceState.serverId}/voice/${voiceState.channelId}/`
 				: null
 	);
+
+	// Set while a game is driving this call and the user is one of its players.
+	const proximityGame = $derived.by(() => {
+		const { channelId } = voiceState;
+		const me = usersState.loggedInUser?.id;
+		if (channelId == null || me == null || !gameVoiceState.isPlayer(channelId, me)) return null;
+		return gameVoiceState.session(channelId)?.name ?? null;
+	});
 
 	// The call's server, which may not be the one being browsed. A DM call has no server to ask.
 	const canShare = $derived(
@@ -182,6 +191,9 @@
 				</a>
 			{:else}
 				<span class="truncate text-[13px] text-muted-foreground">{channelName}</span>
+			{/if}
+			{#if proximityGame}
+				<span class="truncate text-xs text-text-subtle">Proximity voice · {proximityGame}</span>
 			{/if}
 		</div>
 
